@@ -104,6 +104,12 @@ docker compose exec app npm run migrate --workspace @besucher-manager/backend
 Es wird dabei kein lokales `npm` auf dem Host verwendet. Der Befehl laeuft im Container.
 Die Migrationen werden in `dbo.schema_migrations` verfolgt. Der SQL-Benutzer braucht Rechte zum Erstellen, Aendern, Lesen und Schreiben der benoetigten Tabellen.
 
+Admin-Benutzer anlegen:
+
+```bash
+docker compose run --rm app npm run create-admin --workspace @besucher-manager/backend -- --username admin --password CHANGE_ME
+```
+
 ## 7. Netzwerkfreigaben
 
 Eingehend:

@@ -1,5 +1,8 @@
 import sql from "mssql";
+import { writeAuditLog } from "./auditLog";
 import { getPool } from "./db";
+import type { PublicPreRegistrationInput } from "./publicPreRegistrationSchema";
+import { VISIT_STATUS } from "./visitWorkflow";
 
 export type GateSummary = {
   id: string;
@@ -8,20 +11,7 @@ export type GateSummary = {
   location: string | null;
 };
 
-export type CreatePreRegistrationInput = {
-  firstName: string;
-  lastName: string;
-  company: string;
-  hostName: string;
-  hostDepartment: string;
-  purpose: string;
-  gateId: string;
-  validFrom: string;
-  validUntil: string;
-  phone?: string;
-  email?: string;
-  licensePlate?: string;
-  notes?: string;
+export type CreatePreRegistrationInput = PublicPreRegistrationInput & {
   submittedIpAddress?: string | null;
 };
 
@@ -136,7 +126,7 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
           @validFrom,
           @validUntil,
           @licensePlate,
-          'vorangemeldet',
+          '${VISIT_STATUS.PRE_REGISTERED}',
           1,
           @submittedIpAddress,
           @notes
@@ -148,6 +138,17 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
     if (!visit) {
       throw new Error("visit_insert_failed");
     }
+
+    await writeAuditLog(
+      {
+        user: `public:${cleanOptional(input.submittedIpAddress ?? undefined) ?? "unknown"}`,
+        action: "PUBLIC_PRE_REGISTRATION_CREATED",
+        objectType: "visit",
+        objectId: visit.id,
+        ipAddress: cleanOptional(input.submittedIpAddress ?? undefined)
+      },
+      transaction
+    );
 
     await transaction.commit();
 

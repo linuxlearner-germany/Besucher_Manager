@@ -8,6 +8,8 @@
     "dev:frontend": "npm run dev --workspace @besucher-manager/frontend",
     "start": "npm run start --workspace @besucher-manager/backend",
     "migrate": "npm run migrate --workspace @besucher-manager/backend",
+    "create-admin": "npm run create-admin --workspace @besucher-manager/backend",
+    "test:backend": "npm run test --workspace @besucher-manager/backend",
     "typecheck": "npm run typecheck --workspace @besucher-manager/backend && npm run typecheck --workspace @besucher-manager/frontend"
   },
   "private": true,

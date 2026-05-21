@@ -9,9 +9,13 @@
     "start": "node dist/scripts/start.js",
     "migrate": "tsx src/scripts/migrate.ts",
     "migrate:compiled": "node dist/scripts/migrate.js",
+    "create-admin": "tsx src/scripts/createAdmin.ts",
+    "create-admin:compiled": "node dist/scripts/createAdmin.js",
+    "test": "node --import tsx --test src/**/*.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.7",
     "dotenv": "^16.4.5",
     "express": "^4.21.2",
