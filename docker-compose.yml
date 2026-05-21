@@ -1,55 +1,14 @@
 services:
-  db:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: visitor_manager
-      POSTGRES_USER: visitor_manager
-      POSTGRES_PASSWORD: visitor_manager
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U visitor_manager -d visitor_manager"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   web:
     build: .
-    depends_on:
-      db:
-        condition: service_healthy
-    environment:
-      DJANGO_SECRET_KEY: change-me-in-production
-      DJANGO_DEBUG: "False"
-      DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1
-      DJANGO_CSRF_TRUSTED_ORIGINS: http://localhost,http://127.0.0.1
-      POSTGRES_DB: visitor_manager
-      POSTGRES_USER: visitor_manager
-      POSTGRES_PASSWORD: visitor_manager
-      POSTGRES_HOST: db
-      POSTGRES_PORT: "5432"
-      VISITOR_RETENTION_DAYS: "90"
-      PUBLIC_FORM_RATE_LIMIT: "10"
-      PUBLIC_FORM_RATE_WINDOW_SECONDS: "900"
+    env_file:
+      - .env
+    ports:
+      - "3020:8000"
     volumes:
       - media_data:/app/media
       - static_data:/app/staticfiles
-    expose:
-      - "8000"
-
-  caddy:
-    image: caddy:2-alpine
-    depends_on:
-      - web
-    ports:
-      - "8080:80"
-    volumes:
-      - ./infra/Caddyfile:/etc/caddy/Caddyfile:ro
-      - static_data:/srv/static:ro
-      - media_data:/srv/media:ro
 
 volumes:
-  postgres_data:
   static_data:
   media_data:
-

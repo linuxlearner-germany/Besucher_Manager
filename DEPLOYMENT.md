@@ -1,18 +1,16 @@
 # Deployment-Anleitung
 
-Diese Anleitung beschreibt den produktionsnahen Betrieb der internen Besucherverwaltung auf einem Linux-Server per Docker Compose.
+Diese Anleitung beschreibt den Betrieb der internen Besucherverwaltung auf `deb-srv-docker` per Docker Compose mit externer Microsoft-SQL-Server-Datenbank auf `MS-SRV-SQL`.
 
 ## 1. Zielbild
 
-Die Anwendung besteht aus drei Containern:
+Die Testumgebung besteht aktuell aus einem aktiven Container:
 
 - `web`: Django-Anwendung mit Gunicorn
-- `db`: PostgreSQL
-- `caddy`: Reverse Proxy fuer HTTP/HTTPS und Auslieferung von statischen Dateien
 
-Standardport im aktuellen Setup:
+Standardport im aktuellen Testsetup:
 
-- `8080` extern auf `caddy`
+- `3020` extern direkt auf `web`
 
 ## 2. Voraussetzungen
 
@@ -22,16 +20,17 @@ Auf dem Zielserver sollten installiert sein:
 - Docker Compose Plugin
 - Git
 
-Empfohlen:
+Zielannahmen in diesem Repository:
 
-- Debian 12 oder Ubuntu 24.04 LTS
-- separater technischer Benutzer, z. B. `visitorapp`
-- internes DNS oder feste IP
-- Zugriff nur aus internem Netz oder per VPN
+- Docker-Host: `deb-srv-docker`
+- Webport: `3020`
+- SQL-Host: `MS-SRV-SQL`
+- Datenbank-Name: `Besuchermngmt`
+- Datenbank-Benutzer: `dockerBesuchermngmt`
 
 ## 3. Verzeichnis auf dem Server anlegen
 
-Beispiel:
+Auf `deb-srv-docker`:
 
 ```bash
 sudo mkdir -p /opt/visitor-manager
@@ -42,30 +41,32 @@ cd /opt/visitor-manager
 Repository klonen:
 
 ```bash
-git clone <REPOSITORY_URL> .
+git clone https://github.com/linuxlearner-germany/Besucher_Manager.git .
 ```
 
-## 4. Umgebungsdatei vorbereiten
+## 4. Vorbelegte Konfiguration
 
-Die Datei `.env` im Projektverzeichnis anlegen:
+Das Repository ist so vorbelegt, dass `docker compose up -d --build` direkt auf den Zielhost und den Zielport zeigt.
 
-```bash
-cp .env.example .env
-```
+Die Container-Konfiguration wird direkt aus der versionierten Datei [.env](C:/Users/General_Rothenburger/Nextcloud_wiweb/Besucher_Manager/.env) geladen.
 
-Empfohlene Mindestanpassungen:
+Vorbelegte Werte:
 
 ```env
-DJANGO_SECRET_KEY=<langer-zufaelliger-wert>
+DJANGO_SECRET_KEY=visitor-manager-internal-secret-change-this
 DJANGO_DEBUG=False
-DJANGO_ALLOWED_HOSTS=besucher.intern,127.0.0.1,localhost
-DJANGO_CSRF_TRUSTED_ORIGINS=https://besucher.intern
+DJANGO_SECURE_COOKIES=False
+DJANGO_ALLOWED_HOSTS=deb-srv-docker,localhost,127.0.0.1
+DJANGO_CSRF_TRUSTED_ORIGINS=http://deb-srv-docker:3020,http://localhost:3020,http://127.0.0.1:3020
 
-POSTGRES_DB=visitor_manager
-POSTGRES_USER=visitor_manager
-POSTGRES_PASSWORD=<starkes-passwort>
-POSTGRES_HOST=db
-POSTGRES_PORT=5432
+DATABASE_ENGINE=mssql
+DATABASE_NAME=Besuchermngmt
+DATABASE_USER=dockerBesuchermngmt
+DATABASE_PASSWORD=V&9Hzx5YunRpFYXn@mT
+DATABASE_HOST=MS-SRV-SQL
+DATABASE_PORT=1433
+DATABASE_OPTIONS=TrustServerCertificate=yes
+MSSQL_ODBC_DRIVER=ODBC Driver 18 for SQL Server
 
 VISITOR_RETENTION_DAYS=90
 PUBLIC_FORM_RATE_LIMIT=10
@@ -74,48 +75,35 @@ PUBLIC_FORM_RATE_WINDOW_SECONDS=900
 
 Hinweise:
 
-- `DJANGO_SECRET_KEY` darf nicht der Default bleiben.
-- `POSTGRES_PASSWORD` muss produktionsgeeignet sein.
-- `DJANGO_ALLOWED_HOSTS` und `DJANGO_CSRF_TRUSTED_ORIGINS` muessen zu eurem internen Hostnamen passen.
+- Fuer echten Produktivbetrieb sollte `DJANGO_SECRET_KEY` ersetzt werden.
+- Wenn die Datenbank anders heisst, muss `DATABASE_NAME` angepasst werden.
+- Wenn TLS vor dem Container terminiert wird, muessen die CSRF-Origins auf `https://...` umgestellt werden.
+- Sobald HTTPS aktiv ist, sollte `DJANGO_SECURE_COOKIES=True` gesetzt werden.
 
-## 5. Reverse Proxy und HTTPS
+## 5. Teststart ohne Proxy
 
-Im Repository ist aktuell ein einfaches [infra/Caddyfile](/C:/Users/General_Rothenburger/Nextcloud_wiweb/Besucher_Manager/infra/Caddyfile) fuer internes HTTP enthalten.
+Der direkte Teststart ist absichtlich so einfach wie moeglich gehalten:
 
-Fuer produktiven Betrieb gibt es zwei uebliche Varianten:
-
-1. TLS bereits vor dem Server, z. B. durch interne Firewall, Load Balancer oder Reverse Proxy
-2. TLS direkt in Caddy mit internem Zertifikat
-
-Wenn TLS vor dem Container terminiert wird, muss der Proxy `X-Forwarded-Proto: https` setzen.
-
-Wenn Caddy selbst TLS machen soll, muss das Caddyfile entsprechend erweitert werden. Beispiel:
-
-```caddy
-besucher.intern {
-    tls internal
-    encode gzip
-
-    handle /static/* {
-        root * /srv
-        file_server
-    }
-
-    handle /media/* {
-        root * /srv
-        file_server
-    }
-
-    reverse_proxy web:8000
-}
+```bash
+docker compose up -d --build
 ```
 
-Wichtig:
+Danach ist die Anwendung direkt erreichbar unter:
 
-- Das interne Root-Zertifikat muss auf den Clients vertraut werden.
-- Wenn ihr bereits eine zentrale interne PKI habt, solltet ihr diese bevorzugen.
+- `http://deb-srv-docker:3020/`
 
-## 6. Container bauen und starten
+## 6. Netzwerk-Security-Proxy spaeter
+
+Im Repository ist bewusst kein Reverse-Proxy-Container enthalten.
+
+Wenn spaeter ein Netzwerk-Security-Proxy, eine interne WAF oder eine zentrale Sicherheitskomponente vor `deb-srv-docker` geschaltet wird, sind fuer die Anwendung nur diese Punkte relevant:
+
+1. externer Hostname in `DJANGO_ALLOWED_HOSTS`
+2. echte Origin in `DJANGO_CSRF_TRUSTED_ORIGINS`
+3. bei HTTPS `DJANGO_SECURE_COOKIES=True`
+4. falls TLS ausserhalb des Containers terminiert wird, muss `X-Forwarded-Proto: https` sauber gesetzt werden
+
+## 7. Container bauen und starten
 
 Im Projektverzeichnis:
 
@@ -133,11 +121,9 @@ Logs pruefen:
 
 ```bash
 docker compose logs -f web
-docker compose logs -f db
-docker compose logs -f caddy
 ```
 
-## 7. Datenbankmigrationen und Admin-Benutzer
+## 8. Datenbankmigrationen und Admin-Benutzer
 
 Im aktuellen Dockerfile werden Migrationen beim Start ausgefuehrt. Fuer den ersten produktiven Start sollte trotzdem explizit geprueft werden:
 
@@ -151,7 +137,7 @@ Admin-Benutzer anlegen:
 docker compose exec web python manage.py createsuperuser
 ```
 
-## 8. Erste Grunddaten pflegen
+## 9. Erste Grunddaten pflegen
 
 Nach dem ersten Login im Admin-Bereich:
 
@@ -162,7 +148,7 @@ Nach dem ersten Login im Admin-Bereich:
 5. Texte fuer Sicherheitshinweise, Fotografierverbot und Besucherregeln pflegen
 6. Optional `SystemSetting` fuer `retention_days` setzen
 
-## 9. Erreichbarkeit pruefen
+## 10. Erreichbarkeit pruefen
 
 Danach mindestens diese URLs testen:
 
@@ -179,28 +165,17 @@ Fachlicher Kurztest:
 5. Besucherschein drucken
 6. Besuch auschecken
 
-## 10. Backup-Konzept
+## 11. Backup-Konzept
 
-Mindestens die PostgreSQL-Daten muessen gesichert werden.
+Die Anwendung nutzt eine externe SQL-Server-Datenbank. Das Backup muss daher auf `MS-SRV-SQL` fuer die Datenbank `Besuchermngmt` organisiert werden.
 
-### Datenbankdump
+Mindestens sichern:
 
-```bash
-docker compose exec db pg_dump -U visitor_manager visitor_manager > backup_visitor_manager.sql
-```
-
-### Wiederherstellung
-
-```bash
-cat backup_visitor_manager.sql | docker compose exec -T db psql -U visitor_manager visitor_manager
-```
-
-Zusaetzlich sinnvoll:
-
-- Sicherung des Verzeichnisses `media/` bzw. des Docker-Volumes `media_data`
+- Datenbank `Besuchermngmt` auf `MS-SRV-SQL`
+- Docker-Volume `media_data`
 - versionierte Sicherung der `.env`
 
-## 11. Aufbewahrungsroutine einrichten
+## 12. Aufbewahrungsroutine einrichten
 
 Die Anwendung bringt einen Command fuer alte Besuchsdaten mit.
 
@@ -226,7 +201,7 @@ Beispiel fuer Cron:
 0 2 * * * cd /opt/visitor-manager && docker compose exec -T web python manage.py purge_old_visits
 ```
 
-## 12. Updates einspielen
+## 13. Updates einspielen
 
 Beispielablauf:
 
@@ -244,7 +219,7 @@ Danach kurz pruefen:
 - Login funktioniert
 - Tagesuebersicht ist erreichbar
 
-## 13. Betrieb und Sicherheit
+## 14. Betrieb und Sicherheit
 
 Empfohlene Mindestmassnahmen:
 
@@ -252,11 +227,11 @@ Empfohlene Mindestmassnahmen:
 - SSH nur fuer berechtigte Administratoren
 - starke Passwoerter fuer Django-Admin und Datenbank
 - Docker-Images regelmaessig aktualisieren
-- regelmaessige Restore-Tests fuer Backups
+- regelmaessige Restore-Tests fuer SQL-Server-Backups
 - Dependency-Scan im Build-Prozess, z. B. mit Trivy
 - Monitoring fuer Container-Status, Plattenplatz und Datenbankvolumen
 
-## 14. Typische Fehlerbilder
+## 15. Typische Fehlerbilder
 
 ### `DisallowedHost`
 
@@ -303,10 +278,10 @@ Loesung:
 - Benutzer im Admin anlegen
 - `StaffProfile` und `default_gate` setzen
 
-## 15. Empfohlene naechste technische Schritte
+## 16. Empfohlene naechste technische Schritte
 
 - separates `compose.prod.yml` fuer Produktionswerte anlegen
-- Healthchecks fuer `web` und `caddy` erweitern
+- Healthchecks fuer `web` erweitern
 - Seed-Command fuer Wachen und Standardtexte schreiben
 - PDF-Erzeugung spaeter mit WeasyPrint ergaenzen
 - Backup und Retention in den Betriebsprozess aufnehmen

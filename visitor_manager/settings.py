@@ -52,15 +52,32 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "visitor_manager.wsgi.application"
 
-if os.getenv("POSTGRES_HOST"):
+database_engine = os.getenv("DATABASE_ENGINE", "").strip().lower()
+
+if database_engine == "mssql":
+    DATABASES = {
+        "default": {
+            "ENGINE": "mssql",
+            "NAME": os.getenv("DATABASE_NAME", "Besuchermngmt"),
+            "USER": os.getenv("DATABASE_USER", ""),
+            "PASSWORD": os.getenv("DATABASE_PASSWORD", ""),
+            "HOST": os.getenv("DATABASE_HOST", ""),
+            "PORT": os.getenv("DATABASE_PORT", "1433"),
+            "OPTIONS": {
+                "driver": os.getenv("MSSQL_ODBC_DRIVER", "ODBC Driver 18 for SQL Server"),
+                "extra_params": os.getenv("DATABASE_OPTIONS", "TrustServerCertificate=yes"),
+            },
+        }
+    }
+elif database_engine == "postgres" or os.getenv("POSTGRES_HOST"):
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
-            "NAME": os.getenv("POSTGRES_DB", "visitor_manager"),
-            "USER": os.getenv("POSTGRES_USER", "visitor_manager"),
-            "PASSWORD": os.getenv("POSTGRES_PASSWORD", "visitor_manager"),
-            "HOST": os.getenv("POSTGRES_HOST", "db"),
-            "PORT": os.getenv("POSTGRES_PORT", "5432"),
+            "NAME": os.getenv("DATABASE_NAME", os.getenv("POSTGRES_DB", "Besuchermngmt")),
+            "USER": os.getenv("DATABASE_USER", os.getenv("POSTGRES_USER", "visitor_manager")),
+            "PASSWORD": os.getenv("DATABASE_PASSWORD", os.getenv("POSTGRES_PASSWORD", "visitor_manager")),
+            "HOST": os.getenv("DATABASE_HOST", os.getenv("POSTGRES_HOST", "db")),
+            "PORT": os.getenv("DATABASE_PORT", os.getenv("POSTGRES_PORT", "5432")),
         }
     }
 else:
@@ -104,8 +121,9 @@ SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_SAMESITE = "Lax"
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = "DENY"
+use_secure_cookies = os.getenv("DJANGO_SECURE_COOKIES", "False").lower() == "true"
 
-if not DEBUG:
+if use_secure_cookies:
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
 

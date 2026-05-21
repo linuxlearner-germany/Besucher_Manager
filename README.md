@@ -5,7 +5,7 @@ Kleines Django-MVP fuer die interne Besucherverwaltung an Pforte und Wache.
 ## Enthalten im aktuellen Stand
 
 - Django-Projekt mit Login, Admin und Rollenprofil fuer Wache/Admin
-- Docker-Grundgeruest mit `web`, `db` und `caddy`
+- Docker-Grundgeruest mit direktem Web-Container auf Port `3020`
 - Oeffentliche interne Voranmeldung ohne Login
 - Tagesuebersicht mit Wachen-Scope, Statusfilter und Suche
 - Besuch anlegen, bearbeiten, einchecken, auschecken
@@ -21,32 +21,57 @@ Kleines Django-MVP fuer die interne Besucherverwaltung an Pforte und Wache.
 - `visits/`: Besucher- und Besuchslogik, Views, Formulare
 - `templates/`: Oberflaechen und Drucklayout
 - `static/`: Anwendungscss und Druckcss
-- `infra/`: Reverse-Proxy-Konfiguration
 
 ## Dokumentation
 
 - Deployment: [DEPLOYMENT.md](C:/Users/General_Rothenburger/Nextcloud_wiweb/Besucher_Manager/DEPLOYMENT.md)
 
-## Lokaler Start per Docker Compose
+## GitHub Clone
 
-1. `.env.example` nach `.env` kopieren und Werte setzen
-2. Container bauen und starten:
+```bash
+git clone https://github.com/linuxlearner-germany/Besucher_Manager.git
+cd Besucher_Manager
+```
+
+## Start auf `deb-srv-docker`
+
+Der aktuelle Stand ist auf folgenden Zielbetrieb vorbelegt:
+
+- Docker-Host: `deb-srv-docker`
+- Webzugriff: `http://deb-srv-docker:3020/`
+- Datenbank-Host: `MS-SRV-SQL`
+- Datenbank-Engine: `Microsoft SQL Server`
+- Datenbank-Name: `Besuchermngmt`
+- Secure-Cookies: deaktiviert, damit HTTP auf Port `3020` direkt funktioniert
+- Die komplette Laufzeitkonfiguration liegt versioniert in [.env](C:/Users/General_Rothenburger/Nextcloud_wiweb/Besucher_Manager/.env)
+
+Start:
 
 ```bash
 docker compose up --build
 ```
 
-3. Datenbank migrieren und Admin-Benutzer anlegen:
+Danach:
 
 ```bash
 docker compose exec web python manage.py createsuperuser
 ```
 
-4. Anwendung aufrufen:
+Aufruf:
 
-- Oeffentliche Voranmeldung: `http://localhost:8080/`
-- Login Wache: `http://localhost:8080/accounts/login/`
-- Admin: `http://localhost:8080/admin/`
+- Oeffentliche Voranmeldung: `http://deb-srv-docker:3020/`
+- Login Wache: `http://deb-srv-docker:3020/accounts/login/`
+- Admin: `http://deb-srv-docker:3020/admin/`
+
+## Netzwerk-Security-Proxy spaeter
+
+Im Repository ist absichtlich kein Reverse-Proxy-Container mehr enthalten.
+
+Wenn spaeter vor dem Host ein Netzwerk-Security-Proxy oder eine zentrale Sicherheitskomponente geschaltet wird:
+
+1. die externe URL in `DJANGO_ALLOWED_HOSTS` eintragen
+2. `DJANGO_CSRF_TRUSTED_ORIGINS` auf die echte URL anpassen
+3. bei HTTPS `DJANGO_SECURE_COOKIES=True` setzen
 
 ## Aufbewahrungsroutine
 

@@ -1,7 +1,6 @@
 __pycache__/
 *.py[cod]
 *.sqlite3
-.env
 .venv/
 venv/
 staticfiles/
@@ -13,4 +12,3 @@ htmlcov/
 dist/
 build/
 node_modules/
-
