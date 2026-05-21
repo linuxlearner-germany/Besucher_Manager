@@ -79,8 +79,17 @@ apiRouter.get("/api/public/gates", async (request, response) => {
     return response.json({ gates, csrfToken });
   } catch (error) {
     console.error(error);
+
+    if (error instanceof Error && error.message.includes("Invalid object name 'dbo.gates'")) {
+      return response.status(500).json({
+        error: "DATABASE_SCHEMA_MISSING",
+        message: "Die Datenbanktabellen wurden noch nicht initialisiert. Bitte Migrationen ausfuehren."
+      });
+    }
+
     return response.status(500).json({
-      error: "gate_list_failed"
+      error: "gate_list_failed",
+      message: "Die Wachen konnten nicht geladen werden."
     });
   }
 });

@@ -91,10 +91,12 @@ docker compose logs -f app
 ```
 
 Der Container stellt die API und die gebaute Frontend-Anwendung ueber denselben Port bereit. Uploads werden in das Volume `uploads_data` geschrieben.
+Beim Containerstart werden automatisch die MSSQL-Migrationen ausgefuehrt und anschliessend der Server gestartet.
 
 ## Datenbank und Migrationen
 
 Die Anwendung erwartet einen externen Microsoft SQL Server. Konfiguration erfolgt ausschliesslich ueber Umgebungsvariablen.
+Der SQL-Benutzer braucht in der Ziel-Datenbank Rechte zum Erstellen, Aendern, Lesen und Schreiben der benoetigten Tabellen.
 
 Migration ausfuehren im Container:
 
@@ -103,6 +105,7 @@ docker compose exec app npm run migrate --workspace @besucher-manager/backend
 ```
 
 Die initiale SQL-Struktur liegt unter [apps/backend/migrations/001_initial.sql](/C:/Users/General_Rothenburger/Nextcloud_wiweb/Besucher_Manager/apps/backend/migrations/001_initial.sql).
+Dabei werden mindestens `dbo.gates`, `dbo.users`, `dbo.visitors`, `dbo.visits`, `dbo.site_maps`, `dbo.badge_text_templates`, `dbo.system_settings`, `dbo.audit_logs` und `dbo.schema_migrations` angelegt. Fuer den Testbetrieb wird idempotent eine aktive Wache `Hauptwache` vorbelegt.
 
 ## Naechste fachliche Schritte
 

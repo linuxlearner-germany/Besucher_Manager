@@ -6,8 +6,9 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/server.js",
+    "start": "node dist/scripts/start.js",
     "migrate": "tsx src/scripts/migrate.ts",
+    "migrate:compiled": "node dist/scripts/migrate.js",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

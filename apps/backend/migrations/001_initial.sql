@@ -12,6 +12,28 @@ BEGIN
   );
 END;
 
+IF NOT EXISTS (
+  SELECT 1
+  FROM dbo.gates
+  WHERE name = 'Hauptwache'
+)
+BEGIN
+  INSERT INTO dbo.gates (
+    name,
+    description,
+    location,
+    is_active,
+    sort_order
+  )
+  VALUES (
+    'Hauptwache',
+    'Standard-Wache',
+    'Werk / Eingang',
+    1,
+    10
+  );
+END;
+
 IF OBJECT_ID('dbo.users', 'U') IS NULL
 BEGIN
   CREATE TABLE dbo.users (

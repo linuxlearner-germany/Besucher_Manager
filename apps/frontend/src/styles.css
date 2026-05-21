@@ -197,6 +197,12 @@ textarea {
   color: #8a1f32;
 }
 
+.feedback.info {
+  background: #f7fafc;
+  border-color: #d3dce6;
+  color: #334155;
+}
+
 .side-panel {
   display: flex;
   flex-direction: column;

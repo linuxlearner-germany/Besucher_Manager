@@ -9,6 +9,7 @@ Ein einzelner Container liefert:
 - Express-API
 - gebaute React-Oberflaeche
 - Healthcheck unter `/health`
+- automatische MSSQL-Migrationen beim Start
 
 Der SQL Server bleibt extern. Ein Reverse Proxy ist nicht Bestandteil des MVP.
 
@@ -70,6 +71,7 @@ Hinweise:
 ## 5. Build und Start
 
 ```bash
+docker compose down --remove-orphans
 docker compose build --no-cache
 docker compose up -d
 ```
@@ -91,14 +93,16 @@ Fuer die Testumgebung konkret:
 ## 6. Migrationen
 
 Die SQL-Migrationen liegen im Container unter `apps/backend/migrations`.
+Beim Containerstart wird automatisch zuerst der Migrationslauf ausgefuehrt. Danach startet erst die API auf Port `3020`.
 
-Vor dem ersten produktiven Einsatz:
+Optional manueller Lauf im Container:
 
 ```bash
 docker compose exec app npm run migrate --workspace @besucher-manager/backend
 ```
 
 Es wird dabei kein lokales `npm` auf dem Host verwendet. Der Befehl laeuft im Container.
+Die Migrationen werden in `dbo.schema_migrations` verfolgt. Der SQL-Benutzer braucht Rechte zum Erstellen, Aendern, Lesen und Schreiben der benoetigten Tabellen.
 
 ## 7. Netzwerkfreigaben
 
@@ -148,10 +152,10 @@ Nach jedem Deployment:
 
 ```bash
 cd /opt/Besucher_Manager
+docker compose down --remove-orphans
 git pull
 docker compose build --no-cache
 docker compose up -d
-docker compose exec app npm run migrate --workspace @besucher-manager/backend
 docker compose logs -f app
 ```
 

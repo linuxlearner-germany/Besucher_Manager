@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { createApp } from "./app";
 import { env } from "./config/env";
 
-async function main() {
+export async function startServer() {
   fs.mkdirSync(env.uploadDir, { recursive: true });
 
   const app = createApp();
@@ -11,7 +11,9 @@ async function main() {
   });
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+if (require.main === module) {
+  startServer().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}

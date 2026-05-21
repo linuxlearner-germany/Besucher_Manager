@@ -33,6 +33,11 @@ type GatesResponse = {
   csrfToken: string;
 };
 
+type GatesErrorResponse = {
+  error: string;
+  message?: string;
+};
+
 function toLocalInputValue(date: Date): string {
   const offset = date.getTimezoneOffset();
   const localDate = new Date(date.getTime() - offset * 60_000);
@@ -76,12 +81,24 @@ function App() {
 
       try {
         const response = await fetch("/api/public/gates");
+        const payload = (await response.json()) as GatesResponse | GatesErrorResponse;
 
         if (!response.ok) {
-          throw new Error("Die Wachen konnten nicht geladen werden.");
+          if ("error" in payload && payload.error === "DATABASE_SCHEMA_MISSING") {
+            throw new Error("Die Wachen konnten nicht geladen werden. Bitte Datenbankschema/Migrationen pruefen.");
+          }
+
+          throw new Error(
+            "message" in payload && payload.message
+              ? `${payload.message} Bitte Datenbankschema/Migrationen pruefen.`
+              : "Die Wachen konnten nicht geladen werden. Bitte Datenbankschema/Migrationen pruefen."
+          );
         }
 
-        const payload = (await response.json()) as GatesResponse;
+        if (!("gates" in payload) || !("csrfToken" in payload)) {
+          throw new Error("Die API-Antwort fuer die Wachen ist unvollstaendig.");
+        }
+
         setGates(payload.gates);
         setCsrfToken(payload.csrfToken);
         setForm((current) => ({
@@ -273,7 +290,7 @@ function App() {
                     disabled={loadingGates || gates.length === 0}
                   >
                     {loadingGates ? <option>Wachen werden geladen...</option> : null}
-                    {!loadingGates && gates.length === 0 ? <option>Keine Wachen konfiguriert</option> : null}
+                    {!loadingGates && !gateError && gates.length === 0 ? <option>Keine aktiven Wachen konfiguriert</option> : null}
                     {gates.map((gate) => (
                       <option key={gate.id} value={gate.id}>
                         {gate.name}
@@ -321,6 +338,9 @@ function App() {
 
             {submitState.kind === "error" ? <div className="feedback error">{submitState.message}</div> : null}
             {gateError ? <div className="feedback error">{gateError}</div> : null}
+            {!loadingGates && !gateError && gates.length === 0 ? (
+              <div className="feedback info">Keine aktiven Wachen konfiguriert.</div>
+            ) : null}
           </form>
         </section>
 
