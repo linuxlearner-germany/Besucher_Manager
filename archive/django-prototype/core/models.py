@@ -30,6 +30,7 @@ class StaffProfile(models.Model):
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.GUARD)
     default_gate = models.ForeignKey(Gate, null=True, blank=True, on_delete=models.SET_NULL, related_name="staff_members")
     can_access_all_gates = models.BooleanField(default=False)
+    force_password_change = models.BooleanField(default=False)
 
     def __str__(self):
         return f"{self.user.get_username()} ({self.get_role_display()})"

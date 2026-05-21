@@ -1,10 +1,21 @@
 {
-  "name": "Besucher_Manager",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "name": "besucher-manager",
+  "version": "0.1.0",
+  "description": "Interne Besucherverwaltung als Node.js/TypeScript-Monorepo",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "npm run build --workspace @besucher-manager/backend && npm run build --workspace @besucher-manager/frontend",
+    "dev:backend": "npm run dev --workspace @besucher-manager/backend",
+    "dev:frontend": "npm run dev --workspace @besucher-manager/frontend",
+    "start": "npm run start --workspace @besucher-manager/backend",
+    "migrate": "npm run migrate --workspace @besucher-manager/backend",
+    "typecheck": "npm run typecheck --workspace @besucher-manager/backend && npm run typecheck --workspace @besucher-manager/frontend"
   },
-  "private": true
+  "private": true,
+  "workspaces": [
+    "apps/backend",
+    "apps/frontend"
+  ],
+  "engines": {
+    "node": ">=22.0.0"
+  }
 }

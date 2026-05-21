@@ -1,110 +1,97 @@
-# Interne Besucherverwaltung
+# Besucher_Manager
 
-Kleines Django-MVP fuer die interne Besucherverwaltung an Pforte und Wache.
+Interne Besucherverwaltung als JavaScript-/TypeScript-Anwendung fuer Mitarbeiter, Wache und Administration.
+
+Der bisherige Django-Stand ist nicht mehr die aktive Zielarchitektur. Er liegt nur noch als fachliche Referenz unter [archive/django-prototype/README.md](/C:/Users/General_Rothenburger/Nextcloud_wiweb/Besucher_Manager/archive/django-prototype/README.md).
+
+## Aktive Zielstruktur
+
+```text
+Besucher_Manager/
+├── apps/
+│   ├── backend/    # Express + TypeScript API
+│   └── frontend/   # React + Vite Oberflaeche
+├── archive/        # archivierter Django-Prototyp
+├── uploads/        # persistente Uploads, z. B. Gelaendeplan
+├── docker-compose.yml
+├── Dockerfile
+├── .env.example
+├── README.md
+└── DEPLOYMENT.md
+```
 
 ## Enthalten im aktuellen Stand
 
-- Django-Projekt mit Login, Admin und Rollenprofil fuer Wache/Admin
-- Docker-Grundgeruest mit direktem Web-Container auf Port `3020`
-- Oeffentliche interne Voranmeldung ohne Login
-- Tagesuebersicht mit Wachen-Scope, Statusfilter und Suche
-- Besuch anlegen, bearbeiten, einchecken, auschecken
-- Druckoptimierte HTML-Ansicht fuer den Besucherschein
-- Admin-Modelle fuer Wachen, Karte, Hinweistexte, Systemeinstellungen und Auditlog
-- Aufbewahrungs-Command fuer Loeschung oder Anonymisierung alter Besuche
-- Erste Tests fuer Voranmeldung, Scope, Statuswechsel und Retention
+- Workspace-basierte Monorepo-Struktur fuer Backend und Frontend
+- Express-API mit Healthcheck, Wachenliste und Voranmeldung ohne Login
+- React/Vite-Oberflaeche fuer die interne Voranmeldung
+- MSSQL-Konfigurationsschicht per Umgebungsvariablen
+- SQL-Migrationsgeruest mit initialem Datenmodell
+- einfacher CSRF- und Rate-Limit-Schutz fuer die oeffentliche interne Voranmeldung
+- Docker-Build fuer einen internen App-Container ohne Reverse Proxy
+- `.env.example` und aktualisierte Betriebsdokumentation
 
-## Projektstruktur
+## Technischer Schnitt
 
-- `visitor_manager/`: Django-Projektkonfiguration
-- `core/`: Stammdaten, Rollenprofil, Auditlog, Einstellungen
-- `visits/`: Besucher- und Besuchslogik, Views, Formulare
-- `templates/`: Oberflaechen und Drucklayout
-- `static/`: Anwendungscss und Druckcss
+- Node.js 22 LTS
+- TypeScript
+- Express
+- React mit Vite
+- externer Microsoft SQL Server
+- Docker Compose
 
-## Dokumentation
+## Lokale Entwicklung
 
-- Deployment: [DEPLOYMENT.md](C:/Users/General_Rothenburger/Nextcloud_wiweb/Besucher_Manager/DEPLOYMENT.md)
+Voraussetzungen:
 
-## GitHub Clone
-
-```bash
-git clone https://github.com/linuxlearner-germany/Besucher_Manager.git
-cd Besucher_Manager
-```
-
-## Start auf `deb-srv-docker`
-
-Der aktuelle Stand ist auf folgenden Zielbetrieb vorbelegt:
-
-- Docker-Host: `deb-srv-docker`
-- Webzugriff: `http://deb-srv-docker:3020/`
-- Datenbank-Host: `MS-SRV-SQL`
-- Datenbank-Engine: `Microsoft SQL Server`
-- Datenbank-Name: `Besuchermngmt`
-- Secure-Cookies: deaktiviert, damit HTTP auf Port `3020` direkt funktioniert
-- Die komplette Laufzeitkonfiguration liegt versioniert in [.env](C:/Users/General_Rothenburger/Nextcloud_wiweb/Besucher_Manager/.env)
-- Auf dem Server ist keine manuelle Python- oder Pip-Installation noetig; alles wird im Docker-Image gebaut
-- Beim Start versucht der Container die MSSQL-Datenbank zu erreichen und `Besuchermngmt` bei Bedarf selbst anzulegen
+- Node.js 22
+- npm 10
+- Docker und Docker Compose fuer Container-Tests
 
 Start:
+
+```bash
+cp .env.example .env
+# fuer lokale Entwicklung die Platzhalter auf localhost anpassen
+npm install
+npm run migrate
+npm run dev:backend
+npm run dev:frontend
+```
+
+Standardports:
+
+- Backend: `http://localhost:3020`
+- Frontend: `http://localhost:5173`
+
+## Docker-Betrieb
 
 ```bash
 docker compose up --build
 ```
 
-Wenn der Start haengt oder fehlschlaegt:
+Der Container stellt die API und die gebaute Frontend-Anwendung ueber denselben Port bereit. Uploads werden in das Volume `uploads_data` geschrieben.
+
+## Datenbank und Migrationen
+
+Die Anwendung erwartet einen externen Microsoft SQL Server. Konfiguration erfolgt ausschliesslich ueber Umgebungsvariablen.
+
+Migration ausfuehren:
 
 ```bash
-docker compose logs -f web
+npm run migrate
 ```
 
-Danach:
+Die initiale SQL-Struktur liegt unter [apps/backend/migrations/001_initial.sql](/C:/Users/General_Rothenburger/Nextcloud_wiweb/Besucher_Manager/apps/backend/migrations/001_initial.sql).
 
-```bash
-docker compose exec web python manage.py createsuperuser
-```
+## Naechste fachliche Schritte
 
-Aufruf:
+1. Login, Session-Handling und Rollenpruefung fuer Wache und Admin implementieren
+2. Wache-Panel mit Tagesuebersicht, Suche und Statusfiltern an MSSQL anbinden
+3. Check-in, Check-out und direkte Besuchsanlage fuer die Pforte implementieren
+4. Druckansicht fuer den Besucherschein mit Karte und Hinweistexten umsetzen
+5. Admin-Bereich fuer Wachen, Texte, Karte und Benutzer ausbauen
 
-- Oeffentliche Voranmeldung: `http://deb-srv-docker:3020/`
-- Login Wache: `http://deb-srv-docker:3020/accounts/login/`
-- Admin: `http://deb-srv-docker:3020/admin/`
+## Hinweis zum Arbeitsstand
 
-## Netzwerk-Security-Proxy spaeter
-
-Im Repository ist absichtlich kein Reverse-Proxy-Container mehr enthalten.
-
-Wenn spaeter vor dem Host ein Netzwerk-Security-Proxy oder eine zentrale Sicherheitskomponente geschaltet wird:
-
-1. die externe URL in `DJANGO_ALLOWED_HOSTS` eintragen
-2. `DJANGO_CSRF_TRUSTED_ORIGINS` auf die echte URL anpassen
-3. bei HTTPS `DJANGO_SECURE_COOKIES=True` setzen
-
-## Aufbewahrungsroutine
-
-Loeschen:
-
-```bash
-docker compose exec web python manage.py purge_old_visits
-```
-
-Anonymisieren:
-
-```bash
-docker compose exec web python manage.py purge_old_visits --anonymize
-```
-
-Die Frist kommt standardmaessig aus `VISITOR_RETENTION_DAYS` oder aus `SystemSetting.retention_days`.
-
-## Offene Punkte fuer den naechsten Schritt
-
-- Benutzer-/Gruppenverwaltung im Admin weiter haerten
-- Besucherschein fuer reales Papierformat und echten Drucker feinlayouten
-- Exportfunktion fuer berechtigte Zwecke ergaenzen
-- PDF-Erzeugung bei Bedarf mit WeasyPrint nachziehen
-- Seed-Daten fuer Wachen und Standardtexte hinterlegen
-
-## Hinweis zum aktuellen Arbeitsstand
-
-In dieser lokalen Umgebung waren weder `python` noch `docker` verfuegbar. Das Repository wurde daher strukturell und logisch aufgebaut, aber nicht hier ausgefuehrt.
+In dieser lokalen Umgebung waren `node`, `npm` und `docker` nicht installiert. Die Umstellung wurde daher dateibasiert vorgenommen und nicht ausgefuehrt.

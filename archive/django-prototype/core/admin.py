@@ -36,8 +36,8 @@ class GateAdmin(AuditedAdminMixin, admin.ModelAdmin):
 
 @admin.register(StaffProfile)
 class StaffProfileAdmin(AuditedAdminMixin, admin.ModelAdmin):
-    list_display = ("user", "role", "default_gate", "can_access_all_gates")
-    list_filter = ("role", "can_access_all_gates", "default_gate")
+    list_display = ("user", "role", "default_gate", "can_access_all_gates", "force_password_change")
+    list_filter = ("role", "can_access_all_gates", "force_password_change", "default_gate")
     search_fields = ("user__username", "user__first_name", "user__last_name")
 
 

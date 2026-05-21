@@ -1,26 +1,25 @@
-FROM python:3.12-slim
-
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
+FROM node:22-bookworm-slim AS build
 
 WORKDIR /app
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl gnupg2 ca-certificates apt-transport-https unixodbc unixodbc-dev gcc g++ libpq5 \
-    && curl https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \
-    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/debian/12/prod bookworm main" > /etc/apt/sources.list.d/microsoft-prod.list \
-    && apt-get update \
-    && ACCEPT_EULA=Y apt-get install -y --no-install-recommends msodbcsql18 \
-    && rm -rf /var/lib/apt/lists/*
+COPY package.json /app/package.json
+COPY apps/backend/package.json /app/apps/backend/package.json
+COPY apps/frontend/package.json /app/apps/frontend/package.json
 
-COPY requirements.txt /app/
-RUN pip install --no-cache-dir -r requirements.txt
+RUN npm install
 
-COPY . /app/
+COPY . /app
+RUN npm run build
 
-RUN mkdir -p /app/staticfiles /app/media
-RUN chmod +x /app/scripts/start.sh
+FROM node:22-bookworm-slim AS runner
 
-EXPOSE 8000
+WORKDIR /app
+ENV NODE_ENV=production
 
-CMD ["/app/scripts/start.sh"]
+COPY --from=build /app /app
+RUN npm prune --omit=dev
+RUN mkdir -p /app/uploads
+
+EXPOSE 3020
+
+CMD ["npm", "run", "start", "--workspace", "@besucher-manager/backend"]
