@@ -45,11 +45,18 @@ Der aktuelle Stand ist auf folgenden Zielbetrieb vorbelegt:
 - Secure-Cookies: deaktiviert, damit HTTP auf Port `3020` direkt funktioniert
 - Die komplette Laufzeitkonfiguration liegt versioniert in [.env](C:/Users/General_Rothenburger/Nextcloud_wiweb/Besucher_Manager/.env)
 - Auf dem Server ist keine manuelle Python- oder Pip-Installation noetig; alles wird im Docker-Image gebaut
+- Beim Start versucht der Container die MSSQL-Datenbank zu erreichen und `Besuchermngmt` bei Bedarf selbst anzulegen
 
 Start:
 
 ```bash
 docker compose up --build
+```
+
+Wenn der Start haengt oder fehlschlaegt:
+
+```bash
+docker compose logs -f web
 ```
 
 Danach:

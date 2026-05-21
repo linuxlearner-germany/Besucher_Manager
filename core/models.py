@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import models
+import json
 
 
 User = get_user_model()
@@ -88,7 +89,7 @@ class AuditLog(models.Model):
     object_id = models.CharField(max_length=64, blank=True)
     timestamp = models.DateTimeField(auto_now_add=True)
     ip_address = models.GenericIPAddressField(null=True, blank=True)
-    details = models.JSONField(default=dict, blank=True)
+    details = models.TextField(default="{}", blank=True)
 
     class Meta:
         ordering = ["-timestamp"]
@@ -96,3 +97,9 @@ class AuditLog(models.Model):
     def __str__(self):
         return f"{self.timestamp:%Y-%m-%d %H:%M} {self.action}"
 
+    @property
+    def details_as_dict(self):
+        try:
+            return json.loads(self.details or "{}")
+        except json.JSONDecodeError:
+            return {"raw": self.details}

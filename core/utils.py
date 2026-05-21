@@ -1,3 +1,5 @@
+import json
+
 from core.models import AuditLog, StaffProfile, SystemSetting
 
 
@@ -15,7 +17,7 @@ def log_audit_event(*, action, object_type, object_id="", user=None, request=Non
         object_type=object_type,
         object_id=str(object_id or ""),
         ip_address=get_client_ip(request) if request else None,
-        details=details or {},
+        details=json.dumps(details or {}, ensure_ascii=True, sort_keys=True),
     )
 
 
@@ -33,4 +35,3 @@ def profile_for(user):
         return user.staff_profile
     except StaffProfile.DoesNotExist:
         return None
-

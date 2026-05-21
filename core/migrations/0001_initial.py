@@ -20,7 +20,7 @@ class Migration(migrations.Migration):
                 ("object_id", models.CharField(blank=True, max_length=64)),
                 ("timestamp", models.DateTimeField(auto_now_add=True)),
                 ("ip_address", models.GenericIPAddressField(blank=True, null=True)),
-                ("details", models.JSONField(blank=True, default=dict)),
+                ("details", models.TextField(blank=True, default="{}")),
                 ("user", models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, to=settings.AUTH_USER_MODEL)),
             ],
             options={"ordering": ["-timestamp"]},
@@ -83,4 +83,3 @@ class Migration(migrations.Migration):
             ],
         ),
     ]
-

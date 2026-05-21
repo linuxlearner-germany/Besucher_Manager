@@ -73,6 +73,8 @@ DATABASE_HOST=MS-SRV-SQL
 DATABASE_PORT=1433
 DATABASE_OPTIONS=TrustServerCertificate=yes
 MSSQL_ODBC_DRIVER=ODBC Driver 18 for SQL Server
+DATABASE_CONNECT_RETRIES=30
+DATABASE_CONNECT_SLEEP_SECONDS=5
 
 VISITOR_RETENTION_DAYS=90
 PUBLIC_FORM_RATE_LIMIT=10
@@ -97,6 +99,14 @@ docker compose up -d --build
 Danach ist die Anwendung direkt erreichbar unter:
 
 - `http://deb-srv-docker:3020/`
+
+Der Container versucht beim Start:
+
+1. SQL Server zu erreichen
+2. die Datenbank `Besuchermngmt` bei Bedarf anzulegen
+3. Migrationen auszufuehren
+4. statische Dateien zu sammeln
+5. Gunicorn zu starten
 
 ## 6. Netzwerk-Security-Proxy spaeter
 
