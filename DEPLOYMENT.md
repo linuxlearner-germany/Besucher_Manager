@@ -21,13 +21,14 @@ Auf dem Zielserver:
 - Git
 
 Fuer Build und Laufzeit sind lokal keine Python-Komponenten noetig.
+Auf `deb-srv-docker` sind auch kein lokales `node`, kein lokales `npm` und kein manuelles `npm install` fuer die Anwendung erforderlich.
 
 ## 3. Verzeichnis vorbereiten
 
 ```bash
-sudo mkdir -p /opt/visitor-manager
-sudo chown -R $USER:$USER /opt/visitor-manager
-cd /opt/visitor-manager
+sudo mkdir -p /opt/Besucher_Manager
+sudo chown -R $USER:$USER /opt/Besucher_Manager
+cd /opt/Besucher_Manager
 git clone https://github.com/linuxlearner-germany/Besucher_Manager.git .
 cp .env.example .env
 ```
@@ -61,13 +62,15 @@ PUBLIC_FORM_RATE_WINDOW_SECONDS=900
 Hinweise:
 
 - Zugangsdaten bleiben ausschliesslich in `.env`.
+- Das echte MSSQL-Passwort wird nur in der produktiven oder Test-`.env` auf `deb-srv-docker` gepflegt.
 - Fuer interne HTTP-Tests kann `MSSQL_TRUST_SERVER_CERTIFICATE=true` erforderlich sein.
 - `PUBLIC_BASE_URL` muss zur spaeteren internen URL passen.
 
 ## 5. Build und Start
 
 ```bash
-docker compose up -d --build
+docker compose build --no-cache
+docker compose up -d
 ```
 
 Pruefen:
@@ -79,6 +82,11 @@ docker compose logs -f app
 
 Die Anwendung ist danach unter `http://<host>:3020/` erreichbar.
 
+Fuer die Testumgebung konkret:
+
+- Webzugriff: `http://deb-srv-docker:3020/`
+- SQL-Ziel: `MS-SRV-SQL:1433`
+
 ## 6. Migrationen
 
 Die SQL-Migrationen liegen im Container unter `apps/backend/migrations`.
@@ -88,6 +96,8 @@ Vor dem ersten produktiven Einsatz:
 ```bash
 docker compose exec app npm run migrate --workspace @besucher-manager/backend
 ```
+
+Es wird dabei kein lokales `npm` auf dem Host verwendet. Der Befehl laeuft im Container.
 
 ## 7. Netzwerkfreigaben
 
@@ -133,7 +143,18 @@ Nach jedem Deployment:
 4. Tagesuebersicht pruefen
 5. Druckansicht pruefen
 
-## 11. Offene Betriebsarbeiten
+## 11. Update-Ablauf
+
+```bash
+cd /opt/Besucher_Manager
+git pull
+docker compose build --no-cache
+docker compose up -d
+docker compose exec app npm run migrate --workspace @besucher-manager/backend
+docker compose logs -f app
+```
+
+## 12. Offene Betriebsarbeiten
 
 - Restore-Test fuer SQL-Backups
 - Trivy- oder vergleichbaren Dependency-Scan in die Pipeline aufnehmen

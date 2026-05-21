@@ -66,8 +66,27 @@ Standardports:
 
 ## Docker-Betrieb
 
+Ziel fuer die Testumgebung:
+
+- Docker-Server: `deb-srv-docker`
+- SQL-Server: `MS-SRV-SQL`
+- Datenbank: `Besuchermngmt`
+- Datenbankbenutzer: `dockerBesuchermngmt`
+
+Wichtig:
+
+- auf `deb-srv-docker` ist kein lokales `node` oder `npm` erforderlich
+- es wird auf dem Server kein manuelles `npm install` ausgefuehrt
+- alle Abhaengigkeiten werden nur im Docker-Build installiert
+- die echte `.env` bleibt lokal auf dem Server und wird nicht committed
+
+Start auf dem Docker-Server:
+
 ```bash
-docker compose up --build
+cd /opt/Besucher_Manager
+docker compose build --no-cache
+docker compose up -d
+docker compose logs -f app
 ```
 
 Der Container stellt die API und die gebaute Frontend-Anwendung ueber denselben Port bereit. Uploads werden in das Volume `uploads_data` geschrieben.
@@ -76,10 +95,10 @@ Der Container stellt die API und die gebaute Frontend-Anwendung ueber denselben 
 
 Die Anwendung erwartet einen externen Microsoft SQL Server. Konfiguration erfolgt ausschliesslich ueber Umgebungsvariablen.
 
-Migration ausfuehren:
+Migration ausfuehren im Container:
 
 ```bash
-npm run migrate
+docker compose exec app npm run migrate --workspace @besucher-manager/backend
 ```
 
 Die initiale SQL-Struktur liegt unter [apps/backend/migrations/001_initial.sql](/C:/Users/General_Rothenburger/Nextcloud_wiweb/Besucher_Manager/apps/backend/migrations/001_initial.sql).
