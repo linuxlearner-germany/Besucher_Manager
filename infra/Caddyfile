@@ -1,0 +1,16 @@
+:80 {
+    encode gzip
+
+    handle /static/* {
+        root * /srv
+        file_server
+    }
+
+    handle /media/* {
+        root * /srv
+        file_server
+    }
+
+    reverse_proxy web:8000
+}
+

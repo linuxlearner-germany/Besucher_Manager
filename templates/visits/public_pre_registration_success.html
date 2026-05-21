@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Voranmeldung gespeichert{% endblock %}
+{% block content %}
+<section class="shell narrow">
+    <div class="page-head">
+        <h1>Voranmeldung gespeichert</h1>
+        <p>Der Eintrag wurde erfolgreich an die Wache uebergeben.</p>
+    </div>
+    <div class="summary-panel">
+        <div class="summary-row">
+            <span>Referenz</span>
+            <strong>{{ reference_code|default:"wird bei der Wache angezeigt" }}</strong>
+        </div>
+        <p class="subtle">Es gibt keinen Bearbeitungslink im MVP. Aenderungen laufen ueber die Wache.</p>
+    </div>
+</section>
+{% endblock %}
+

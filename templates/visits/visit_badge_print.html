@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="utf-8">
+    <title>Besucherschein {{ visit.reference_code }}</title>
+    <link rel="stylesheet" href="/static/print.css">
+</head>
+<body>
+    <article class="badge-page">
+        <header class="badge-header">
+            <div>
+                <div class="eyebrow">BESUCHER</div>
+                <h1>{{ visit.visitor.first_name }} {{ visit.visitor.last_name }}</h1>
+                <div class="company">{{ visit.visitor.company }}</div>
+            </div>
+            <div class="reference">
+                <span>Besuchsnummer</span>
+                <strong>{{ visit.reference_code }}</strong>
+            </div>
+        </header>
+
+        <section class="badge-main">
+            <div class="column">
+                <dl class="facts">
+                    <div><dt>Ansprechpartner</dt><dd>{{ visit.host_name }}</dd></div>
+                    <div><dt>Abteilung / Bereich</dt><dd>{{ visit.host_department }}</dd></div>
+                    <div><dt>Wache / Eingang</dt><dd>{{ visit.gate.name }}</dd></div>
+                    <div><dt>Besuchszweck</dt><dd>{{ visit.purpose }}</dd></div>
+                    <div><dt>Gueltig bis</dt><dd>{{ visit.valid_until|date:"d.m.Y H:i" }}</dd></div>
+                </dl>
+
+                <section class="notice-block">
+                    <h2>Sicherheitshinweise</h2>
+                    <p>{{ safety_text|default:"Bitte beachten Sie die Anweisungen des Personals und bleiben Sie nur in freigegebenen Bereichen." }}</p>
+                </section>
+
+                <section class="notice-block">
+                    <h2>Fotografierverbot</h2>
+                    <p>{{ photography_text }}</p>
+                </section>
+
+                <section class="notice-block">
+                    <h2>Besucherregeln</h2>
+                    <p>{{ rules_text }}</p>
+                    <p>Vor Ausfahrt / Verlassen des Gelaendes durch den Ansprechpartner zu unterschreiben.</p>
+                </section>
+            </div>
+
+            <div class="column">
+                <section class="map-block">
+                    <h2>Gelaendeplan / Karte</h2>
+                    {% if site_map %}
+                        <div class="map-frame">
+                            <img src="{{ site_map.file.url }}" alt="Aktiver Gelaendeplan">
+                        </div>
+                    {% else %}
+                        <div class="placeholder">Keine Karte hinterlegt.</div>
+                    {% endif %}
+                </section>
+
+                <section class="signature-block">
+                    <h2>Unterschrift Ansprechpartner</h2>
+                    <div class="signature-line"></div>
+                </section>
+
+                {% if footer_text %}
+                    <section class="footer-block">
+                        {{ footer_text }}
+                    </section>
+                {% endif %}
+            </div>
+        </section>
+    </article>
+</body>
+</html>
+
