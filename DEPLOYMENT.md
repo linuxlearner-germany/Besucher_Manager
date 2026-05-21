@@ -22,6 +22,7 @@ Auf dem Zielserver:
 
 Fuer Build und Laufzeit sind lokal keine Python-Komponenten noetig.
 Auf `deb-srv-docker` sind auch kein lokales `node`, kein lokales `npm` und kein manuelles `npm install` fuer die Anwendung erforderlich.
+Alle Abhaengigkeiten werden waehrend `docker compose build --no-cache` im Image installiert.
 
 ## 3. Verzeichnis vorbereiten
 

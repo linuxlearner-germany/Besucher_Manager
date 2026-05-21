@@ -79,6 +79,7 @@ Wichtig:
 - es wird auf dem Server kein manuelles `npm install` ausgefuehrt
 - alle Abhaengigkeiten werden nur im Docker-Build installiert
 - die echte `.env` bleibt lokal auf dem Server und wird nicht committed
+- Deployment erfolgt ueber `docker compose build --no-cache` und `docker compose up -d`
 
 Start auf dem Docker-Server:
 

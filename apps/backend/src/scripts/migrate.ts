@@ -4,6 +4,9 @@ import sql from "mssql";
 import { getSqlConfig } from "../lib/db";
 
 const migrationsDir = path.resolve(__dirname, "../../migrations");
+type AppliedMigrationRow = {
+  filename: string;
+};
 
 async function ensureMigrationTable(pool: sql.ConnectionPool) {
   await pool.request().query(`
@@ -19,7 +22,7 @@ async function ensureMigrationTable(pool: sql.ConnectionPool) {
 }
 
 async function listApplied(pool: sql.ConnectionPool): Promise<Set<string>> {
-  const result = await pool.request().query<{ filename: string }>("SELECT filename FROM dbo.schema_migrations");
+  const result = await pool.request().query<AppliedMigrationRow>("SELECT filename FROM dbo.schema_migrations");
   return new Set(result.recordset.map((row) => row.filename));
 }
 
