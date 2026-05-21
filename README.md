@@ -44,6 +44,7 @@ Der aktuelle Stand ist auf folgenden Zielbetrieb vorbelegt:
 - Datenbank-Name: `Besuchermngmt`
 - Secure-Cookies: deaktiviert, damit HTTP auf Port `3020` direkt funktioniert
 - Die komplette Laufzeitkonfiguration liegt versioniert in [.env](C:/Users/General_Rothenburger/Nextcloud_wiweb/Besucher_Manager/.env)
+- Auf dem Server ist keine manuelle Python- oder Pip-Installation noetig; alles wird im Docker-Image gebaut
 
 Start:
 

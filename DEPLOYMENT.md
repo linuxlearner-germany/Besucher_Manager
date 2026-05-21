@@ -20,6 +20,12 @@ Auf dem Zielserver sollten installiert sein:
 - Docker Compose Plugin
 - Git
 
+Nicht noetig auf dem Server:
+
+- kein lokales Python
+- kein lokales `pip`
+- keine manuelle Installation aus `requirements.txt`
+
 Zielannahmen in diesem Repository:
 
 - Docker-Host: `deb-srv-docker`
