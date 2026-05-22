@@ -855,6 +855,7 @@ exports.apiRouter.get("/api/sibe/visits", async (request, response) => {
         const conditions = ["1 = 1"];
         const search = typeof request.query.search === "string" ? request.query.search.trim() : "";
         const status = typeof request.query.status === "string" ? request.query.status.trim() : "";
+        const signatureStatus = typeof request.query.signatureStatus === "string" ? request.query.signatureStatus.trim() : "";
         const gateId = typeof request.query.gateId === "string" ? request.query.gateId.trim() : "";
         const from = typeof request.query.dateFrom === "string" ? request.query.dateFrom.trim() : "";
         const to = typeof request.query.dateTo === "string" ? request.query.dateTo.trim() : "";
@@ -873,6 +874,10 @@ exports.apiRouter.get("/api/sibe/visits", async (request, response) => {
         if (status && status !== "all") {
             requestBuilder.input("status", mssql_1.default.NVarChar(32), status);
             conditions.push("vt.status = @status");
+        }
+        if (signatureStatus && signatureStatus !== "all") {
+            requestBuilder.input("signatureStatus", mssql_1.default.NVarChar(40), signatureStatus);
+            conditions.push(`ISNULL(vt.host_signature_status, '${visitWorkflow_1.HOST_SIGNATURE_STATUS.PENDING}') = @signatureStatus`);
         }
         if (gateId) {
             requestBuilder.input("gateId", mssql_1.default.UniqueIdentifier, gateId);
@@ -1773,7 +1778,39 @@ exports.apiRouter.get("/api/admin/audit-logs", async (request, response) => {
         return;
     try {
         const pool = await (0, db_1.getPool)();
-        const result = await pool.request().query(`
+        const requestBuilder = pool.request();
+        const conditions = ["1 = 1"];
+        const search = typeof request.query.search === "string" ? request.query.search.trim() : "";
+        const action = typeof request.query.action === "string" ? request.query.action.trim() : "";
+        const auditUser = typeof request.query.user === "string" ? request.query.user.trim() : "";
+        const ip = typeof request.query.ip === "string" ? request.query.ip.trim() : "";
+        const from = typeof request.query.from === "string" ? request.query.from.trim() : "";
+        const to = typeof request.query.to === "string" ? request.query.to.trim() : "";
+        if (search) {
+            requestBuilder.input("search", mssql_1.default.NVarChar(255), `%${search}%`);
+            conditions.push("([user] LIKE @search OR action LIKE @search OR object_type LIKE @search OR object_id LIKE @search)");
+        }
+        if (action) {
+            requestBuilder.input("action", mssql_1.default.NVarChar(120), action);
+            conditions.push("action = @action");
+        }
+        if (auditUser) {
+            requestBuilder.input("auditUser", mssql_1.default.NVarChar(255), `%${auditUser}%`);
+            conditions.push("[user] LIKE @auditUser");
+        }
+        if (ip) {
+            requestBuilder.input("ip", mssql_1.default.NVarChar(64), `%${ip}%`);
+            conditions.push("ISNULL(ip_address, '') LIKE @ip");
+        }
+        if (from) {
+            requestBuilder.input("from", mssql_1.default.DateTime2, new Date(from));
+            conditions.push("[timestamp] >= @from");
+        }
+        if (to) {
+            requestBuilder.input("to", mssql_1.default.DateTime2, new Date(to));
+            conditions.push("[timestamp] <= @to");
+        }
+        const result = await requestBuilder.query(`
       SELECT TOP 200
         id,
         [user],
@@ -1781,8 +1818,11 @@ exports.apiRouter.get("/api/admin/audit-logs", async (request, response) => {
         object_type AS objectType,
         object_id AS objectId,
         ip_address AS ipAddress,
+        user_agent AS userAgent,
+        metadata_json AS metadataJson,
         CONVERT(NVARCHAR(30), [timestamp], 127) AS [timestamp]
       FROM dbo.audit_logs
+      WHERE ${conditions.join(" AND ")}
       ORDER BY [timestamp] DESC
     `);
         response.json({ logs: result.recordset });

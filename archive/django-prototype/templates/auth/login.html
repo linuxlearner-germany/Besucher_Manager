@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Login{% endblock %}
+{% block content %}
+<section class="shell narrow">
+    <div class="page-head">
+        <h1>Login Wache</h1>
+        <p>Nur fuer berechtigte Benutzer.</p>
+    </div>
+    <form method="post" class="form-panel">
+        {% csrf_token %}
+        {{ form.non_field_errors }}
+        <div class="field">
+            <label for="{{ form.username.id_for_label }}">Benutzername</label>
+            {{ form.username }}
+        </div>
+        <div class="field">
+            <label for="{{ form.password.id_for_label }}">Passwort</label>
+            {{ form.password }}
+        </div>
+        <button type="submit">Anmelden</button>
+    </form>
+</section>
+{% endblock %}
+
