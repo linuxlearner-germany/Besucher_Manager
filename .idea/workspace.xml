@@ -1,0 +1,247 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="70e941c2-64eb-4ee6-9e29-d6548f720a89" name="Changes" comment="jj">
+      <change beforePath="$PROJECT_DIR$/.env.example" beforeDir="false" afterPath="$PROJECT_DIR$/.env.example" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/.gitignore" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/Besucher_Manager.iml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/modules.xml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/vcs.xml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/DEPLOYMENT.md" beforeDir="false" afterPath="$PROJECT_DIR$/DEPLOYMENT.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/backend/migrations/001_initial.sql" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/backend/migrations/002_user_gate_and_visit_checkout.sql" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/backend/package.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/backend/src/app.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/backend/src/config/env.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/backend/src/lib/auditLog.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/backend/src/lib/authSession.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/backend/src/lib/db.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/backend/src/lib/guardVisits.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/backend/src/lib/publicPreRegistration.test.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/backend/src/lib/publicPreRegistrationSchema.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/backend/src/lib/publicPreRegistrations.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/backend/src/lib/rateLimit.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/backend/src/lib/users.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/backend/src/lib/visitWorkflow.test.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/backend/src/lib/visitWorkflow.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/backend/src/routes/api.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/backend/src/routes/health.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/backend/src/scripts/createAdmin.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/backend/src/scripts/migrate.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/backend/src/scripts/start.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/backend/src/server.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/backend/src/types/express.d.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/backend/tests/.gitkeep" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/backend/tsconfig.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/frontend/index.html" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/frontend/package.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/frontend/src/App.tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/frontend/src/main.tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/frontend/src/styles.css" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/frontend/tests/.gitkeep" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/frontend/tsconfig.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/frontend/tsconfig.node.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/frontend/vite.config.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/README.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/core/__init__.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/core/admin.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/core/apps.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/core/context_processors.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/core/management/__init__.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/core/management/commands/__init__.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/core/management/commands/bootstrap_admin.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/core/management/commands/purge_old_visits.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/core/middleware.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/core/migrations/0001_initial.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/core/migrations/0002_staffprofile_force_password_change.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/core/migrations/__init__.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/core/models.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/core/signals.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/core/utils.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/core/views.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/manage.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/requirements.txt" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/scripts/bootstrap_mssql.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/scripts/start.sh" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/static/app.css" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/static/print.css" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/templates/auth/login.html" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/templates/auth/password_change.html" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/templates/auth/password_change_done.html" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/templates/base.html" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/templates/visits/dashboard.html" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/templates/visits/public_pre_registration.html" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/templates/visits/public_pre_registration_success.html" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/templates/visits/visit_badge_print.html" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/templates/visits/visit_detail.html" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/templates/visits/visit_form.html" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/visitor_manager/__init__.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/visitor_manager/asgi.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/visitor_manager/settings.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/visitor_manager/urls.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/visitor_manager/wsgi.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/visits/__init__.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/visits/admin.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/visits/apps.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/visits/forms.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/visits/migrations/0001_initial.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/visits/migrations/__init__.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/visits/models.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/visits/services.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/visits/tests.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/visits/urls.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/archive/django-prototype/visits/views.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/docker-compose.yml" beforeDir="false" afterPath="$PROJECT_DIR$/docker-compose.yml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/uploads/.gitkeep" beforeDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="EmbeddingIndexingInfo">
+    <option name="cachedIndexableFilesCount" value="62" />
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="McpProjectServerCommands">
+    <commands />
+    <urls />
+  </component>
+  <component name="NextEditCompletionFeaturesState">
+    <decayedCancelled>
+      <entry key="MS100" value="1.0663579150348443" />
+      <entry key="MS500" value="2.9767815129083255" />
+      <entry key="S2" value="9.04433842099873" />
+      <entry key="S5" value="14.541936094452524" />
+      <entry key="S10" value="17.69711689083678" />
+      <entry key="S30" value="20.411237804423358" />
+      <entry key="S60" value="21.18431557273577" />
+      <entry key="M2" value="21.586780897182162" />
+      <entry key="M5" value="22.304045292044297" />
+      <entry key="M10" value="33.16601127563513" />
+      <entry key="M15" value="60.81129365142729" />
+      <entry key="M30" value="181.15896441531638" />
+      <entry key="H1" value="368.43023151291044" />
+      <entry key="H2" value="542.2443448515425" />
+      <entry key="H4" value="662.2241868509152" />
+      <entry key="D1" value="784.6612706300265" />
+      <entry key="W1" value="808.0317866390606" />
+    </decayedCancelled>
+    <decayedSelected>
+      <entry key="MS100" value="0.0" />
+      <entry key="MS500" value="0.0" />
+      <entry key="S2" value="0.0" />
+      <entry key="S5" value="5.6849476826232944E-201" />
+      <entry key="S10" value="7.539859204669068E-101" />
+      <entry key="S30" value="4.2246209208423525E-34" />
+      <entry key="S60" value="2.0553882652293067E-17" />
+      <entry key="M2" value="4.533639007716987E-9" />
+      <entry key="M5" value="4.598103837098664E-4" />
+      <entry key="M10" value="0.021443189681338647" />
+      <entry key="M15" value="0.07718381808172733" />
+      <entry key="M30" value="0.277819758263749" />
+      <entry key="H1" value="0.5270861013759972" />
+      <entry key="H2" value="0.7260069568371879" />
+      <entry key="H4" value="0.8520604185368452" />
+      <entry key="D1" value="0.9736698717689859" />
+      <entry key="W1" value="0.9961954025360558" />
+    </decayedSelected>
+    <decayedShown>
+      <entry key="MS100" value="1.0084681739346568" />
+      <entry key="MS500" value="2.942699453607597" />
+      <entry key="S2" value="9.01978043843325" />
+      <entry key="S5" value="14.526460788811837" />
+      <entry key="S10" value="17.68775713798934" />
+      <entry key="S30" value="20.407652178964167" />
+      <entry key="S60" value="21.182456379330024" />
+      <entry key="M2" value="21.58583401796671" />
+      <entry key="M5" value="22.30410804264207" />
+      <entry key="M10" value="33.18706273994218" />
+      <entry key="M15" value="60.88787767160993" />
+      <entry key="M30" value="181.43577415100165" />
+      <entry key="H1" value="368.95628304793706" />
+      <entry key="H2" value="542.9695947418119" />
+      <entry key="H4" value="663.0757870028365" />
+      <entry key="D1" value="785.6348499950375" />
+      <entry key="W1" value="809.0279687373389" />
+    </decayedShown>
+  </component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 5,
+  &quot;fromUser&quot;: false
+}</component>
+  <component name="ProjectId" id="3E2HkwpxZXlRcIN2hIo5GJkfuD9" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.MCP Project settings loaded&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
+    &quot;codeWithMe.voiceChat.enabledByDefault&quot;: &quot;false&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
+    &quot;javascript.preferred.runtime.type.id&quot;: &quot;node&quot;,
+    &quot;last_opened_file_path&quot;: &quot;C:/Users/General_Rothenburger/Nextcloud_wiweb/Besucher_Manager&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_interpreter_path&quot;: &quot;C:/Users/General_Rothenburger/AppData/Roaming/JetBrains/WebStorm2026.1/node/versions/24.16.0/node&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;project.propVCSSupport.DirectoryMappings&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  },
+  &quot;keyToStringList&quot;: {
+    &quot;DatabaseDriversLRU&quot;: [
+      &quot;sqlserver&quot;
+    ]
+  }
+}</component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-js-predefined-d6986cc7102b-31caf2ab9e3c-JavaScript-WS-261.24374.125" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="70e941c2-64eb-4ee6-9e29-d6548f720a89" name="Changes" comment="" />
+      <created>1779369890410</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1779369890410</updated>
+      <workItem from="1779369891457" duration="1622000" />
+      <workItem from="1779374276615" duration="1419000" />
+      <workItem from="1779375755502" duration="3895000" />
+      <workItem from="1779389516325" duration="12587000" />
+    </task>
+    <task id="LOCAL-00001" summary="jj">
+      <option name="closed" value="true" />
+      <created>1779375587997</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1779375587997</updated>
+    </task>
+    <option name="localTasksCounter" value="2" />
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="jj" />
+    <option name="LAST_COMMIT_MESSAGE" value="jj" />
+  </component>
+</project>
