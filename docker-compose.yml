@@ -4,6 +4,8 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      UPLOAD_DIR: /app/uploads
     ports:
       - "${APP_PORT:-3020}:${APP_PORT:-3020}"
     volumes:

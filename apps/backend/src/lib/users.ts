@@ -120,3 +120,67 @@ export async function createOrUpdateAdmin(input: CreateAdminInput): Promise<{ cr
     userId: inserted.recordset[0].id
   };
 }
+
+export async function createOrUpdateUser(input: {
+  username: string;
+  password: string;
+  role: AuthenticatedUser["role"];
+  gateId?: string | null;
+}): Promise<{ created: boolean; userId: string }> {
+  const pool = await getPool();
+  const passwordHash = await hashPassword(input.password);
+  const existing = await findUserForLogin(input.username);
+
+  if (existing) {
+    await pool.request()
+      .input("id", sql.UniqueIdentifier, existing.id)
+      .input("passwordHash", sql.NVarChar(255), passwordHash)
+      .input("role", sql.NVarChar(32), input.role)
+      .input("gateId", sql.UniqueIdentifier, input.role === "guard" ? (input.gateId ?? null) : null)
+      .query(`
+        UPDATE dbo.users
+        SET
+          password_hash = @passwordHash,
+          role = @role,
+          gate_id = @gateId,
+          is_active = 1,
+          updated_at = SYSUTCDATETIME()
+        WHERE id = @id
+      `);
+
+    return {
+      created: false,
+      userId: existing.id
+    };
+  }
+
+  const inserted = await pool.request()
+    .input("username", sql.NVarChar(120), input.username)
+    .input("passwordHash", sql.NVarChar(255), passwordHash)
+    .input("role", sql.NVarChar(32), input.role)
+    .input("gateId", sql.UniqueIdentifier, input.role === "guard" ? (input.gateId ?? null) : null)
+    .query<{ id: string }>(`
+      INSERT INTO dbo.users (
+        username,
+        password_hash,
+        display_name,
+        role,
+        gate_id,
+        is_active
+      )
+      OUTPUT inserted.id
+      VALUES (
+        @username,
+        @passwordHash,
+        @username,
+        @role,
+        @gateId,
+        1
+      )
+    `);
+
+  return {
+    created: true,
+    userId: inserted.recordset[0].id
+  };
+}

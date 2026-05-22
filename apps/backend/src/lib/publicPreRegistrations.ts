@@ -13,6 +13,7 @@ export type GateSummary = {
 
 export type CreatePreRegistrationInput = PublicPreRegistrationInput & {
   submittedIpAddress?: string | null;
+  userAgent?: string | null;
 };
 
 export type CreatedPreRegistration = {
@@ -54,7 +55,11 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
   try {
     const gateCheck = await new sql.Request(transaction)
       .input("gateId", sql.UniqueIdentifier, input.gateId)
-      .query<{ id: string }>("SELECT id FROM dbo.gates WHERE id = @gateId AND is_active = 1");
+      .query<{ id: string }>(`
+      SELECT id
+      FROM dbo.gates
+      WHERE id = @gateId AND is_active = 1
+    `);
 
     if (gateCheck.recordset.length === 0) {
       throw new Error("gate_not_found");
@@ -64,6 +69,7 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
       .input("firstName", sql.NVarChar(120), input.firstName.trim())
       .input("lastName", sql.NVarChar(120), input.lastName.trim())
       .input("company", sql.NVarChar(255), input.company.trim())
+      .input("birthDate", sql.Date, cleanOptional(input.birthDate))
       .input("phone", sql.NVarChar(80), cleanOptional(input.phone))
       .input("email", sql.NVarChar(255), cleanOptional(input.email))
       .query<{ id: string }>(`
@@ -71,6 +77,7 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
           first_name,
           last_name,
           company,
+          birth_date,
           phone_optional,
           email_optional
         )
@@ -79,6 +86,7 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
           @firstName,
           @lastName,
           @company,
+          @birthDate,
           @phone,
           @email
         )
@@ -94,6 +102,8 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
       .input("visitorId", sql.UniqueIdentifier, visitorId)
       .input("gateId", sql.UniqueIdentifier, input.gateId)
       .input("hostName", sql.NVarChar(255), input.hostName.trim())
+      .input("hostEmail", sql.NVarChar(255), cleanOptional(input.hostEmail))
+      .input("hostPhone", sql.NVarChar(80), cleanOptional(input.hostPhone))
       .input("hostDepartment", sql.NVarChar(255), input.hostDepartment.trim())
       .input("purpose", sql.NVarChar(500), input.purpose.trim())
       .input("validFrom", sql.DateTime2, new Date(input.validFrom))
@@ -106,6 +116,8 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
           visitor_id,
           gate_id,
           host_name,
+          host_email,
+          host_phone,
           host_department,
           purpose,
           valid_from,
@@ -121,6 +133,8 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
           @visitorId,
           @gateId,
           @hostName,
+          @hostEmail,
+          @hostPhone,
           @hostDepartment,
           @purpose,
           @validFrom,
@@ -145,7 +159,12 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
         action: "PUBLIC_PRE_REGISTRATION_CREATED",
         objectType: "visit",
         objectId: visit.id,
-        ipAddress: cleanOptional(input.submittedIpAddress ?? undefined)
+        ipAddress: cleanOptional(input.submittedIpAddress ?? undefined),
+        userAgent: cleanOptional(input.userAgent ?? undefined),
+        metadata: {
+          source: "public_pre_registration",
+          created_via_public_form: true
+        }
       },
       transaction
     );

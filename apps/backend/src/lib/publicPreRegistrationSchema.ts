@@ -6,11 +6,14 @@ export const publicPreRegistrationSchema = z
     lastName: z.string().trim().min(1, "Nachname ist erforderlich."),
     company: z.string().trim().min(1, "Firma / Organisation ist erforderlich."),
     hostName: z.string().trim().min(1, "Ansprechpartner ist erforderlich."),
+    hostEmail: z.string().trim().email("Ungueltige Ansprechpartner-E-Mail.").optional().or(z.literal("")),
+    hostPhone: z.string().trim().optional(),
     hostDepartment: z.string().trim().min(1, "Abteilung / Bereich ist erforderlich."),
     purpose: z.string().trim().min(1, "Besuchszweck ist erforderlich."),
     gateId: z.string().uuid("Ungueltige Wache."),
-    validFrom: z.string().datetime(),
-    validUntil: z.string().datetime(),
+    validFrom: z.string().trim().min(1, "Gueltig von ist erforderlich."),
+    validUntil: z.string().trim().min(1, "Gueltig bis ist erforderlich."),
+    birthDate: z.string().trim().optional().or(z.literal("")),
     phone: z.string().trim().optional(),
     email: z.string().trim().email("Ungueltige E-Mail-Adresse.").optional().or(z.literal("")),
     licensePlate: z.string().trim().optional(),
@@ -42,6 +45,25 @@ export const publicPreRegistrationSchema = z
         path: ["validUntil"],
         message: "Gueltig bis muss nach Gueltig von liegen."
       });
+    }
+
+    if (value.birthDate) {
+      const birthDate = new Date(value.birthDate);
+      const now = new Date();
+
+      if (Number.isNaN(birthDate.getTime())) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["birthDate"],
+          message: "Ungueltiges Geburtsdatum."
+        });
+      } else if (birthDate > now) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["birthDate"],
+          message: "Geburtsdatum darf nicht in der Zukunft liegen."
+        });
+      }
     }
   });
 

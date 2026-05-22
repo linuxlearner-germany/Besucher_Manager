@@ -2,6 +2,7 @@ import fs from "node:fs";
 import { createApp } from "../app";
 import { env } from "../config/env";
 import { closePool, getPool } from "../lib/db";
+import { createOrUpdateAdmin } from "../lib/users";
 import { runMigrations } from "./migrate";
 
 async function verifyDatabaseConnection() {
@@ -21,6 +22,22 @@ async function main() {
       ? `Applied migrations: ${appliedMigrations.join(", ")}`
       : "No pending migrations."
   );
+
+  const adminUsername = env.ADMIN_USERNAME || env.INITIAL_ADMIN_USER;
+  const adminPassword = env.ADMIN_PASSWORD || env.INITIAL_ADMIN_PASSWORD;
+
+  if ((adminUsername && !adminPassword) || (!adminUsername && adminPassword)) {
+    throw new Error("Set both ADMIN_USERNAME and ADMIN_PASSWORD (or INITIAL_ADMIN_USER and INITIAL_ADMIN_PASSWORD).");
+  }
+
+  if (adminUsername && adminPassword) {
+    const adminResult = await createOrUpdateAdmin({
+      username: adminUsername,
+      password: adminPassword
+    });
+    console.log(adminResult.created ? `Created startup admin user ${adminUsername}.` : `Updated startup admin user ${adminUsername}.`);
+  }
+
   await closePool();
 
   const app = createApp();

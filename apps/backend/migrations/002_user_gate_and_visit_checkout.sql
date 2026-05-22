@@ -5,9 +5,11 @@ END;
 
 IF COL_LENGTH('dbo.users', 'gate_id') IS NOT NULL AND COL_LENGTH('dbo.users', 'default_gate_id') IS NOT NULL
 BEGIN
-  UPDATE dbo.users
-  SET gate_id = default_gate_id
-  WHERE gate_id IS NULL AND default_gate_id IS NOT NULL;
+  EXEC sp_executesql N'
+    UPDATE dbo.users
+    SET gate_id = default_gate_id
+    WHERE gate_id IS NULL AND default_gate_id IS NOT NULL;
+  ';
 END;
 
 IF NOT EXISTS (
@@ -17,8 +19,10 @@ IF NOT EXISTS (
 )
 AND COL_LENGTH('dbo.users', 'gate_id') IS NOT NULL
 BEGIN
-  ALTER TABLE dbo.users
-  ADD CONSTRAINT fk_users_gate FOREIGN KEY (gate_id) REFERENCES dbo.gates(id);
+  EXEC sp_executesql N'
+    ALTER TABLE dbo.users
+    ADD CONSTRAINT fk_users_gate FOREIGN KEY (gate_id) REFERENCES dbo.gates(id);
+  ';
 END;
 
 IF COL_LENGTH('dbo.visits', 'signed_by_host_confirmed') IS NULL

@@ -1,49 +1,43 @@
-# Deployment
+# Deployment (deb-srv-docker)
 
-Diese Anleitung beschreibt den Betrieb der TypeScript-Anwendung per Docker Compose mit externer Microsoft-SQL-Server-Datenbank.
+Diese Anwendung wird ausschliesslich per Docker betrieben.
 
-## 1. Zielbild
+## Zielumgebung
 
-Ein einzelner Container liefert:
+- Docker-Host: `deb-srv-docker`
+- SQL-Server: `MS-SRV-SQL`
+- Datenbank: `Besuchermngmt`
+- App-Port: `3020`
 
-- Express-API
-- gebaute React-Oberflaeche
-- Healthcheck unter `/health`
-- automatische MSSQL-Migrationen beim Start
+## Wichtige Regeln
 
-Der SQL Server bleibt extern. Ein Reverse Proxy ist nicht Bestandteil des MVP.
+- kein Django / kein Python
+- kein manuelles `npm install` auf dem Server
+- keine Secrets in Git
+- `.env` nur lokal auf dem Server pflegen
+- Rollen im System: `admin`, `guard`, `sibe`
+- Daten werden nicht physisch geloescht
 
-## 2. Voraussetzungen
-
-Auf dem Zielserver:
-
-- Docker Engine
-- Docker Compose Plugin
-- Git
-
-Fuer Build und Laufzeit sind lokal keine Python-Komponenten noetig.
-Auf `deb-srv-docker` sind auch kein lokales `node`, kein lokales `npm` und kein manuelles `npm install` fuer die Anwendung erforderlich.
-Alle Abhaengigkeiten werden waehrend `docker compose build --no-cache` im Image installiert.
-
-## 3. Verzeichnis vorbereiten
+## 1) Repository vorbereiten
 
 ```bash
-sudo mkdir -p /opt/Besucher_Manager
-sudo chown -R $USER:$USER /opt/Besucher_Manager
-cd /opt/Besucher_Manager
-git clone https://github.com/linuxlearner-germany/Besucher_Manager.git .
+cd /opt
+git clone https://github.com/linuxlearner-germany/Besucher_Manager.git
+cd Besucher_Manager
 cp .env.example .env
 ```
 
-## 4. Konfiguration
+## 2) `.env` pflegen
 
-Pflichtvariablen in `.env`:
+Beispielwerte (Platzhalter):
 
 ```env
 NODE_ENV=production
 APP_HOST=0.0.0.0
 APP_PORT=3020
-APP_SECRET=change-this-secret
+APP_SECRET=CHANGE_ME
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=CHANGE_ME
 PUBLIC_BASE_URL=http://deb-srv-docker:3020
 APP_SECURE_COOKIES=false
 
@@ -51,124 +45,140 @@ MSSQL_HOST=MS-SRV-SQL
 MSSQL_PORT=1433
 MSSQL_DATABASE=Besuchermngmt
 MSSQL_USER=dockerBesuchermngmt
-MSSQL_PASSWORD=change-this-password
+MSSQL_PASSWORD=CHANGE_ME
 MSSQL_ENCRYPT=false
 MSSQL_TRUST_SERVER_CERTIFICATE=true
 
 UPLOAD_DIR=/app/uploads
 VISITOR_RETENTION_DAYS=90
-PUBLIC_FORM_RATE_LIMIT=10
-PUBLIC_FORM_RATE_WINDOW_SECONDS=900
+PUBLIC_FORM_RATE_LIMIT=5
+PUBLIC_FORM_RATE_WINDOW_SECONDS=300
 ```
 
-Hinweise:
-
-- Zugangsdaten bleiben ausschliesslich in `.env`.
-- Das echte MSSQL-Passwort wird nur in der produktiven oder Test-`.env` auf `deb-srv-docker` gepflegt.
-- Fuer interne HTTP-Tests kann `MSSQL_TRUST_SERVER_CERTIFICATE=true` erforderlich sein.
-- `PUBLIC_BASE_URL` muss zur spaeteren internen URL passen.
-
-## 5. Build und Start
+## 3) Build und Start
 
 ```bash
 docker compose down --remove-orphans
 docker compose build --no-cache
 docker compose up -d
-```
-
-Pruefen:
-
-```bash
-docker compose ps
 docker compose logs -f app
 ```
 
-Die Anwendung ist danach unter `http://<host>:3020/` erreichbar.
-
-Fuer die Testumgebung konkret:
-
-- Webzugriff: `http://deb-srv-docker:3020/`
-- SQL-Ziel: `MS-SRV-SQL:1433`
-
-## 6. Migrationen
-
-Die SQL-Migrationen liegen im Container unter `apps/backend/migrations`.
-Beim Containerstart wird automatisch zuerst der Migrationslauf ausgefuehrt. Danach startet erst die API auf Port `3020`.
-
-Optional manueller Lauf im Container:
+## 4) Health und Erreichbarkeit
 
 ```bash
-docker compose exec app npm run migrate --workspace @besucher-manager/backend
+curl -s http://localhost:3020/health
+curl -s http://localhost:3020/api/health
 ```
 
-Es wird dabei kein lokales `npm` auf dem Host verwendet. Der Befehl laeuft im Container.
-Die Migrationen werden in `dbo.schema_migrations` verfolgt. Der SQL-Benutzer braucht Rechte zum Erstellen, Aendern, Lesen und Schreiben der benoetigten Tabellen.
+Browser:
 
-Admin-Benutzer anlegen:
-
-```bash
-docker compose run --rm app npm run create-admin --workspace @besucher-manager/backend -- --username admin --password CHANGE_ME
+```text
+http://deb-srv-docker:3020
 ```
 
-## 7. Netzwerkfreigaben
+## 5) Betriebsnotizen
 
-Eingehend:
+- Migrationen laufen automatisch beim Containerstart.
+- Start-Admin wird aus `ADMIN_USERNAME`/`ADMIN_PASSWORD` erstellt oder aktualisiert.
+- Bei SQL-Login-Fehlern (`ELOGIN`) zuerst SQL-Login/Passwort/Rechte auf `MS-SRV-SQL` pruefen.
+- Uploads liegen persistent im Docker-Volume `uploads_data:/app/uploads`.
+- Wichtige Routen:
+  - `/`
+  - `/login`
+  - `/wache`
+  - `/wache/besuche/:id`
+  - `/wache/besuche/:id/druck`
+  - `/sibe`
+  - `/sibe/besucher`
+  - `/sibe/benutzer`
+  - `/admin`
+- Admin-Oberflaeche:
+  - Dashboard
+  - Wachen
+  - Benutzer
+  - Texte
+  - Karte
+  - Audit
+  - System
+- Tabellen-Trennung:
+  - `users` = Anwendungskonten
+  - `visitors` = externe Besucher
+  - `visits` = konkrete Besuchsvorgaenge
+- Operativer Ablauf:
+  - Voranmeldung -> Wache -> Check-in -> Druck -> Check-out mit Unterschrift -> Auditlog
+- Wache kann Voranmeldedaten vor dem Check-in in der Detailansicht korrigieren oder ergaenzen.
 
-- Clients der Wache zur Webanwendung auf `APP_PORT`
-- interne Mitarbeiter zur Startseite auf `APP_PORT`
-- Administratoren zum Admin-Panel auf `APP_PORT`
+## 5a) Gelaendeplan hochladen
 
-Ausgehend:
+- Upload erfolgt im Admin-Panel per Drag-and-Drop.
+- Erlaubte Dateitypen: `PNG`, `JPG/JPEG`, `WEBP`
+- Maximale Dateigroesse: `10 MB`
+- Speicherort im Container: `/app/uploads/site-maps/`
+- Neue Plaene werden aktiv gesetzt.
+- Alte Plaene bleiben erhalten und werden nur deaktiviert.
+- Der aktive Plan erscheint auf dem Besucherschein.
 
-- App-Container zu `MSSQL_HOST:MSSQL_PORT`
+## 5b) Besucherschein drucken
 
-Optional spaeter:
+- Druckansicht: `/wache/besuche/:id/druck`
+- Header und Navigation werden ueber Print-CSS ausgeblendet.
+- Wenn Browser URL, Datum oder Seitenzahl mitdrucken, im Druckdialog die Option fuer Kopf- und Fusszeilen deaktivieren.
+- Kein QR-Code im Besucherschein.
 
-- App-Container zu internem SMTP-Server
+## 5c) Check-out mit Unterschriftsstatus
 
-## 8. Reverse-Proxy-freier Betrieb
+Statuswerte:
 
-Die Anwendung ist fuer direkten internen Zugriff ausgelegt. Es gibt keine Abhaengigkeit von `X-Forwarded-*`-Headern.
+- `pending`
+- `signed_same_day`
+- `signed_later`
+- `missing_exception`
+- `not_required`
 
-Zu beachten:
+Regeln:
 
-- Bind-Adresse und Port kommen aus `APP_HOST` und `APP_PORT`
-- Netzwerkzugriffe werden ueber Firewall oder Paketfilter begrenzt
-- HTTPS kann bei Bedarf in einer separaten internen Komponente terminiert werden
+- `signed_same_day`: sofort vorhanden
+- `signed_later`: Datum der nachgereichten Unterschrift erforderlich
+- `missing_exception`: Begruendung erforderlich
+- `pending`: blockiert den Check-out
 
-## 9. Persistenz und Backups
+Alle neuen App-Daten bleiben ohne physische Loeschung erhalten; Aenderungen und Check-out-Aktionen werden im Auditlog protokolliert.
 
-Mindestens sichern:
+## 6) Legacy-Django-Tabellen bereinigen
 
-- externe SQL-Server-Datenbank
-- Docker-Volume `uploads_data`
-- gesicherte Kopie der produktiven `.env`
+- Die laufende Anwendung verwendet kein Django mehr.
+- Vor dem Cleanup immer ein Datenbankbackup erstellen.
+- Optionales Hilfsscript: [docs/sql/backup_legacy_django_tables.sql](/root/Besucher_Manager/docs/sql/backup_legacy_django_tables.sql)
+- Die Cleanup-Migration entfernt nur alte Legacy-Tabellen:
+  - `auth_*`
+  - `django_*`
+  - `core_*`
+  - `visits_visit`
+  - `visits_visitor`
+- Die neuen Zieltabellen bleiben ausdruecklich erhalten:
+  - `users`
+  - `visitors`
+  - `visits`
+  - `gates`
+  - `site_maps`
+  - `badge_text_templates`
+  - `system_settings`
+  - `audit_logs`
+  - `schema_migrations`
 
-## 10. Empfohlener Betriebscheck
+Nach Deployment/Start pruefen:
 
-Nach jedem Deployment:
-
-1. `/health` pruefen
-2. Login pruefen
-3. Oeffentliche Voranmeldung pruefen
-4. Tagesuebersicht pruefen
-5. Druckansicht pruefen
-
-## 11. Update-Ablauf
-
-```bash
-cd /opt/Besucher_Manager
-docker compose down --remove-orphans
-git pull
-docker compose build --no-cache
-docker compose up -d
-docker compose logs -f app
+```sql
+SELECT TABLE_NAME
+FROM INFORMATION_SCHEMA.TABLES
+WHERE TABLE_SCHEMA = 'dbo'
+ORDER BY TABLE_NAME;
 ```
 
-## 12. Offene Betriebsarbeiten
+In DataGrip:
 
-- Restore-Test fuer SQL-Backups
-- Trivy- oder vergleichbaren Dependency-Scan in die Pipeline aufnehmen
-- produktionsnahe Session-Strategie und Secrets-Verwaltung festziehen
-- Upload-Handling und Retention-Job produktiv anschliessen
-
+1. Rechtsklick auf Datenquelle oder Schema
+2. `Synchronize`
+3. Alte `auth_*`, `django_*`, `core_*`, `visits_visit`, `visits_visitor` sollten verschwunden sein
+4. Neues ER-Diagramm aus den Zieltabellen erzeugen
