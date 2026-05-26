@@ -4,6 +4,8 @@ exports.HOST_SIGNATURE_STATUS = exports.VISIT_STATUS = void 0;
 exports.normalizeVisitStatus = normalizeVisitStatus;
 exports.assertCanCheckIn = assertCanCheckIn;
 exports.assertCanCheckOut = assertCanCheckOut;
+exports.assertReturnedBadgeNumberMatches = assertReturnedBadgeNumberMatches;
+exports.assertCanUpdateHostSignature = assertCanUpdateHostSignature;
 exports.canAccessGate = canAccessGate;
 exports.VISIT_STATUS = {
     PRE_REGISTERED: "pre_registered",
@@ -43,6 +45,25 @@ function assertCanCheckOut(status, signature) {
     }
     if (signature.status === exports.HOST_SIGNATURE_STATUS.PENDING) {
         throw new Error("host_signature_required");
+    }
+    if (signature.status === exports.HOST_SIGNATURE_STATUS.SIGNED_LATER && !signature.signatureDate) {
+        throw new Error("host_signature_date_required");
+    }
+    if (signature.status === exports.HOST_SIGNATURE_STATUS.MISSING_EXCEPTION && !signature.note?.trim()) {
+        throw new Error("host_signature_note_required");
+    }
+}
+function assertReturnedBadgeNumberMatches(expectedBadgeNumber, returnedBadgeNumber) {
+    const expected = expectedBadgeNumber.trim().toUpperCase();
+    const returned = returnedBadgeNumber.trim().toUpperCase();
+    if (!expected || !returned || expected !== returned) {
+        throw new Error("returned_badge_number_mismatch");
+    }
+}
+function assertCanUpdateHostSignature(status, signature) {
+    const normalized = normalizeVisitStatus(status);
+    if (normalized !== exports.VISIT_STATUS.CHECKED_IN && normalized !== exports.VISIT_STATUS.CHECKED_OUT) {
+        throw new Error("invalid_signature_update_status");
     }
     if (signature.status === exports.HOST_SIGNATURE_STATUS.SIGNED_LATER && !signature.signatureDate) {
         throw new Error("host_signature_date_required");

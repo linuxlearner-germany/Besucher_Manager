@@ -73,6 +73,41 @@ export function assertCanCheckOut(
   }
 }
 
+export function assertReturnedBadgeNumberMatches(
+  expectedBadgeNumber: string,
+  returnedBadgeNumber: string
+): void {
+  const expected = expectedBadgeNumber.trim().toUpperCase();
+  const returned = returnedBadgeNumber.trim().toUpperCase();
+
+  if (!expected || !returned || expected !== returned) {
+    throw new Error("returned_badge_number_mismatch");
+  }
+}
+
+export function assertCanUpdateHostSignature(
+  status: string,
+  signature: {
+    status: HostSignatureStatus;
+    signatureDate?: string | null;
+    note?: string | null;
+  }
+): void {
+  const normalized = normalizeVisitStatus(status);
+
+  if (normalized !== VISIT_STATUS.CHECKED_IN && normalized !== VISIT_STATUS.CHECKED_OUT) {
+    throw new Error("invalid_signature_update_status");
+  }
+
+  if (signature.status === HOST_SIGNATURE_STATUS.SIGNED_LATER && !signature.signatureDate) {
+    throw new Error("host_signature_date_required");
+  }
+
+  if (signature.status === HOST_SIGNATURE_STATUS.MISSING_EXCEPTION && !signature.note?.trim()) {
+    throw new Error("host_signature_note_required");
+  }
+}
+
 export function canAccessGate(user: AuthenticatedUser, gateId: string): boolean {
   if (user.role === "admin") {
     return true;

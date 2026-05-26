@@ -24,6 +24,23 @@ const visitWorkflow_1 = require("./visitWorkflow");
     strict_1.default.throws(() => (0, visitWorkflow_1.assertCanCheckOut)(visitWorkflow_1.VISIT_STATUS.CHECKED_IN, { status: visitWorkflow_1.HOST_SIGNATURE_STATUS.MISSING_EXCEPTION }));
     strict_1.default.doesNotThrow(() => (0, visitWorkflow_1.assertCanCheckOut)(visitWorkflow_1.VISIT_STATUS.CHECKED_IN, { status: visitWorkflow_1.HOST_SIGNATURE_STATUS.MISSING_EXCEPTION, note: "Ausnahme an Tor abgestimmt" }));
 });
+(0, node_test_1.default)("check-out requires matching returned badge number", () => {
+    strict_1.default.doesNotThrow(() => (0, visitWorkflow_1.assertReturnedBadgeNumberMatches)("B-2026-000123", "B-2026-000123"));
+    strict_1.default.doesNotThrow(() => (0, visitWorkflow_1.assertReturnedBadgeNumberMatches)("B-2026-000123", "  b-2026-000123  "));
+    strict_1.default.throws(() => (0, visitWorkflow_1.assertReturnedBadgeNumberMatches)("B-2026-000123", "B-2026-000124"));
+    strict_1.default.throws(() => (0, visitWorkflow_1.assertReturnedBadgeNumberMatches)("B-2026-000123", " "));
+});
+(0, node_test_1.default)("signature update only allows checked-in and checked-out visits", () => {
+    strict_1.default.doesNotThrow(() => (0, visitWorkflow_1.assertCanUpdateHostSignature)(visitWorkflow_1.VISIT_STATUS.CHECKED_IN, { status: visitWorkflow_1.HOST_SIGNATURE_STATUS.PENDING }));
+    strict_1.default.doesNotThrow(() => (0, visitWorkflow_1.assertCanUpdateHostSignature)(visitWorkflow_1.VISIT_STATUS.CHECKED_OUT, { status: visitWorkflow_1.HOST_SIGNATURE_STATUS.PENDING }));
+    strict_1.default.throws(() => (0, visitWorkflow_1.assertCanUpdateHostSignature)(visitWorkflow_1.VISIT_STATUS.PRE_REGISTERED, { status: visitWorkflow_1.HOST_SIGNATURE_STATUS.PENDING }));
+});
+(0, node_test_1.default)("signature follow-up keeps signed_later and missing_exception strict", () => {
+    strict_1.default.throws(() => (0, visitWorkflow_1.assertCanUpdateHostSignature)(visitWorkflow_1.VISIT_STATUS.CHECKED_OUT, { status: visitWorkflow_1.HOST_SIGNATURE_STATUS.SIGNED_LATER }));
+    strict_1.default.doesNotThrow(() => (0, visitWorkflow_1.assertCanUpdateHostSignature)(visitWorkflow_1.VISIT_STATUS.CHECKED_OUT, { status: visitWorkflow_1.HOST_SIGNATURE_STATUS.SIGNED_LATER, signatureDate: "2026-05-22" }));
+    strict_1.default.throws(() => (0, visitWorkflow_1.assertCanUpdateHostSignature)(visitWorkflow_1.VISIT_STATUS.CHECKED_OUT, { status: visitWorkflow_1.HOST_SIGNATURE_STATUS.MISSING_EXCEPTION }));
+    strict_1.default.doesNotThrow(() => (0, visitWorkflow_1.assertCanUpdateHostSignature)(visitWorkflow_1.VISIT_STATUS.CHECKED_OUT, { status: visitWorkflow_1.HOST_SIGNATURE_STATUS.MISSING_EXCEPTION, note: "Begruendung vorhanden" }));
+});
 (0, node_test_1.default)("guard users are restricted to their own gate", () => {
     const guard = {
         id: "1",

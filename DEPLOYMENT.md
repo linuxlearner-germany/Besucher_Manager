@@ -109,6 +109,8 @@ http://deb-srv-docker:3020
 - Operativer Ablauf:
   - Voranmeldung -> Wache -> Check-in -> Druck -> Check-out mit Unterschrift -> Auditlog
 - Wache kann Voranmeldedaten vor dem Check-in in der Detailansicht korrigieren oder ergaenzen.
+- Oeffentliche Voranmeldungen enthalten keine Wache-Auswahl und erscheinen unzugeordnet in allen Wache-Uebersichten; die Zuordnung erfolgt beim Check-in.
+- Wache-Kalenderansicht in `/wache` zeigt Tages-/Monatsueberblick inkl. unzugeordneter Voranmeldungen.
 
 ## 5a) Gelaendeplan hochladen
 
@@ -127,24 +129,27 @@ http://deb-srv-docker:3020
 - Wenn Browser URL, Datum oder Seitenzahl mitdrucken, im Druckdialog die Option fuer Kopf- und Fusszeilen deaktivieren.
 - Kein QR-Code im Besucherschein.
 
-## 5c) Check-out mit Unterschriftsstatus
+## 5c) Check-out mit Besuchsnummer und Unterschrift
 
-Statuswerte:
+- Die Wache muss beim Check-out die Besuchsnummer vom zurueckgegebenen Besucherschein eingeben.
+- Die Pruefung erfolgt serverseitig.
+- Bei Abweichung wird der Check-out abgelehnt.
+- Die Checkbox `Unterschrift vom Ansprechpartner erledigt` ist Pflicht.
 
-- `pending`
-- `signed_same_day`
-- `signed_later`
-- `missing_exception`
-- `not_required`
+Besuchsnummern:
 
-Regeln:
+- Neue Besuchsnummern haben genau 5 Zeichen.
+- Erlaubte Zeichen: `A-Z` und `0-9`.
 
-- `signed_same_day`: sofort vorhanden
-- `signed_later`: Datum der nachgereichten Unterschrift erforderlich
-- `missing_exception`: Begruendung erforderlich
-- `pending`: blockiert den Check-out
+## 5e) Keine Aufbewahrungssteuerung in der UI
+
+- Die neue App loescht Besucher-, Besuchs- und Auditdaten nicht physisch.
+- Im Admin-System gibt es keine Aufbewahrungs-/Archivierungssteuerung mehr.
+- Datenpflege ausserhalb der App erfolgt bei Bedarf administrativ direkt in SQL.
 
 Alle neuen App-Daten bleiben ohne physische Loeschung erhalten; Aenderungen und Check-out-Aktionen werden im Auditlog protokolliert.
+
+Erweiterte Unterschriftsstatus bleiben fuer Auswertung erhalten, sind aber nicht Teil der vereinfachten Standard-Check-out-Maske in der Wache.
 
 ## 5d) Operativen MVP-Ablauf pruefen
 
@@ -169,6 +174,18 @@ Fuer die Rollen- und Zugriffssicherheit:
 
 ```bash
 npm run verify:roles
+```
+
+Fuer einen CSV-Export unterschriftsrelevanter Besuche:
+
+```bash
+npm run report:signatures > unterschriften.csv
+```
+
+Fuer einen Sammellauf aller operativen Kernpruefungen:
+
+```bash
+npm run verify:ops
 ```
 
 ## 6) Legacy-Django-Tabellen bereinigen

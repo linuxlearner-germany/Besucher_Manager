@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {
   assertCanCheckIn,
   assertCanCheckOut,
+  assertReturnedBadgeNumberMatches,
+  assertCanUpdateHostSignature,
   canAccessGate,
   HOST_SIGNATURE_STATUS,
   VISIT_STATUS,
@@ -29,6 +31,26 @@ test("check-out requires signature date for signed_later", () => {
 test("check-out requires note for missing exception", () => {
   assert.throws(() => assertCanCheckOut(VISIT_STATUS.CHECKED_IN, { status: HOST_SIGNATURE_STATUS.MISSING_EXCEPTION }));
   assert.doesNotThrow(() => assertCanCheckOut(VISIT_STATUS.CHECKED_IN, { status: HOST_SIGNATURE_STATUS.MISSING_EXCEPTION, note: "Ausnahme an Tor abgestimmt" }));
+});
+
+test("check-out requires matching returned badge number", () => {
+  assert.doesNotThrow(() => assertReturnedBadgeNumberMatches("B-2026-000123", "B-2026-000123"));
+  assert.doesNotThrow(() => assertReturnedBadgeNumberMatches("B-2026-000123", "  b-2026-000123  "));
+  assert.throws(() => assertReturnedBadgeNumberMatches("B-2026-000123", "B-2026-000124"));
+  assert.throws(() => assertReturnedBadgeNumberMatches("B-2026-000123", " "));
+});
+
+test("signature update only allows checked-in and checked-out visits", () => {
+  assert.doesNotThrow(() => assertCanUpdateHostSignature(VISIT_STATUS.CHECKED_IN, { status: HOST_SIGNATURE_STATUS.PENDING }));
+  assert.doesNotThrow(() => assertCanUpdateHostSignature(VISIT_STATUS.CHECKED_OUT, { status: HOST_SIGNATURE_STATUS.PENDING }));
+  assert.throws(() => assertCanUpdateHostSignature(VISIT_STATUS.PRE_REGISTERED, { status: HOST_SIGNATURE_STATUS.PENDING }));
+});
+
+test("signature follow-up keeps signed_later and missing_exception strict", () => {
+  assert.throws(() => assertCanUpdateHostSignature(VISIT_STATUS.CHECKED_OUT, { status: HOST_SIGNATURE_STATUS.SIGNED_LATER }));
+  assert.doesNotThrow(() => assertCanUpdateHostSignature(VISIT_STATUS.CHECKED_OUT, { status: HOST_SIGNATURE_STATUS.SIGNED_LATER, signatureDate: "2026-05-22" }));
+  assert.throws(() => assertCanUpdateHostSignature(VISIT_STATUS.CHECKED_OUT, { status: HOST_SIGNATURE_STATUS.MISSING_EXCEPTION }));
+  assert.doesNotThrow(() => assertCanUpdateHostSignature(VISIT_STATUS.CHECKED_OUT, { status: HOST_SIGNATURE_STATUS.MISSING_EXCEPTION, note: "Begruendung vorhanden" }));
 });
 
 test("guard users are restricted to their own gate", () => {

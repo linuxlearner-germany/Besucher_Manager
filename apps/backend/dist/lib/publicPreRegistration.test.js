@@ -14,9 +14,7 @@ const publicPreRegistrationSchema_1 = require("./publicPreRegistrationSchema");
         hostName: "Sabine Keller",
         hostEmail: "sabine@example.com",
         hostPhone: "0123",
-        hostDepartment: "Produktion",
         purpose: "Besprechung",
-        gateId: "11111111-1111-1111-1111-111111111111",
         validFrom: "2026-05-21T10:00:00.000Z",
         validUntil: "2026-05-21T09:00:00.000Z"
     });
@@ -30,9 +28,8 @@ const publicPreRegistrationSchema_1 = require("./publicPreRegistrationSchema");
         hostName: "Sabine Keller",
         hostEmail: "sabine@example.com",
         hostPhone: "0123",
-        hostDepartment: "Produktion",
+        hostDepartment: "",
         purpose: "Besprechung",
-        gateId: "11111111-1111-1111-1111-111111111111",
         validFrom: "2026-05-21T08:00:00.000Z",
         validUntil: "2026-05-21T10:00:00.000Z",
         birthDate: "1990-01-15",
@@ -48,24 +45,22 @@ const publicPreRegistrationSchema_1 = require("./publicPreRegistrationSchema");
         hostName: "Sabine Keller",
         hostEmail: "sabine@example.com",
         hostPhone: "0123",
-        hostDepartment: "Produktion",
         purpose: "Besprechung",
-        gateId: "11111111-1111-1111-1111-111111111111",
         validFrom: "2026-05-21T08:00:00.000Z",
         validUntil: "2026-05-21T10:00:00.000Z",
         email: "not-an-email"
     });
     strict_1.default.equal(result.success, false);
 });
-(0, node_test_1.default)("public pre-registration requires a gate and required visit fields", () => {
+(0, node_test_1.default)("public pre-registration validates required fields without requiring gate", () => {
     const result = publicPreRegistrationSchema_1.publicPreRegistrationSchema.safeParse({
         firstName: "Max",
         lastName: "Mustermann",
         company: "Test GmbH",
         hostName: "Sabine Keller",
+        hostPhone: "",
         hostDepartment: "",
         purpose: "",
-        gateId: "",
         validFrom: "2026-05-21T08:00:00.000Z",
         validUntil: "2026-05-21T10:00:00.000Z"
     });
@@ -77,12 +72,37 @@ const publicPreRegistrationSchema_1 = require("./publicPreRegistrationSchema");
         lastName: "Mustermann",
         company: "Test GmbH",
         hostName: "Sabine Keller",
+        hostPhone: "0123",
         hostDepartment: "Produktion",
         purpose: "Besprechung",
-        gateId: "11111111-1111-1111-1111-111111111111",
         validFrom: "2026-05-21T08:00:00.000Z",
         validUntil: "2026-05-21T10:00:00.000Z",
         birthDate: "2999-01-01"
     });
     strict_1.default.equal(result.success, false);
+});
+(0, node_test_1.default)("public pre-registration allows empty department but requires host phone", () => {
+    const withoutDepartment = publicPreRegistrationSchema_1.publicPreRegistrationSchema.safeParse({
+        firstName: "Max",
+        lastName: "Mustermann",
+        company: "Test GmbH",
+        hostName: "Sabine Keller",
+        hostPhone: "0123",
+        hostDepartment: "",
+        purpose: "Besprechung",
+        validFrom: "2026-05-21T08:00:00.000Z",
+        validUntil: "2026-05-21T10:00:00.000Z"
+    });
+    strict_1.default.equal(withoutDepartment.success, true);
+    const withoutHostPhone = publicPreRegistrationSchema_1.publicPreRegistrationSchema.safeParse({
+        firstName: "Max",
+        lastName: "Mustermann",
+        company: "Test GmbH",
+        hostName: "Sabine Keller",
+        hostPhone: "",
+        purpose: "Besprechung",
+        validFrom: "2026-05-21T08:00:00.000Z",
+        validUntil: "2026-05-21T10:00:00.000Z"
+    });
+    strict_1.default.equal(withoutHostPhone.success, false);
 });

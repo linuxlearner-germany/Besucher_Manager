@@ -68,30 +68,24 @@ const hostSignatureStatusSchema = zod_1.z.enum([
     visitWorkflow_1.HOST_SIGNATURE_STATUS.MISSING_EXCEPTION
 ]);
 const checkOutSchema = zod_1.z.object({
-    signed_by_host_confirmed: zod_1.z.boolean().optional(),
-    host_signature_status: hostSignatureStatusSchema.optional(),
+    signed_by_host_confirmed: zod_1.z.literal(true, {
+        errorMap: () => ({ message: "Bitte bestaetigen Sie die Ansprechpartner-Unterschrift." })
+    }),
+    returned_badge_number: zod_1.z.string().trim().min(1, "Bitte geben Sie die Besuchsnummer vom Besucherschein ein.").transform((value) => value.toUpperCase())
+});
+const signatureUpdateSchema = zod_1.z.object({
+    host_signature_status: hostSignatureStatusSchema,
     host_signature_date: zod_1.z.string().trim().optional(),
-    host_signature_note: zod_1.z.string().trim().optional(),
-    checkout_note: zod_1.z.string().trim().optional()
+    host_signature_note: zod_1.z.string().trim().optional()
 }).superRefine((value, context) => {
-    const mappedStatus = value.host_signature_status
-        ?? (value.signed_by_host_confirmed ? visitWorkflow_1.HOST_SIGNATURE_STATUS.SIGNED_SAME_DAY : undefined);
-    if (!mappedStatus) {
-        context.addIssue({
-            code: zod_1.z.ZodIssueCode.custom,
-            path: ["host_signature_status"],
-            message: "Bitte waehlen Sie einen Unterschriftsstatus."
-        });
-        return;
-    }
-    if (mappedStatus === visitWorkflow_1.HOST_SIGNATURE_STATUS.SIGNED_LATER && !value.host_signature_date?.trim()) {
+    if (value.host_signature_status === visitWorkflow_1.HOST_SIGNATURE_STATUS.SIGNED_LATER && !value.host_signature_date?.trim()) {
         context.addIssue({
             code: zod_1.z.ZodIssueCode.custom,
             path: ["host_signature_date"],
             message: "Bitte geben Sie das Datum der Unterschrift an."
         });
     }
-    if (mappedStatus === visitWorkflow_1.HOST_SIGNATURE_STATUS.MISSING_EXCEPTION && !value.host_signature_note?.trim()) {
+    if (value.host_signature_status === visitWorkflow_1.HOST_SIGNATURE_STATUS.MISSING_EXCEPTION && !value.host_signature_note?.trim()) {
         context.addIssue({
             code: zod_1.z.ZodIssueCode.custom,
             path: ["host_signature_note"],
@@ -110,20 +104,46 @@ const guardVisitUpdateSchema = zod_1.z.object({
     hostName: zod_1.z.string().trim().min(1).max(255),
     hostEmail: zod_1.z.string().trim().email("Ungueltige Ansprechpartner-E-Mail.").optional().or(zod_1.z.literal("")),
     hostPhone: zod_1.z.string().trim().max(80).optional().or(zod_1.z.literal("")),
-    hostDepartment: zod_1.z.string().trim().min(1).max(255),
+    hostDepartment: zod_1.z.string().trim().max(255).optional().or(zod_1.z.literal("")),
     purpose: zod_1.z.string().trim().min(1).max(500),
-    gateId: zod_1.z.string().uuid(),
+    gateId: zod_1.z.string().uuid().optional().or(zod_1.z.literal("")),
     validFrom: zod_1.z.string().trim().min(1, "Gueltig von ist erforderlich."),
     validUntil: zod_1.z.string().trim().min(1, "Gueltig bis ist erforderlich."),
-    notes: zod_1.z.string().trim().optional().or(zod_1.z.literal(""))
+    notes: zod_1.z.string().trim().optional().or(zod_1.z.literal("")),
+    visitorStreet: zod_1.z.string().trim().max(255).optional().or(zod_1.z.literal("")),
+    visitorHouseNumber: zod_1.z.string().trim().max(40).optional().or(zod_1.z.literal("")),
+    visitorPostalCode: zod_1.z.string().trim().max(20).optional().or(zod_1.z.literal("")),
+    visitorCity: zod_1.z.string().trim().max(120).optional().or(zod_1.z.literal("")),
+    visitorAddress: zod_1.z.string().trim().max(500).optional().or(zod_1.z.literal("")),
+    idDocumentType: zod_1.z.enum(["identity_card", "passport", "other"]).optional().or(zod_1.z.literal("")),
+    idDocumentValidUntil: zod_1.z.string().trim().optional().or(zod_1.z.literal("")),
+    idDocumentNumber: zod_1.z.string().trim().max(120).optional().or(zod_1.z.literal("")),
+    idDocumentIssuingPlace: zod_1.z.string().trim().max(255).optional().or(zod_1.z.literal("")),
+    visitPurposeType: zod_1.z.enum(["private", "business"]).optional().or(zod_1.z.literal("")),
+    visitCompanyOrder: zod_1.z.string().trim().max(500).optional().or(zod_1.z.literal("")),
+    hostUnit: zod_1.z.string().trim().max(255).optional().or(zod_1.z.literal("")),
+    hostBuilding: zod_1.z.string().trim().max(120).optional().or(zod_1.z.literal("")),
+    hostRoom: zod_1.z.string().trim().max(80).optional().or(zod_1.z.literal("")),
+    hostExtension: zod_1.z.string().trim().max(80).optional().or(zod_1.z.literal("")),
+    visitEndType: zod_1.z.enum(["ended", "forwarded"]).optional().or(zod_1.z.literal("")),
+    forwardedToNote: zod_1.z.string().trim().max(500).optional().or(zod_1.z.literal("")),
+    devicePhotoApp: zod_1.z.boolean().optional(),
+    deviceFilmApp: zod_1.z.boolean().optional(),
+    deviceVideoCamera: zod_1.z.boolean().optional(),
+    deviceManufacturer: zod_1.z.string().trim().max(255).optional().or(zod_1.z.literal("")),
+    deviceSerialNumber: zod_1.z.string().trim().max(120).optional().or(zod_1.z.literal("")),
+    deviceAccessories: zod_1.z.string().trim().max(500).optional().or(zod_1.z.literal("")),
+    deviceDepositNote: zod_1.z.string().trim().max(500).optional().or(zod_1.z.literal("")),
+    deviceReturnConfirmed: zod_1.z.boolean().optional(),
+    deviceReturnedAt: zod_1.z.string().trim().optional().or(zod_1.z.literal(""))
 }).superRefine((value, context) => {
     const validFrom = new Date(value.validFrom);
     const validUntil = new Date(value.validUntil);
-    if (!Number.isNaN(validFrom.getTime()) && !Number.isNaN(validUntil.getTime()) && validUntil <= validFrom) {
+    if (!Number.isNaN(validFrom.getTime()) && !Number.isNaN(validUntil.getTime()) && validUntil < validFrom) {
         context.addIssue({
             code: zod_1.z.ZodIssueCode.custom,
             path: ["validUntil"],
-            message: "Gueltig bis muss nach Gueltig von liegen."
+            message: "Gueltig bis darf nicht vor Gueltig von liegen."
         });
     }
     if (value.birthDate) {
@@ -140,6 +160,26 @@ const guardVisitUpdateSchema = zod_1.z.object({
                 code: zod_1.z.ZodIssueCode.custom,
                 path: ["birthDate"],
                 message: "Geburtsdatum darf nicht in der Zukunft liegen."
+            });
+        }
+    }
+    if (value.idDocumentValidUntil) {
+        const date = new Date(value.idDocumentValidUntil);
+        if (Number.isNaN(date.getTime())) {
+            context.addIssue({
+                code: zod_1.z.ZodIssueCode.custom,
+                path: ["idDocumentValidUntil"],
+                message: "Ungueltiges Ausweisdatum."
+            });
+        }
+    }
+    if (value.deviceReturnedAt) {
+        const date = new Date(value.deviceReturnedAt);
+        if (Number.isNaN(date.getTime())) {
+            context.addIssue({
+                code: zod_1.z.ZodIssueCode.custom,
+                path: ["deviceReturnedAt"],
+                message: "Ungueltiges Rueckgabe-Datum."
             });
         }
     }
@@ -176,6 +216,26 @@ const userUpdateSchema = zod_1.z.object({
 });
 const visitCancelSchema = zod_1.z.object({
     cancel_reason: zod_1.z.string().trim().min(1).max(500)
+});
+const guardCalendarQuerySchema = zod_1.z.object({
+    from: zod_1.z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    to: zod_1.z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    status: zod_1.z.string().optional(),
+    search: zod_1.z.string().optional()
+}).superRefine((value, context) => {
+    const from = new Date(`${value.from}T00:00:00.000Z`);
+    const to = new Date(`${value.to}T00:00:00.000Z`);
+    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+        context.addIssue({ code: zod_1.z.ZodIssueCode.custom, path: ["from"], message: "Ungueltiger Datumsbereich." });
+        return;
+    }
+    if (to < from) {
+        context.addIssue({ code: zod_1.z.ZodIssueCode.custom, path: ["to"], message: "Bis-Datum muss nach Von-Datum liegen." });
+    }
+    const diffDays = Math.floor((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24));
+    if (diffDays > 90) {
+        context.addIssue({ code: zod_1.z.ZodIssueCode.custom, path: ["to"], message: "Datumsbereich darf maximal 90 Tage umfassen." });
+    }
 });
 const badgeTextUpdateSchema = zod_1.z.object({
     name: zod_1.z.string().trim().min(1).max(120),
@@ -563,12 +623,6 @@ exports.apiRouter.post("/api/public/pre-registrations", async (request, response
         });
     }
     catch (error) {
-        if (error instanceof Error && error.message === "gate_not_found") {
-            return response.status(404).json({
-                error: "NOT_FOUND",
-                message: "Die ausgewaehlte Wache ist nicht mehr aktiv."
-            });
-        }
         return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Voranmeldung konnte nicht gespeichert werden.");
     }
 });
@@ -580,12 +634,42 @@ exports.apiRouter.get("/api/guard/visits/today", async (request, response) => {
     try {
         const visits = await (0, guardVisits_1.getTodayVisitsForUser)(user, {
             search: typeof request.query.search === "string" ? request.query.search : undefined,
-            status: typeof request.query.status === "string" ? request.query.status : undefined
+            status: typeof request.query.status === "string" ? request.query.status : undefined,
+            signatureStatus: typeof request.query.signatureStatus === "string" ? request.query.signatureStatus : undefined
         });
         return response.json({ visits });
     }
     catch (error) {
         return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Tagesuebersicht konnte nicht geladen werden.");
+    }
+});
+exports.apiRouter.get("/api/guard/visits/calendar", async (request, response) => {
+    const user = await requireRole(request, response, ["admin", "guard"]);
+    if (!user)
+        return;
+    const parsed = guardCalendarQuerySchema.safeParse({
+        from: request.query.from,
+        to: request.query.to,
+        status: typeof request.query.status === "string" ? request.query.status : undefined,
+        search: typeof request.query.search === "string" ? request.query.search : undefined
+    });
+    if (!parsed.success) {
+        return sendValidationError(response, parsed.error.flatten());
+    }
+    try {
+        const from = `${parsed.data.from}T00:00:00.000Z`;
+        const toExclusiveDate = new Date(`${parsed.data.to}T00:00:00.000Z`);
+        toExclusiveDate.setUTCDate(toExclusiveDate.getUTCDate() + 1);
+        const visits = await (0, guardVisits_1.getCalendarVisitsForUser)(user, {
+            from,
+            to: toExclusiveDate.toISOString(),
+            status: parsed.data.status,
+            search: parsed.data.search
+        });
+        return response.json({ items: visits });
+    }
+    catch (error) {
+        return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Kalenderansicht konnte nicht geladen werden.");
     }
 });
 exports.apiRouter.get("/api/guard/visits/:id", async (request, response) => {
@@ -630,6 +714,12 @@ exports.apiRouter.post("/api/guard/visits/:id/check-in", async (request, respons
             if (error.message === "invalid_check_in_status") {
                 return sendError(response, 409, "INVALID_STATUS_TRANSITION", "Der Besuch kann in diesem Status nicht eingecheckt werden.");
             }
+            if (error.message === "visit_required_fields_missing") {
+                return sendError(response, 400, "VALIDATION_ERROR", "Vor dem Check-in muessen fehlende Pflichtdaten ergaenzt werden.", error.details);
+            }
+            if (error.message === "visit_gate_required_for_admin_check_in") {
+                return sendError(response, 400, "VALIDATION_ERROR", "Dieser Besuch ist noch keiner Wache zugeordnet. Bitte zuerst eine Wache zuweisen.");
+            }
         }
         return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der Check-in konnte nicht gespeichert werden.");
     }
@@ -672,12 +762,9 @@ exports.apiRouter.post("/api/guard/visits/:id/check-out", async (request, respon
         return sendValidationError(response, result.error.flatten());
     }
     try {
-        await (0, guardVisits_1.checkOutVisit)(user, request.params.id, {
-            status: result.data.host_signature_status
-                ?? (result.data.signed_by_host_confirmed ? visitWorkflow_1.HOST_SIGNATURE_STATUS.SIGNED_SAME_DAY : visitWorkflow_1.HOST_SIGNATURE_STATUS.PENDING),
-            signatureDate: result.data.host_signature_date,
-            note: result.data.host_signature_note
-        }, result.data.checkout_note, getRequestIp(request), getRequestUserAgent(request));
+        await (0, guardVisits_1.checkOutVisit)(user, request.params.id, result.data.returned_badge_number, {
+            status: visitWorkflow_1.HOST_SIGNATURE_STATUS.SIGNED_SAME_DAY
+        }, undefined, getRequestIp(request), getRequestUserAgent(request));
         return response.json({
             success: true,
             status: visitWorkflow_1.VISIT_STATUS.CHECKED_OUT
@@ -691,8 +778,40 @@ exports.apiRouter.post("/api/guard/visits/:id/check-out", async (request, respon
             if (error.message === "visit_scope_forbidden") {
                 return sendForbidden(response);
             }
-            if (error.message === "host_signature_required") {
-                return sendError(response, 400, "VALIDATION_ERROR", "Bitte waehlen Sie einen gueltigen Unterschriftsstatus.");
+            if (error.message === "returned_badge_number_mismatch") {
+                return sendError(response, 400, "VALIDATION_ERROR", "Die eingegebene Besuchsnummer stimmt nicht mit diesem Besuch ueberein.");
+            }
+            if (error.message === "invalid_check_out_status") {
+                return sendError(response, 409, "INVALID_STATUS_TRANSITION", "Der Besuch kann in diesem Status nicht ausgecheckt werden.");
+            }
+        }
+        return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der Check-out konnte nicht gespeichert werden.");
+    }
+});
+exports.apiRouter.put("/api/guard/visits/:id/signature", async (request, response) => {
+    const user = await requireRole(request, response, ["admin", "guard"]);
+    if (!user) {
+        return;
+    }
+    const result = signatureUpdateSchema.safeParse(request.body);
+    if (!result.success) {
+        return sendValidationError(response, result.error.flatten());
+    }
+    try {
+        await (0, guardVisits_1.updateHostSignatureForGuard)(user, request.params.id, {
+            status: result.data.host_signature_status,
+            signatureDate: result.data.host_signature_date,
+            note: result.data.host_signature_note
+        }, getRequestIp(request), getRequestUserAgent(request));
+        return response.json({ success: true });
+    }
+    catch (error) {
+        if (error instanceof Error) {
+            if (error.message === "visit_not_found") {
+                return sendError(response, 404, "NOT_FOUND", "Der Besuch wurde nicht gefunden.");
+            }
+            if (error.message === "visit_scope_forbidden") {
+                return sendForbidden(response);
             }
             if (error.message === "host_signature_date_required") {
                 return sendError(response, 400, "VALIDATION_ERROR", "Bitte geben Sie das Datum der Unterschrift an.");
@@ -703,11 +822,11 @@ exports.apiRouter.post("/api/guard/visits/:id/check-out", async (request, respon
             if (error.message === "host_signature_date_before_visit") {
                 return sendError(response, 400, "VALIDATION_ERROR", "Das Datum der Unterschrift darf nicht vor dem Besuchsbeginn liegen.");
             }
-            if (error.message === "invalid_check_out_status") {
-                return sendError(response, 409, "INVALID_STATUS_TRANSITION", "Der Besuch kann in diesem Status nicht ausgecheckt werden.");
+            if (error.message === "invalid_signature_update_status") {
+                return sendError(response, 409, "INVALID_STATUS_TRANSITION", "Der Unterschriftsstatus kann erst waehrend oder nach dem laufenden Besuch erfasst werden.");
             }
         }
-        return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der Check-out konnte nicht gespeichert werden.");
+        return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der Unterschriftsstatus konnte nicht gespeichert werden.");
     }
 });
 exports.apiRouter.post("/api/guard/visits/:id/print-log", async (request, response) => {
@@ -779,13 +898,16 @@ exports.apiRouter.get("/api/sibe/summary", async (request, response) => {
         return;
     try {
         const pool = await (0, db_1.getPool)();
-        const [visitorsTotal, activeVisitors, todaysVisits, checkedInVisitors, usersTotal, activeUsers] = await Promise.all([
+        const [visitorsTotal, activeVisitors, todaysVisits, checkedInVisitors, usersTotal, activeUsers, signaturesPending, signaturesFollowUp, signaturesExceptions] = await Promise.all([
             pool.request().query("SELECT COUNT(*) AS count FROM dbo.visitors WHERE is_deleted = 0"),
             pool.request().query("SELECT COUNT(*) AS count FROM dbo.visitors WHERE is_deleted = 0 AND is_active = 1"),
             pool.request().query("SELECT COUNT(*) AS count FROM dbo.visits WHERE CAST(valid_from AS date) = CAST(SYSUTCDATETIME() AS date)"),
             pool.request().query("SELECT COUNT(*) AS count FROM dbo.visits WHERE status = 'checked_in'"),
             pool.request().query("SELECT COUNT(*) AS count FROM dbo.users"),
-            pool.request().query("SELECT COUNT(*) AS count FROM dbo.users WHERE is_active = 1")
+            pool.request().query("SELECT COUNT(*) AS count FROM dbo.users WHERE is_active = 1"),
+            pool.request().query(`SELECT COUNT(*) AS count FROM dbo.visits WHERE ISNULL(host_signature_status, '${visitWorkflow_1.HOST_SIGNATURE_STATUS.PENDING}') = '${visitWorkflow_1.HOST_SIGNATURE_STATUS.PENDING}'`),
+            pool.request().query(`SELECT COUNT(*) AS count FROM dbo.visits WHERE host_signature_status = '${visitWorkflow_1.HOST_SIGNATURE_STATUS.SIGNED_LATER}'`),
+            pool.request().query(`SELECT COUNT(*) AS count FROM dbo.visits WHERE host_signature_status = '${visitWorkflow_1.HOST_SIGNATURE_STATUS.MISSING_EXCEPTION}'`)
         ]);
         return response.json({
             visitorsTotal: visitorsTotal.recordset[0]?.count ?? 0,
@@ -793,11 +915,77 @@ exports.apiRouter.get("/api/sibe/summary", async (request, response) => {
             todaysVisits: todaysVisits.recordset[0]?.count ?? 0,
             checkedInVisitors: checkedInVisitors.recordset[0]?.count ?? 0,
             usersTotal: usersTotal.recordset[0]?.count ?? 0,
-            activeUsers: activeUsers.recordset[0]?.count ?? 0
+            activeUsers: activeUsers.recordset[0]?.count ?? 0,
+            signaturesPending: signaturesPending.recordset[0]?.count ?? 0,
+            signaturesFollowUp: signaturesFollowUp.recordset[0]?.count ?? 0,
+            signaturesExceptions: signaturesExceptions.recordset[0]?.count ?? 0
         });
     }
     catch (error) {
         return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die SiBe-Uebersicht konnte nicht geladen werden.");
+    }
+});
+exports.apiRouter.get("/api/sibe/statistics/visits", async (request, response) => {
+    const user = await requireRole(request, response, ["admin", "sibe"]);
+    if (!user)
+        return;
+    const from = typeof request.query.from === "string" ? request.query.from.trim() : "";
+    const to = typeof request.query.to === "string" ? request.query.to.trim() : "";
+    if (!from || !to) {
+        return sendError(response, 400, "VALIDATION_ERROR", "Bitte Zeitraum von/bis angeben.");
+    }
+    const fromDate = new Date(from);
+    const toDate = new Date(to);
+    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+        return sendError(response, 400, "VALIDATION_ERROR", "Ungueltiges Datumsformat.");
+    }
+    if (toDate < fromDate) {
+        return sendError(response, 400, "VALIDATION_ERROR", "Zeitraum ungueltig.");
+    }
+    try {
+        const pool = await (0, db_1.getPool)();
+        const requestBuilder = pool.request()
+            .input("fromDate", mssql_1.default.Date, from)
+            .input("toDate", mssql_1.default.Date, to);
+        const summaryResult = await requestBuilder.query(`
+      SELECT
+        COUNT(*) AS total,
+        SUM(CASE WHEN status = '${visitWorkflow_1.VISIT_STATUS.PRE_REGISTERED}' OR status = 'vorangemeldet' THEN 1 ELSE 0 END) AS preRegistered,
+        SUM(CASE WHEN status = '${visitWorkflow_1.VISIT_STATUS.CHECKED_IN}' OR status = 'eingecheckt' THEN 1 ELSE 0 END) AS checkedIn,
+        SUM(CASE WHEN status = '${visitWorkflow_1.VISIT_STATUS.CHECKED_OUT}' OR status = 'ausgecheckt' THEN 1 ELSE 0 END) AS checkedOut
+      FROM dbo.visits
+      WHERE CAST(valid_from AS date) >= @fromDate
+        AND CAST(valid_from AS date) <= @toDate
+    `);
+        const byDayResult = await pool.request()
+            .input("fromDate", mssql_1.default.Date, from)
+            .input("toDate", mssql_1.default.Date, to)
+            .query(`
+        SELECT
+          CONVERT(NVARCHAR(10), CAST(valid_from AS date), 23) AS date,
+          COUNT(*) AS count
+        FROM dbo.visits
+        WHERE CAST(valid_from AS date) >= @fromDate
+          AND CAST(valid_from AS date) <= @toDate
+        GROUP BY CAST(valid_from AS date)
+        ORDER BY CAST(valid_from AS date) ASC
+      `);
+        const summary = summaryResult.recordset[0] ?? { total: 0, preRegistered: 0, checkedIn: 0, checkedOut: 0 };
+        return response.json({
+            summary: {
+                total: Number(summary.total || 0),
+                pre_registered: Number(summary.preRegistered || 0),
+                checked_in: Number(summary.checkedIn || 0),
+                checked_out: Number(summary.checkedOut || 0)
+            },
+            by_day: byDayResult.recordset.map((entry) => ({
+                date: entry.date,
+                count: Number(entry.count || 0)
+            }))
+        });
+    }
+    catch (error) {
+        return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die SiBe-Statistik konnte nicht geladen werden.");
     }
 });
 exports.apiRouter.get("/api/sibe/visitors", async (request, response) => {
@@ -807,11 +995,26 @@ exports.apiRouter.get("/api/sibe/visitors", async (request, response) => {
     try {
         const pool = await (0, db_1.getPool)();
         const search = typeof request.query.search === "string" ? request.query.search.trim() : "";
+        const company = typeof request.query.company === "string" ? request.query.company.trim() : "";
+        const from = typeof request.query.from === "string" ? request.query.from.trim() : "";
+        const to = typeof request.query.to === "string" ? request.query.to.trim() : "";
         const requestBuilder = pool.request();
         let whereClause = "v.is_deleted = 0";
         if (search) {
             requestBuilder.input("search", mssql_1.default.NVarChar(255), `%${search}%`);
             whereClause += " AND (v.first_name LIKE @search OR v.last_name LIKE @search OR v.company LIKE @search)";
+        }
+        if (company) {
+            requestBuilder.input("company", mssql_1.default.NVarChar(255), `%${company}%`);
+            whereClause += " AND v.company LIKE @company";
+        }
+        if (from) {
+            requestBuilder.input("fromDate", mssql_1.default.DateTime2, new Date(from));
+            whereClause += " AND EXISTS (SELECT 1 FROM dbo.visits vi_from WHERE vi_from.visitor_id = v.id AND vi_from.valid_from >= @fromDate)";
+        }
+        if (to) {
+            requestBuilder.input("toDate", mssql_1.default.DateTime2, new Date(to));
+            whereClause += " AND EXISTS (SELECT 1 FROM dbo.visits vi_to WHERE vi_to.visitor_id = v.id AND vi_to.valid_from < DATEADD(day, 1, @toDate))";
         }
         const result = await requestBuilder.query(`
       SELECT
@@ -857,8 +1060,25 @@ exports.apiRouter.get("/api/sibe/visits", async (request, response) => {
         const status = typeof request.query.status === "string" ? request.query.status.trim() : "";
         const signatureStatus = typeof request.query.signatureStatus === "string" ? request.query.signatureStatus.trim() : "";
         const gateId = typeof request.query.gateId === "string" ? request.query.gateId.trim() : "";
-        const from = typeof request.query.dateFrom === "string" ? request.query.dateFrom.trim() : "";
-        const to = typeof request.query.dateTo === "string" ? request.query.dateTo.trim() : "";
+        const gate = typeof request.query.gate === "string" ? request.query.gate.trim() : "";
+        const from = typeof request.query.from === "string"
+            ? request.query.from.trim()
+            : (typeof request.query.dateFrom === "string" ? request.query.dateFrom.trim() : "");
+        const to = typeof request.query.to === "string"
+            ? request.query.to.trim()
+            : (typeof request.query.dateTo === "string" ? request.query.dateTo.trim() : "");
+        const company = typeof request.query.company === "string" ? request.query.company.trim() : "";
+        const hostName = typeof request.query.hostName === "string" ? request.query.hostName.trim() : "";
+        const licensePlate = typeof request.query.licensePlate === "string" ? request.query.licensePlate.trim() : "";
+        const badgeNumber = typeof request.query.badgeNumber === "string" ? request.query.badgeNumber.trim() : "";
+        const normalizedVisitStatusSql = `
+      CASE
+        WHEN vt.status = 'vorangemeldet' THEN '${visitWorkflow_1.VISIT_STATUS.PRE_REGISTERED}'
+        WHEN vt.status = 'eingecheckt' THEN '${visitWorkflow_1.VISIT_STATUS.CHECKED_IN}'
+        WHEN vt.status = 'ausgecheckt' THEN '${visitWorkflow_1.VISIT_STATUS.CHECKED_OUT}'
+        ELSE vt.status
+      END
+    `;
         if (search) {
             requestBuilder.input("search", mssql_1.default.NVarChar(255), `%${search}%`);
             conditions.push(`(
@@ -872,8 +1092,16 @@ exports.apiRouter.get("/api/sibe/visits", async (request, response) => {
       )`);
         }
         if (status && status !== "all") {
-            requestBuilder.input("status", mssql_1.default.NVarChar(32), status);
-            conditions.push("vt.status = @status");
+            if (status === "overdue") {
+                conditions.push(`
+          ${normalizedVisitStatusSql} IN ('${visitWorkflow_1.VISIT_STATUS.PRE_REGISTERED}', '${visitWorkflow_1.VISIT_STATUS.CHECKED_IN}')
+          AND vt.valid_until < SYSUTCDATETIME()
+        `);
+            }
+            else {
+                requestBuilder.input("status", mssql_1.default.NVarChar(32), status);
+                conditions.push(`${normalizedVisitStatusSql} = @status`);
+            }
         }
         if (signatureStatus && signatureStatus !== "all") {
             requestBuilder.input("signatureStatus", mssql_1.default.NVarChar(40), signatureStatus);
@@ -883,13 +1111,33 @@ exports.apiRouter.get("/api/sibe/visits", async (request, response) => {
             requestBuilder.input("gateId", mssql_1.default.UniqueIdentifier, gateId);
             conditions.push("vt.gate_id = @gateId");
         }
+        if (gate) {
+            requestBuilder.input("gate", mssql_1.default.NVarChar(255), `%${gate}%`);
+            conditions.push("g.name LIKE @gate");
+        }
+        if (company) {
+            requestBuilder.input("company", mssql_1.default.NVarChar(255), `%${company}%`);
+            conditions.push("vis.company LIKE @company");
+        }
+        if (hostName) {
+            requestBuilder.input("hostName", mssql_1.default.NVarChar(255), `%${hostName}%`);
+            conditions.push("vt.host_name LIKE @hostName");
+        }
+        if (licensePlate) {
+            requestBuilder.input("licensePlate", mssql_1.default.NVarChar(80), `%${licensePlate}%`);
+            conditions.push("ISNULL(vt.license_plate, '') LIKE @licensePlate");
+        }
+        if (badgeNumber) {
+            requestBuilder.input("badgeNumber", mssql_1.default.NVarChar(80), `%${badgeNumber}%`);
+            conditions.push("ISNULL(vt.badge_number, '') LIKE @badgeNumber");
+        }
         if (from) {
             requestBuilder.input("dateFrom", mssql_1.default.DateTime2, new Date(from));
             conditions.push("vt.valid_from >= @dateFrom");
         }
         if (to) {
             requestBuilder.input("dateTo", mssql_1.default.DateTime2, new Date(to));
-            conditions.push("vt.valid_until <= @dateTo");
+            conditions.push("vt.valid_until < DATEADD(day, 1, @dateTo)");
         }
         const result = await requestBuilder.query(`
       SELECT
@@ -900,7 +1148,7 @@ exports.apiRouter.get("/api/sibe/visits", async (request, response) => {
         vt.license_plate AS licensePlate,
         vt.badge_number AS badgeNumber,
         vt.status,
-        g.name AS gateName,
+        ISNULL(g.name, 'Noch nicht zugeordnet') AS gateName,
         vt.host_name AS hostName,
         vt.host_department AS hostDepartment,
         CONVERT(NVARCHAR(30), vt.valid_from, 127) AS validFrom,
@@ -910,7 +1158,7 @@ exports.apiRouter.get("/api/sibe/visits", async (request, response) => {
         ISNULL(vt.host_signature_status, '${visitWorkflow_1.HOST_SIGNATURE_STATUS.PENDING}') AS hostSignatureStatus
       FROM dbo.visits vt
       INNER JOIN dbo.visitors vis ON vis.id = vt.visitor_id
-      INNER JOIN dbo.gates g ON g.id = vt.gate_id
+      LEFT JOIN dbo.gates g ON g.id = vt.gate_id
       WHERE ${conditions.join(" AND ")}
       ORDER BY vt.valid_from DESC
     `);
@@ -942,13 +1190,30 @@ exports.apiRouter.get("/api/sibe/visits/:id", async (request, response) => {
           CONVERT(NVARCHAR(10), vis.birth_date, 23) AS birthDate,
           vis.phone_optional AS visitorPhone,
           vis.email_optional AS visitorEmail,
+          vis.visitor_street AS visitorStreet,
+          vis.visitor_house_number AS visitorHouseNumber,
+          vis.visitor_postal_code AS visitorPostalCode,
+          vis.visitor_city AS visitorCity,
+          vis.visitor_address AS visitorAddress,
+          vis.id_document_type AS idDocumentType,
+          CONVERT(NVARCHAR(10), vis.id_document_valid_until, 23) AS idDocumentValidUntil,
+          vis.id_document_number AS idDocumentNumber,
+          vis.id_document_issuing_place AS idDocumentIssuingPlace,
           vt.host_name AS hostName,
           vt.host_email AS hostEmail,
           vt.host_phone AS hostPhone,
           vt.host_department AS hostDepartment,
+          vt.host_unit AS hostUnit,
+          vt.host_building AS hostBuilding,
+          vt.host_room AS hostRoom,
+          vt.host_extension AS hostExtension,
           vt.purpose,
+          vt.visit_purpose_type AS visitPurposeType,
+          vt.visit_company_order AS visitCompanyOrder,
+          vt.visit_end_type AS visitEndType,
+          vt.forwarded_to_note AS forwardedToNote,
           vt.gate_id AS gateId,
-          g.name AS gateName,
+          ISNULL(g.name, 'Noch nicht zugeordnet') AS gateName,
           vt.license_plate AS licensePlate,
           vt.signed_by_host_confirmed AS signedByHostConfirmed,
           ISNULL(vt.host_signature_status, '${visitWorkflow_1.HOST_SIGNATURE_STATUS.PENDING}') AS hostSignatureStatus,
@@ -957,12 +1222,27 @@ exports.apiRouter.get("/api/sibe/visits/:id", async (request, response) => {
           confirmer.username AS hostSignatureConfirmedBy,
           CONVERT(NVARCHAR(30), vt.host_signature_confirmed_at, 127) AS hostSignatureConfirmedAt,
           vt.checkout_note AS checkoutNote,
+          confirmerIn.username AS checkInBy,
+          confirmerOut.username AS checkOutBy,
+          vt.device_photo_app AS devicePhotoApp,
+          vt.device_film_app AS deviceFilmApp,
+          vt.device_video_camera AS deviceVideoCamera,
+          vt.device_manufacturer AS deviceManufacturer,
+          vt.device_serial_number AS deviceSerialNumber,
+          vt.device_accessories AS deviceAccessories,
+          vt.device_deposit_note AS deviceDepositNote,
+          vt.device_return_confirmed AS deviceReturnConfirmed,
+          CONVERT(NVARCHAR(30), vt.device_returned_at, 127) AS deviceReturnedAt,
+          returner.username AS deviceReturnedBy,
           vt.notes,
           vt.badge_number AS badgeNumber
         FROM dbo.visits vt
         INNER JOIN dbo.visitors vis ON vis.id = vt.visitor_id
-        INNER JOIN dbo.gates g ON g.id = vt.gate_id
+        LEFT JOIN dbo.gates g ON g.id = vt.gate_id
         LEFT JOIN dbo.users confirmer ON confirmer.id = vt.host_signature_confirmed_by
+        LEFT JOIN dbo.users confirmerIn ON confirmerIn.id = vt.check_in_by
+        LEFT JOIN dbo.users confirmerOut ON confirmerOut.id = vt.check_out_by
+        LEFT JOIN dbo.users returner ON returner.id = vt.device_returned_by
         WHERE vt.id = @id
       `);
         const visit = result.recordset[0];
@@ -984,12 +1264,20 @@ exports.apiRouter.get("/api/sibe/users", async (request, response) => {
         const requestBuilder = pool.request();
         const conditions = ["1 = 1"];
         const search = typeof request.query.search === "string" ? request.query.search.trim() : "";
+        const username = typeof request.query.username === "string" ? request.query.username.trim() : "";
         const role = typeof request.query.role === "string" ? request.query.role.trim() : "";
         const gateId = typeof request.query.gateId === "string" ? request.query.gateId.trim() : "";
+        const gate = typeof request.query.gate === "string" ? request.query.gate.trim() : "";
         const active = typeof request.query.active === "string" ? request.query.active.trim() : "";
+        const lastLoginFrom = typeof request.query.lastLoginFrom === "string" ? request.query.lastLoginFrom.trim() : "";
+        const lastLoginTo = typeof request.query.lastLoginTo === "string" ? request.query.lastLoginTo.trim() : "";
         if (search) {
             requestBuilder.input("search", mssql_1.default.NVarChar(255), `%${search}%`);
             conditions.push("u.username LIKE @search");
+        }
+        if (username) {
+            requestBuilder.input("username", mssql_1.default.NVarChar(255), `%${username}%`);
+            conditions.push("u.username LIKE @username");
         }
         if (role && role !== "all") {
             requestBuilder.input("role", mssql_1.default.NVarChar(32), role);
@@ -999,11 +1287,23 @@ exports.apiRouter.get("/api/sibe/users", async (request, response) => {
             requestBuilder.input("gateId", mssql_1.default.UniqueIdentifier, gateId);
             conditions.push("u.gate_id = @gateId");
         }
+        if (gate) {
+            requestBuilder.input("gate", mssql_1.default.NVarChar(255), `%${gate}%`);
+            conditions.push("ISNULL(g.name, '') LIKE @gate");
+        }
         if (active === "true") {
             conditions.push("u.is_active = 1");
         }
         else if (active === "false") {
             conditions.push("u.is_active = 0");
+        }
+        if (lastLoginFrom) {
+            requestBuilder.input("lastLoginFrom", mssql_1.default.DateTime2, new Date(lastLoginFrom));
+            conditions.push("u.last_login_at >= @lastLoginFrom");
+        }
+        if (lastLoginTo) {
+            requestBuilder.input("lastLoginTo", mssql_1.default.DateTime2, new Date(lastLoginTo));
+            conditions.push("u.last_login_at < DATEADD(day, 1, @lastLoginTo)");
         }
         const result = await requestBuilder.query(`
       SELECT
@@ -1838,7 +2138,7 @@ exports.apiRouter.get("/api/admin/system-status", async (request, response) => {
     try {
         const pool = await (0, db_1.getPool)();
         const retention = await getRetentionSettings();
-        const [activeVisits, configuredGates, staleVisits, openPreRegistrationsToday] = await Promise.all([
+        const [activeVisits, configuredGates, staleVisits, openPreRegistrationsToday, signaturesPending, signaturesFollowUp, signaturesExceptions] = await Promise.all([
             pool.request().query("SELECT COUNT(*) AS count FROM dbo.visits WHERE status = 'checked_in'"),
             pool.request().query("SELECT COUNT(*) AS count FROM dbo.gates WHERE is_active = 1"),
             pool.request()
@@ -1853,7 +2153,10 @@ exports.apiRouter.get("/api/admin/system-status", async (request, response) => {
         FROM dbo.visits
         WHERE status = '${visitWorkflow_1.VISIT_STATUS.PRE_REGISTERED}'
           AND CAST(valid_from AS date) = CAST(SYSUTCDATETIME() AS date)
-      `)
+      `),
+            pool.request().query(`SELECT COUNT(*) AS count FROM dbo.visits WHERE ISNULL(host_signature_status, '${visitWorkflow_1.HOST_SIGNATURE_STATUS.PENDING}') = '${visitWorkflow_1.HOST_SIGNATURE_STATUS.PENDING}'`),
+            pool.request().query(`SELECT COUNT(*) AS count FROM dbo.visits WHERE host_signature_status = '${visitWorkflow_1.HOST_SIGNATURE_STATUS.SIGNED_LATER}'`),
+            pool.request().query(`SELECT COUNT(*) AS count FROM dbo.visits WHERE host_signature_status = '${visitWorkflow_1.HOST_SIGNATURE_STATUS.MISSING_EXCEPTION}'`)
         ]);
         response.json({
             app: "ok",
@@ -1861,6 +2164,9 @@ exports.apiRouter.get("/api/admin/system-status", async (request, response) => {
             activeVisits: activeVisits.recordset[0]?.count ?? 0,
             activeGates: configuredGates.recordset[0]?.count ?? 0,
             openPreRegistrationsToday: openPreRegistrationsToday.recordset[0]?.count ?? 0,
+            signaturesPending: signaturesPending.recordset[0]?.count ?? 0,
+            signaturesFollowUp: signaturesFollowUp.recordset[0]?.count ?? 0,
+            signaturesExceptions: signaturesExceptions.recordset[0]?.count ?? 0,
             staleVisits: retention.enabled ? staleVisits.recordset[0]?.count ?? 0 : 0,
             retentionDays: retention.days,
             retentionEnabled: retention.enabled,

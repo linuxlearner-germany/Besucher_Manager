@@ -1,6 +1,7 @@
 import sql from "mssql";
 import { writeAuditLog } from "./auditLog";
 import { getPool } from "./db";
+import { generateBadgeNumberCandidate } from "./badgeNumber";
 import type { PublicPreRegistrationInput } from "./publicPreRegistrationSchema";
 import { VISIT_STATUS } from "./visitWorkflow";
 
@@ -22,6 +23,28 @@ export type CreatedPreRegistration = {
   status: string;
 };
 
+async function generateUniqueBadgeNumber(transaction: sql.Transaction): Promise<string> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const candidate = generateBadgeNumberCandidate();
+    const existing = await new sql.Request(transaction)
+      .input("badgeNumber", sql.NVarChar(64), candidate)
+      .query<{ id: string }>(`
+        SELECT TOP 1 v.id
+        FROM dbo.visits v
+        INNER JOIN dbo.visitors vis ON vis.id = v.visitor_id
+        WHERE v.badge_number = @badgeNumber
+          AND vis.is_deleted = 0
+          AND v.status <> '${VISIT_STATUS.CANCELLED}'
+      `);
+
+    if (existing.recordset.length === 0) {
+      return candidate;
+    }
+  }
+
+  throw new Error("badge_number_generation_failed");
+}
+
 function cleanOptional(value: string | undefined): string | null {
   if (typeof value !== "string") {
     return null;
@@ -29,6 +52,22 @@ function cleanOptional(value: string | undefined): string | null {
 
   const normalized = value.trim();
   return normalized.length > 0 ? normalized : null;
+}
+
+function normalizeDateOnlyStart(value: string): Date {
+  const parsed = new Date(value);
+  const utcYear = parsed.getUTCFullYear();
+  const utcMonth = parsed.getUTCMonth();
+  const utcDay = parsed.getUTCDate();
+  return new Date(Date.UTC(utcYear, utcMonth, utcDay, 0, 0, 0, 0));
+}
+
+function normalizeDateOnlyEnd(value: string): Date {
+  const parsed = new Date(value);
+  const utcYear = parsed.getUTCFullYear();
+  const utcMonth = parsed.getUTCMonth();
+  const utcDay = parsed.getUTCDate();
+  return new Date(Date.UTC(utcYear, utcMonth, utcDay, 23, 59, 59, 999));
 }
 
 export async function listActiveGates(): Promise<GateSummary[]> {
@@ -53,17 +92,7 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
   await transaction.begin();
 
   try {
-    const gateCheck = await new sql.Request(transaction)
-      .input("gateId", sql.UniqueIdentifier, input.gateId)
-      .query<{ id: string }>(`
-      SELECT id
-      FROM dbo.gates
-      WHERE id = @gateId AND is_active = 1
-    `);
-
-    if (gateCheck.recordset.length === 0) {
-      throw new Error("gate_not_found");
-    }
+    const badgeNumber = await generateUniqueBadgeNumber(transaction);
 
     const visitorInsert = await new sql.Request(transaction)
       .input("firstName", sql.NVarChar(120), input.firstName.trim())
@@ -100,15 +129,15 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
 
     const visitInsert = await new sql.Request(transaction)
       .input("visitorId", sql.UniqueIdentifier, visitorId)
-      .input("gateId", sql.UniqueIdentifier, input.gateId)
       .input("hostName", sql.NVarChar(255), input.hostName.trim())
       .input("hostEmail", sql.NVarChar(255), cleanOptional(input.hostEmail))
       .input("hostPhone", sql.NVarChar(80), cleanOptional(input.hostPhone))
-      .input("hostDepartment", sql.NVarChar(255), input.hostDepartment.trim())
+      .input("hostDepartment", sql.NVarChar(255), cleanOptional(input.hostDepartment))
       .input("purpose", sql.NVarChar(500), input.purpose.trim())
-      .input("validFrom", sql.DateTime2, new Date(input.validFrom))
-      .input("validUntil", sql.DateTime2, new Date(input.validUntil))
+      .input("validFrom", sql.DateTime2, normalizeDateOnlyStart(input.validFrom))
+      .input("validUntil", sql.DateTime2, normalizeDateOnlyEnd(input.validUntil))
       .input("licensePlate", sql.NVarChar(40), cleanOptional(input.licensePlate))
+      .input("badgeNumber", sql.NVarChar(64), badgeNumber)
       .input("notes", sql.NVarChar(sql.MAX), cleanOptional(input.notes))
       .input("submittedIpAddress", sql.NVarChar(64), cleanOptional(input.submittedIpAddress ?? undefined))
       .query<{ id: string; status: string }>(`
@@ -123,6 +152,7 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
           valid_from,
           valid_until,
           license_plate,
+          badge_number,
           status,
           created_via_public_form,
           submitted_ip_address,
@@ -131,7 +161,7 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
         OUTPUT inserted.id, inserted.status
         VALUES (
           @visitorId,
-          @gateId,
+          NULL,
           @hostName,
           @hostEmail,
           @hostPhone,
@@ -140,6 +170,7 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
           @validFrom,
           @validUntil,
           @licensePlate,
+          @badgeNumber,
           '${VISIT_STATUS.PRE_REGISTERED}',
           1,
           @submittedIpAddress,

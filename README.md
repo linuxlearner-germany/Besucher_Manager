@@ -106,6 +106,9 @@ http://deb-srv-docker:3020
 - der aktive Gelaendeplan wird automatisch eingebunden, wenn einer vorhanden ist
 - Sicherheitshinweise, Fotografierverbot und Unterschriftsbereich werden kompakt aufbereitet
 - zusaetzlich gibt es ein Datumsfeld fuer spaetere Unterschriften des Ansprechpartners
+- der Druck ist bewusst auf maximal zwei Seiten strukturiert:
+  - Seite 1: Kerndaten + Unterschrift
+  - Seite 2: Hinweise + Gelaendeplan (nur wenn Inhalte vorhanden)
 - App-Header und Navigation werden beim Drucken ausgeblendet
 - falls der Browser URL, Datum oder Seitenzahlen druckt:
   - im Druckdialog die Option fuer Kopf- und Fusszeilen deaktivieren
@@ -114,29 +117,57 @@ http://deb-srv-docker:3020
 
 - In `/wache/besuche/:id` kann die Wache vor dem Check-in Voranmeldedaten bearbeiten.
 - Bearbeitbar sind Besucher- und Besuchsdaten wie Name, Firma, Geburtsdatum, Ansprechpartner, Abteilung, Zweck, Zeitfenster und Bemerkung.
+- Optional ergaenzbar sind zudem papiernahe Felder wie Anschrift, Ausweisdaten, Ansprechpartner-Ort (Gebaeude/Zimmer/Apparat), Besuchszweck-Art sowie mitgefuehrte Geraete.
 - Guard-Benutzer duerfen nur Besuche ihrer eigenen Wache bearbeiten.
 - Verbotene Felder wie Status, Besuchsnummer, Check-in/Check-out-Zeiten oder technische Herkunftsdaten bleiben serverseitig geschuetzt.
 - Aenderungen werden im Auditlog als `VISIT_UPDATED_BY_GUARD` und `VISITOR_UPDATED_BY_GUARD` protokolliert.
+- Sensible Ausweisdaten werden nicht in Tabellenlisten angezeigt und nicht im Auditlog-Klartext gespeichert.
+- Die Detailansicht zeigt automatisch:
+  - blockierende Fehler (fehlen Pflichtdaten)
+  - Warnungen (z. B. ueberfaellig / unzugeordnet)
+  - Hinweise (optionale Daten fehlen)
+- Der Check-in wird serverseitig blockiert, solange Pflichtdaten fuer den operativen Ablauf fehlen.
+
+## Wache-Kalenderansicht
+
+- In `/wache` gibt es die Tabs `Tagesliste` und `Kalender`.
+- Der Kalender zeigt geplante und aktive Besuche im Zeitraum.
+- Unzugeordnete Voranmeldungen (`gate_id IS NULL`) erscheinen fuer alle Wachen.
+- Beim Guard-Check-in wird eine unzugeordnete Voranmeldung automatisch der Guard-Wache zugewiesen.
+- Ein Klick auf einen Kalendertag zeigt die Besuchsliste fuer diesen Tag; von dort geht es in die Detailansicht.
+
+## Oeffentliche Voranmeldung ohne Wache
+
+- Das Formular `/` enthaelt keine Wache-Auswahl mehr.
+- Oeffentliche Voranmeldungen werden zunaechst ohne feste Wache gespeichert.
+- Diese Voranmeldungen erscheinen in allen Wache-Tagesuebersichten.
+- Beim Check-in durch einen Guard wird der Besuch automatisch der Guard-Wache zugeordnet.
 
 ## Check-out mit Ansprechpartner-Unterschrift
 
-Statuswerte:
+- In der Wache-Maske ist der Check-out bewusst einfach gehalten:
+  - Besuchsnummer vom zurueckgegebenen Besucherschein eingeben
+  - Checkbox `Unterschrift vom Ansprechpartner erledigt` aktivieren
+  - dann `Auschecken`
+- Ohne passende Besuchsnummer oder ohne gesetzte Checkbox wird der Check-out abgewiesen.
+- Auditlog dokumentiert den Check-out inkl. gepruefter Besuchsnummer.
 
-- `pending`
-- `signed_same_day`
-- `signed_later`
-- `missing_exception`
-- `not_required`
+## Check-out mit Besuchsnummer
 
-Regeln:
+- Beim Verlassen gibt der Besucher den Besucherschein an der Wache ab.
+- Die Wache muss die Besuchsnummer vom zurueckgegebenen Schein eingeben.
+- Das System vergleicht die Eingabe serverseitig mit der gespeicherten Besuchsnummer.
+- Erst bei passender Nummer und gueltigem Unterschriftsstatus wird ausgecheckt.
+- Auditlog enthaelt `VISIT_CHECKED_OUT` mit Kennzeichen, dass die Besuchsnummer geprueft wurde.
 
-- `signed_same_day`: Unterschrift liegt am Besuchstag vor
-- `signed_later`: Unterschrift wird spaeter nachgereicht, Datum erforderlich
-- `missing_exception`: Ausnahmefall ohne Unterschrift, Begruendung erforderlich
-- `not_required`: nur fuer bewusst dokumentierte Sonderfaelle
-- `pending`: nicht ausreichend fuer den Check-out
+## Besuchsnummer
 
-Der Check-out speichert Unterschriftsstatus, optionales Datum, Hinweistext und die bestaetigende Person mit Zeitstempel. Diese Informationen sind in Detailansicht, SiBe und Auditlog nachvollziehbar.
+- Neue Besuchsnummern sind exakt 5-stellig.
+- Zeichensatz: `A-Z` und `0-9` (`[A-Z0-9]{5}`).
+- Kein Praefix (`B-`), kein `LEGACY`, keine UUID-Teile.
+- Die Nummer steht auf dem Besucherschein und wird beim Check-out gegen den gespeicherten Wert geprueft.
+
+Erweiterte Unterschriftsstatus bleiben intern fuer Auswertung/SiBe verfuegbar, sind aber nicht Teil der vereinfachten Standard-Check-out-Maske.
 
 ## Legacy-Django-Tabellen bereinigen
 
@@ -180,7 +211,7 @@ ORDER BY TABLE_NAME;
 2. Wache sieht Voranmeldung in `/wache`.
 3. Wache checkt ein.
 4. Besucherschein wird gedruckt.
-5. Wache waehlt beim Check-out einen gueltigen Unterschriftsstatus und dokumentiert bei Bedarf Datum oder Ausnahme.
+5. Wache prueft Besuchsnummer + Unterschrift (Checkbox) und checkt aus.
 6. Aktionen werden im Auditlog protokolliert.
 
 ## Operativer MVP-Ablauf
@@ -189,8 +220,15 @@ ORDER BY TABLE_NAME;
 - `Wache`: Besuch erscheint in `/wache`
 - `Check-in`: nur fuer vorangemeldete Besuche
 - `Druck`: Besucherschein ueber `/wache/besuche/:id/druck`
-- `Check-out`: nur mit gueltigem Unterschriftsstatus des Ansprechpartners
+- `Check-out`: nur mit passender Besuchsnummer vom Schein und bestaetigter Ansprechpartner-Unterschrift
 - `Auditlog`: dokumentiert Voranmeldung, Check-in, Druck und Check-out
+
+## SiBe-Filter
+
+- Zeitraum: `von` / `bis` sowie Schnellfilter (`Heute`, `Gestern`, `Diese Woche`, `Letzte 7 Tage`, `Dieser Monat`)
+- Besuchsstatus: `Alle`, `Vorangemeldet`, `Eingecheckt`, `Ausgecheckt`, `Storniert`, `Ueberfaellig`
+- Unterschrift: `Alle`, `Offen`, `Am Besuchstag unterschrieben`, `Nachgereicht`, `Ausnahme dokumentiert`, `Nicht erforderlich`
+- weitere Filter: Wache, Firma, Ansprechpartner, Kennzeichen, Besuchsnummer
 
 ## MVP-Pruefung automatisieren
 
@@ -228,6 +266,18 @@ Zusaetzlich gibt es einen kompakten Rollen- und Zugriffstest:
 
 ```bash
 npm run verify:roles
+```
+
+Fuer operative Nachverfolgung offener oder nachgereichter Unterschriften:
+
+```bash
+npm run report:signatures > unterschriften.csv
+```
+
+Fuer einen kompletten Sammellauf:
+
+```bash
+npm run verify:ops
 ```
 
 ## Frontend-Assets

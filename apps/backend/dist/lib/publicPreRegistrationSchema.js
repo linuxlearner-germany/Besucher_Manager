@@ -9,10 +9,9 @@ exports.publicPreRegistrationSchema = zod_1.z
     company: zod_1.z.string().trim().min(1, "Firma / Organisation ist erforderlich."),
     hostName: zod_1.z.string().trim().min(1, "Ansprechpartner ist erforderlich."),
     hostEmail: zod_1.z.string().trim().email("Ungueltige Ansprechpartner-E-Mail.").optional().or(zod_1.z.literal("")),
-    hostPhone: zod_1.z.string().trim().optional(),
-    hostDepartment: zod_1.z.string().trim().min(1, "Abteilung / Bereich ist erforderlich."),
+    hostPhone: zod_1.z.string().trim().min(1, "Ansprechpartner Telefon ist erforderlich."),
+    hostDepartment: zod_1.z.string().trim().optional(),
     purpose: zod_1.z.string().trim().min(1, "Besuchszweck ist erforderlich."),
-    gateId: zod_1.z.string().uuid("Ungueltige Wache."),
     validFrom: zod_1.z.string().trim().min(1, "Gueltig von ist erforderlich."),
     validUntil: zod_1.z.string().trim().min(1, "Gueltig bis ist erforderlich."),
     birthDate: zod_1.z.string().trim().optional().or(zod_1.z.literal("")),
@@ -38,11 +37,11 @@ exports.publicPreRegistrationSchema = zod_1.z
             message: "Ungueltiger Endzeitpunkt."
         });
     }
-    if (!Number.isNaN(validFrom.getTime()) && !Number.isNaN(validUntil.getTime()) && validUntil <= validFrom) {
+    if (!Number.isNaN(validFrom.getTime()) && !Number.isNaN(validUntil.getTime()) && validUntil < validFrom) {
         context.addIssue({
             code: zod_1.z.ZodIssueCode.custom,
             path: ["validUntil"],
-            message: "Gueltig bis muss nach Gueltig von liegen."
+            message: "Gueltig bis darf nicht vor Gueltig von liegen."
         });
     }
     if (value.birthDate) {

@@ -1,0 +1,109 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+
+function createBaseVisit() {
+  return {
+    status: "pre_registered",
+    firstName: "Max",
+    lastName: "Mustermann",
+    company: "Muster GmbH",
+    hostName: "Erika Beispiel",
+    hostPhone: "01234",
+    purpose: "Besprechung",
+    validFrom: "2026-05-26T08:00:00.000Z",
+    validUntil: "2026-05-26T10:00:00.000Z",
+    gateId: null as string | null,
+    badgeNumber: "A7K9P",
+    checkOutAt: null as string | null,
+    birthDate: null as string | null,
+    visitorPhone: null as string | null,
+    visitorEmail: null as string | null,
+    licensePlate: null as string | null,
+    visitorStreet: "Musterweg" as string | null,
+    visitorHouseNumber: "10" as string | null,
+    visitorPostalCode: "12345" as string | null,
+    visitorCity: "Berlin" as string | null,
+    visitorAddress: null as string | null,
+    idDocumentType: "identity_card" as string | null,
+    idDocumentValidUntil: "2030-12-31" as string | null,
+    idDocumentNumber: "A1234567" as string | null,
+    idDocumentIssuingPlace: "Berlin" as string | null
+  };
+}
+
+test("completeness detects missing host phone and blocks check-in", () => {
+  process.env.APP_SECRET = process.env.APP_SECRET || "test-secret";
+  process.env.MSSQL_HOST = process.env.MSSQL_HOST || "localhost";
+  process.env.MSSQL_DATABASE = process.env.MSSQL_DATABASE || "testdb";
+  process.env.MSSQL_USER = process.env.MSSQL_USER || "sa";
+  process.env.MSSQL_PASSWORD = process.env.MSSQL_PASSWORD || "Password123!";
+  const { getVisitCompleteness } = require("./guardVisits");
+  const visit = createBaseVisit();
+  visit.hostPhone = "";
+  const completeness = getVisitCompleteness(visit);
+  assert.equal(completeness.canCheckIn, false);
+  assert.equal(completeness.errors.some((issue: { field: string }) => issue.field === "Ansprechpartner Telefon"), true);
+});
+
+test("completeness detects missing purpose", () => {
+  const { getVisitCompleteness } = require("./guardVisits");
+  const visit = createBaseVisit();
+  visit.purpose = " ";
+  const completeness = getVisitCompleteness(visit);
+  assert.equal(completeness.canCheckIn, false);
+  assert.equal(completeness.errors.some((issue: { field: string }) => issue.field === "Besuchszweck"), true);
+});
+
+test("completeness detects invalid range", () => {
+  const { getVisitCompleteness } = require("./guardVisits");
+  const visit = createBaseVisit();
+  visit.validFrom = "2026-05-26T12:00:00.000Z";
+  visit.validUntil = "2026-05-26T10:00:00.000Z";
+  const completeness = getVisitCompleteness(visit);
+  assert.equal(completeness.canCheckIn, false);
+  assert.equal(completeness.errors.some((issue: { field: string }) => issue.field === "valid_until"), true);
+});
+
+test("completeness allows check-in when required fields are present", () => {
+  const { getVisitCompleteness } = require("./guardVisits");
+  const visit = createBaseVisit();
+  const completeness = getVisitCompleteness(visit);
+  assert.equal(completeness.canCheckIn, true);
+});
+
+test("completeness accepts visitor_address free text as address alternative", () => {
+  const { getVisitCompleteness } = require("./guardVisits");
+  const visit = createBaseVisit();
+  visit.visitorStreet = "";
+  visit.visitorHouseNumber = "";
+  visit.visitorPostalCode = "";
+  visit.visitorCity = "";
+  visit.visitorAddress = "Musterweg 10, 12345 Berlin";
+  const completeness = getVisitCompleteness(visit);
+  assert.equal(completeness.canCheckIn, true);
+});
+
+test("completeness blocks check-in without address", () => {
+  const { getVisitCompleteness } = require("./guardVisits");
+  const visit = createBaseVisit();
+  visit.visitorStreet = "";
+  visit.visitorHouseNumber = "";
+  visit.visitorPostalCode = "";
+  visit.visitorCity = "";
+  visit.visitorAddress = "";
+  const completeness = getVisitCompleteness(visit);
+  assert.equal(completeness.canCheckIn, false);
+  assert.equal(completeness.errors.some((issue: { field: string }) => issue.field === "Adresse"), true);
+});
+
+test("completeness blocks check-in without id document fields", () => {
+  const { getVisitCompleteness } = require("./guardVisits");
+  const visit = createBaseVisit();
+  visit.idDocumentType = "";
+  visit.idDocumentValidUntil = "";
+  visit.idDocumentNumber = "";
+  visit.idDocumentIssuingPlace = "";
+  const completeness = getVisitCompleteness(visit);
+  assert.equal(completeness.canCheckIn, false);
+  assert.equal(completeness.errors.some((issue: { field: string }) => issue.field === "Ausweisnummer"), true);
+});

@@ -7,10 +7,9 @@ export const publicPreRegistrationSchema = z
     company: z.string().trim().min(1, "Firma / Organisation ist erforderlich."),
     hostName: z.string().trim().min(1, "Ansprechpartner ist erforderlich."),
     hostEmail: z.string().trim().email("Ungueltige Ansprechpartner-E-Mail.").optional().or(z.literal("")),
-    hostPhone: z.string().trim().optional(),
-    hostDepartment: z.string().trim().min(1, "Abteilung / Bereich ist erforderlich."),
+    hostPhone: z.string().trim().min(1, "Ansprechpartner Telefon ist erforderlich."),
+    hostDepartment: z.string().trim().optional(),
     purpose: z.string().trim().min(1, "Besuchszweck ist erforderlich."),
-    gateId: z.string().uuid("Ungueltige Wache."),
     validFrom: z.string().trim().min(1, "Gueltig von ist erforderlich."),
     validUntil: z.string().trim().min(1, "Gueltig bis ist erforderlich."),
     birthDate: z.string().trim().optional().or(z.literal("")),
@@ -39,11 +38,11 @@ export const publicPreRegistrationSchema = z
       });
     }
 
-    if (!Number.isNaN(validFrom.getTime()) && !Number.isNaN(validUntil.getTime()) && validUntil <= validFrom) {
+    if (!Number.isNaN(validFrom.getTime()) && !Number.isNaN(validUntil.getTime()) && validUntil < validFrom) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["validUntil"],
-        message: "Gueltig bis muss nach Gueltig von liegen."
+        message: "Gueltig bis darf nicht vor Gueltig von liegen."
       });
     }
 
