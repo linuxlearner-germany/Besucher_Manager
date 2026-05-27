@@ -7,7 +7,7 @@ services:
     environment:
       UPLOAD_DIR: /app/uploads
     ports:
-      - "${APP_PORT:-3030}:${APP_PORT:-3030}"
+      - "${PORT:-3030}:3030"
     volumes:
       - uploads_data:/app/uploads
     healthcheck:
@@ -16,7 +16,7 @@ services:
           "CMD",
           "node",
           "-e",
-          "http=require('http');http.get('http://127.0.0.1:' + (process.env.APP_PORT || 3030) + '/health',res=>process.exit(res.statusCode===200?0:1)).on('error',()=>process.exit(1))"
+          "http=require('http');http.get('http://127.0.0.1:' + (process.env.PORT || process.env.APP_PORT || 3030) + '/health',res=>process.exit(res.statusCode===200?0:1)).on('error',()=>process.exit(1))"
         ]
       interval: 30s
       timeout: 5s

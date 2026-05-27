@@ -4,6 +4,10 @@ import { z } from "zod";
 
 dotenv.config();
 
+if (!process.env.APP_PORT && process.env.PORT) {
+  process.env.APP_PORT = process.env.PORT;
+}
+
 const booleanish = z.preprocess((value) => {
   if (typeof value === "string") {
     const normalized = value.trim().toLowerCase();
