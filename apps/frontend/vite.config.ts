@@ -7,8 +7,8 @@ export default defineConfig({
     host: "0.0.0.0",
     port: 5173,
     proxy: {
-      "/api": "http://localhost:3020",
-      "/health": "http://localhost:3020"
+      "/api": "http://localhost:3030",
+      "/health": "http://localhost:3030"
     }
   }
 });

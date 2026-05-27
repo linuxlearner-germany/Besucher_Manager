@@ -200,7 +200,7 @@ docker compose logs -f app
 Die Anwendung soll erreichbar sein unter:
 
 ```text
-http://deb-srv-docker:3020
+http://deb-srv-docker:3030
 ```
 
 Der Host-Port muss über `.env` konfigurierbar sein.
@@ -208,7 +208,7 @@ Der Host-Port muss über `.env` konfigurierbar sein.
 Beispiel:
 
 ```env
-APP_PORT=3020
+APP_PORT=3030
 ```
 
 ---
@@ -226,13 +226,13 @@ Anforderungen:
 * Runtime-Container enthält nur notwendige Abhängigkeiten
 * Upload-Verzeichnis wird persistent eingebunden
 * keine Datenbank im Compose-Stack
-* App lauscht intern auf Port `3020`
+* App lauscht intern auf Port `3030`
 
 Compose-Portmapping:
 
 ```yaml
 ports:
-  - "${APP_PORT:-3020}:3020"
+  - "${APP_PORT:-3030}:3030"
 ```
 
 Volumes:
@@ -249,7 +249,7 @@ Beispiel `.env.example`:
 
 ```env
 NODE_ENV=production
-APP_PORT=3020
+APP_PORT=3030
 APP_SECRET=CHANGE_ME
 
 MSSQL_HOST=MS-SRV-SQL
@@ -1019,7 +1019,7 @@ Es kann jedoch Netzwerkfilter, Firewall-Regeln oder Paketfilter geben.
 Benötigte Verbindungen:
 
 ```text
-Clients/Wachen/Mitarbeiter -> deb-srv-docker:3020
+Clients/Wachen/Mitarbeiter -> deb-srv-docker:3030
 deb-srv-docker -> MS-SRV-SQL:1433
 ```
 
@@ -1321,7 +1321,7 @@ Der MVP gilt als erfüllt, wenn:
 ```text
 - die Anwendung per Docker gebaut werden kann
 - der Container ohne manuelles npm install startet
-- die App unter http://deb-srv-docker:3020 erreichbar ist
+- die App unter http://deb-srv-docker:3030 erreichbar ist
 - die Verbindung zum externen MS SQL Server funktioniert
 - Migrationen ausgeführt werden
 - mindestens eine aktive Wache vorhanden ist

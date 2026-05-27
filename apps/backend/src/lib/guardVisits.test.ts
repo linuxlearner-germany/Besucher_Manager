@@ -69,6 +69,8 @@ test("completeness allows check-in when required fields are present", () => {
   const visit = createBaseVisit();
   const completeness = getVisitCompleteness(visit);
   assert.equal(completeness.canCheckIn, true);
+  assert.equal(completeness.warnings.some((issue: { field: string }) => issue.field === "gate_id"), false);
+  assert.equal(completeness.infos.some((issue: { field: string }) => issue.field === "id_document"), false);
 });
 
 test("completeness accepts visitor_address free text as address alternative", () => {
@@ -93,7 +95,7 @@ test("completeness blocks check-in without address", () => {
   visit.visitorAddress = "";
   const completeness = getVisitCompleteness(visit);
   assert.equal(completeness.canCheckIn, false);
-  assert.equal(completeness.errors.some((issue: { field: string }) => issue.field === "Adresse"), true);
+  assert.equal(completeness.errors.some((issue: { field: string }) => issue.field === "Strasse"), true);
 });
 
 test("completeness blocks check-in without id document fields", () => {
@@ -106,4 +108,31 @@ test("completeness blocks check-in without id document fields", () => {
   const completeness = getVisitCompleteness(visit);
   assert.equal(completeness.canCheckIn, false);
   assert.equal(completeness.errors.some((issue: { field: string }) => issue.field === "Ausweisnummer"), true);
+  assert.equal(completeness.infos.some((issue: { field: string }) => issue.field === "id_document"), false);
+});
+
+test("completeness does not warn about missing gate assignment", () => {
+  const { getVisitCompleteness } = require("./guardVisits");
+  const visit = createBaseVisit();
+  visit.gateId = null;
+  const completeness = getVisitCompleteness(visit);
+  assert.equal(completeness.warnings.some((issue: { field: string }) => issue.field === "gate_id"), false);
+});
+
+test("completeness respects required fields from configuration", () => {
+  const { getVisitCompleteness } = require("./guardVisits");
+  const visit = createBaseVisit();
+  visit.hostPhone = "";
+  const config = {
+    requiredGuardCheckin: [
+      { fieldKey: "visitor_first_name", label: "Vorname" }
+    ],
+    requiredBeforePrint: [
+      { fieldKey: "visitor_first_name", label: "Vorname" }
+    ],
+    optionalInfoGuard: []
+  };
+  const completeness = getVisitCompleteness(visit, config);
+  assert.equal(completeness.canCheckIn, true);
+  assert.equal(completeness.errors.some((issue: { field: string }) => issue.field === "Ansprechpartner Telefon"), false);
 });

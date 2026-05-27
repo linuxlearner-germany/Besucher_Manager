@@ -7,7 +7,7 @@ Diese Anwendung wird ausschliesslich per Docker betrieben.
 - Docker-Host: `deb-srv-docker`
 - SQL-Server: `MS-SRV-SQL`
 - Datenbank: `Besuchermngmt`
-- App-Port: `3020`
+- App-Port: `3030`
 
 ## Wichtige Regeln
 
@@ -34,11 +34,11 @@ Beispielwerte (Platzhalter):
 ```env
 NODE_ENV=production
 APP_HOST=0.0.0.0
-APP_PORT=3020
+APP_PORT=3030
 APP_SECRET=CHANGE_ME
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=CHANGE_ME
-PUBLIC_BASE_URL=http://deb-srv-docker:3020
+PUBLIC_BASE_URL=http://deb-srv-docker:3030
 APP_SECURE_COOKIES=false
 
 MSSQL_HOST=MS-SRV-SQL
@@ -67,14 +67,14 @@ docker compose logs -f app
 ## 4) Health und Erreichbarkeit
 
 ```bash
-curl -s http://localhost:3020/health
-curl -s http://localhost:3020/api/health
+curl -s http://localhost:3030/health
+curl -s http://localhost:3030/api/health
 ```
 
 Browser:
 
 ```text
-http://deb-srv-docker:3020
+http://deb-srv-docker:3030
 ```
 
 ## 5) Betriebsnotizen

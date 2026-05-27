@@ -11,9 +11,9 @@
     "create-admin": "npm run create-admin --workspace @besucher-manager/backend",
     "test:backend": "npm run test --workspace @besucher-manager/backend",
     "typecheck": "npm run typecheck --workspace @besucher-manager/backend && npm run typecheck --workspace @besucher-manager/frontend",
-    "verify:mvp": "python3 scripts/ops/verify_mvp_flow.py --base-url http://localhost:3020",
-    "verify:roles": "python3 scripts/ops/verify_role_access.py --base-url http://localhost:3020",
-    "report:signatures": "python3 scripts/ops/export_signature_followups.py --base-url http://localhost:3020",
+    "verify:mvp": "python3 scripts/ops/verify_mvp_flow.py --base-url http://localhost:3030",
+    "verify:roles": "python3 scripts/ops/verify_role_access.py --base-url http://localhost:3030",
+    "report:signatures": "python3 scripts/ops/export_signature_followups.py --base-url http://localhost:3030",
     "verify:ops": "python3 scripts/ops/run_operational_checks.py"
   },
   "private": true,

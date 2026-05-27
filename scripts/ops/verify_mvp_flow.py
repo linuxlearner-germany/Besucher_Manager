@@ -148,7 +148,7 @@ def require_visit(visits: list[dict[str, Any]], visit_id: str, label: str) -> di
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Prueft den Besucher-MVP-Flow gegen eine laufende Instanz.")
-    parser.add_argument("--base-url", default="http://localhost:3020", help="Basis-URL der App")
+    parser.add_argument("--base-url", default="http://localhost:3030", help="Basis-URL der App")
     parser.add_argument("--gate-name", default="", help="Bevorzugte aktive Wache")
     parser.add_argument("--guard-user", default="guard.demo")
     parser.add_argument("--guard-password", default="Test1234!")

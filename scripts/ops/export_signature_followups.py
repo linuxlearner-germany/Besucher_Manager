@@ -58,7 +58,7 @@ def login(client: HttpClient, username: str, password: str) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Exportiert unterschriftsrelevante Besuchsvorgaenge als CSV.")
-    parser.add_argument("--base-url", default="http://localhost:3020")
+    parser.add_argument("--base-url", default="http://localhost:3030")
     parser.add_argument("--user", default="sibe.demo")
     parser.add_argument("--password", default="Test1234!")
     parser.add_argument(

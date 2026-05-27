@@ -79,7 +79,7 @@ def assert_status(actual: int, expected: int, label: str) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Prueft Rollen- und Zugriffssicherheit der Besucher-App.")
-    parser.add_argument("--base-url", default="http://localhost:3020")
+    parser.add_argument("--base-url", default="http://localhost:3030")
     parser.add_argument("--guard-user", default="guard.demo")
     parser.add_argument("--guard-password", default="Test1234!")
     parser.add_argument("--sibe-user", default="sibe.demo")

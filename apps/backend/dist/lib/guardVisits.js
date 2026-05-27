@@ -14,6 +14,7 @@ exports.updateVisitForGuard = updateVisitForGuard;
 const mssql_1 = __importDefault(require("mssql"));
 const db_1 = require("./db");
 const auditLog_1 = require("./auditLog");
+const fieldDefinitions_1 = require("./fieldDefinitions");
 const visitWorkflow_1 = require("./visitWorkflow");
 const normalizedStatusSql = `
   CASE
@@ -58,55 +59,137 @@ function createScopeClause(user) {
 function isBlank(value) {
     return !value || value.trim().length === 0;
 }
-function getVisitCompleteness(visit) {
+function getSystemFieldValue(visit, fieldKey) {
+    const mapping = {
+        visitor_first_name: visit.firstName,
+        visitor_last_name: visit.lastName,
+        visitor_company: visit.company,
+        visitor_birth_date: visit.birthDate,
+        visitor_phone: visit.visitorPhone,
+        visitor_email: visit.visitorEmail,
+        visitor_license_plate: visit.licensePlate,
+        visitor_street: visit.visitorStreet,
+        visitor_house_number: visit.visitorHouseNumber,
+        visitor_postal_code: visit.visitorPostalCode,
+        visitor_city: visit.visitorCity,
+        visitor_address: visit.visitorAddress,
+        host_name: visit.hostName,
+        host_phone: visit.hostPhone,
+        visit_purpose: visit.purpose,
+        valid_from: visit.validFrom,
+        valid_until: visit.validUntil,
+        id_document_type: visit.idDocumentType,
+        id_document_valid_until: visit.idDocumentValidUntil || null,
+        id_document_number: visit.idDocumentNumber,
+        id_document_issuing_place: visit.idDocumentIssuingPlace || null
+    };
+    return mapping[fieldKey] ?? null;
+}
+function defaultCompletenessConfig() {
+    const required = [
+        ["visitor_first_name", "Vorname"],
+        ["visitor_last_name", "Nachname"],
+        ["visitor_company", "Firma / Organisation"],
+        ["host_name", "Ansprechpartner"],
+        ["host_phone", "Ansprechpartner Telefon"],
+        ["visit_purpose", "Besuchszweck"],
+        ["valid_from", "Gueltig von"],
+        ["valid_until", "Gueltig bis"],
+        ["visitor_street", "Strasse"],
+        ["visitor_house_number", "Hausnummer"],
+        ["visitor_postal_code", "PLZ"],
+        ["visitor_city", "Wohnort"],
+        ["id_document_type", "Ausweisart"],
+        ["id_document_valid_until", "Ausweis gueltig bis"],
+        ["id_document_number", "Ausweisnummer"],
+        ["id_document_issuing_place", "Ausstellungsort"]
+    ].map(([fieldKey, label], index) => ({
+        id: `default-${fieldKey}`,
+        fieldKey,
+        label,
+        fieldType: "text",
+        section: "default",
+        isSystem: true,
+        isActive: true,
+        showInPublic: false,
+        showInGuard: true,
+        showInSibe: true,
+        showOnBadge: false,
+        requiredPublic: false,
+        requiredGuardCheckin: true,
+        requiredBeforePrint: true,
+        sortOrder: index,
+        helpText: null,
+        optionsJson: null
+    }));
+    const optionalInfo = [
+        ["visitor_birth_date", "Geburtsdatum ist nicht angegeben."],
+        ["visitor_phone", "Besucher-Telefon ist nicht angegeben."],
+        ["visitor_email", "Besucher-E-Mail ist nicht angegeben."],
+        ["visitor_license_plate", "Kennzeichen ist nicht angegeben."]
+    ].map(([fieldKey, helpText], index) => ({
+        id: `default-info-${fieldKey}`,
+        fieldKey,
+        label: fieldKey,
+        fieldType: "text",
+        section: "default",
+        isSystem: true,
+        isActive: true,
+        showInPublic: false,
+        showInGuard: true,
+        showInSibe: true,
+        showOnBadge: false,
+        requiredPublic: false,
+        requiredGuardCheckin: false,
+        requiredBeforePrint: false,
+        sortOrder: index,
+        helpText,
+        optionsJson: null
+    }));
+    return {
+        requiredGuardCheckin: required,
+        requiredBeforePrint: required,
+        optionalInfoGuard: optionalInfo
+    };
+}
+function getVisitCompleteness(visit, config) {
     const errors = [];
     const warnings = [];
     const infos = [];
-    const missingRequiredFields = [];
-    if (isBlank(visit.firstName))
-        missingRequiredFields.push("Vorname");
-    if (isBlank(visit.lastName))
-        missingRequiredFields.push("Nachname");
-    if (isBlank(visit.company))
-        missingRequiredFields.push("Firma / Organisation");
-    if (isBlank(visit.hostName))
-        missingRequiredFields.push("Ansprechpartner");
-    if (isBlank(visit.hostPhone))
-        missingRequiredFields.push("Ansprechpartner Telefon");
-    if (isBlank(visit.purpose))
-        missingRequiredFields.push("Besuchszweck");
-    if (isBlank(visit.validFrom))
-        missingRequiredFields.push("Gueltig von");
-    if (isBlank(visit.validUntil))
-        missingRequiredFields.push("Gueltig bis");
+    const completenessConfig = config ?? defaultCompletenessConfig();
+    const missingRequiredFields = new Set();
+    const missingGuard = new Set();
+    const missingPrint = new Set();
     const hasAddressFreeText = !isBlank(visit.visitorAddress);
     const hasStreet = !isBlank(visit.visitorStreet);
     const hasHouseNumber = !isBlank(visit.visitorHouseNumber);
     const hasPostalCode = !isBlank(visit.visitorPostalCode);
     const hasCity = !isBlank(visit.visitorCity);
-    const hasStructuredAddressComplete = hasStreet && hasHouseNumber && hasPostalCode && hasCity;
-    const hasAnyStructuredAddressPart = hasStreet || hasHouseNumber || hasPostalCode || hasCity;
-    if (!hasAddressFreeText && !hasStructuredAddressComplete) {
-        missingRequiredFields.push("Adresse");
-        if (hasAnyStructuredAddressPart) {
-            if (!hasStreet)
-                missingRequiredFields.push("Strasse");
-            if (!hasHouseNumber)
-                missingRequiredFields.push("Hausnummer");
-            if (!hasPostalCode)
-                missingRequiredFields.push("PLZ");
-            if (!hasCity)
-                missingRequiredFields.push("Wohnort");
+    const checkRequired = (fieldKey, label, target) => {
+        if (fieldKey === "visitor_street" || fieldKey === "visitor_house_number" || fieldKey === "visitor_postal_code" || fieldKey === "visitor_city") {
+            if (hasAddressFreeText) {
+                return;
+            }
         }
+        if (fieldKey === "visitor_address") {
+            const structuredComplete = hasStreet && hasHouseNumber && hasPostalCode && hasCity;
+            if (!hasAddressFreeText && !structuredComplete) {
+                target.add(label);
+                missingRequiredFields.add(label);
+            }
+            return;
+        }
+        if (isBlank(getSystemFieldValue(visit, fieldKey))) {
+            target.add(label);
+            missingRequiredFields.add(label);
+        }
+    };
+    for (const field of completenessConfig.requiredGuardCheckin) {
+        checkRequired(field.fieldKey, field.label, missingGuard);
     }
-    if (isBlank(visit.idDocumentType))
-        missingRequiredFields.push("Ausweisart");
-    if (isBlank(visit.idDocumentValidUntil))
-        missingRequiredFields.push("Ausweis gueltig bis");
-    if (isBlank(visit.idDocumentNumber))
-        missingRequiredFields.push("Ausweisnummer");
-    if (isBlank(visit.idDocumentIssuingPlace))
-        missingRequiredFields.push("Ausstellungsort");
+    for (const field of completenessConfig.requiredBeforePrint) {
+        checkRequired(field.fieldKey, field.label, missingPrint);
+    }
     for (const field of missingRequiredFields) {
         errors.push({ field, message: `${field} fehlt.`, severity: "error" });
     }
@@ -125,31 +208,31 @@ function getVisitCompleteness(visit) {
         && (visit.status === visitWorkflow_1.VISIT_STATUS.PRE_REGISTERED || visit.status === visitWorkflow_1.VISIT_STATUS.CHECKED_IN)) {
         warnings.push({ field: "valid_until", message: "Besuch ist ueberfaellig.", severity: "warning" });
     }
-    if (!visit.gateId && visit.status === visitWorkflow_1.VISIT_STATUS.PRE_REGISTERED) {
-        warnings.push({ field: "gate_id", message: "Noch keiner Wache zugeordnet.", severity: "warning" });
-    }
     if (isBlank(visit.badgeNumber)) {
         warnings.push({ field: "badge_number", message: "Besuchsnummer fehlt.", severity: "warning" });
     }
-    if (isBlank(visit.birthDate))
-        infos.push({ field: "birth_date", message: "Geburtsdatum ist nicht angegeben.", severity: "info" });
-    if (isBlank(visit.visitorPhone))
-        infos.push({ field: "visitor_phone", message: "Besucher-Telefon ist nicht angegeben.", severity: "info" });
-    if (isBlank(visit.visitorEmail))
-        infos.push({ field: "visitor_email", message: "Besucher-E-Mail ist nicht angegeben.", severity: "info" });
-    if (isBlank(visit.licensePlate))
-        infos.push({ field: "license_plate", message: "Kennzeichen ist nicht angegeben.", severity: "info" });
-    if (isBlank(visit.idDocumentType) && isBlank(visit.idDocumentNumber))
-        infos.push({ field: "id_document", message: "Ausweisdaten wurden nicht erfasst.", severity: "info" });
+    for (const field of completenessConfig.optionalInfoGuard) {
+        if (isBlank(getSystemFieldValue(visit, field.fieldKey))) {
+            infos.push({
+                field: field.fieldKey,
+                message: field.helpText?.trim() || `${field.label} ist nicht angegeben.`,
+                severity: "info"
+            });
+        }
+    }
     return {
-        canCheckIn: visit.status === visitWorkflow_1.VISIT_STATUS.PRE_REGISTERED && errors.length === 0,
-        canPrintBadge: visit.status === visitWorkflow_1.VISIT_STATUS.PRE_REGISTERED || visit.status === visitWorkflow_1.VISIT_STATUS.CHECKED_IN || visit.status === visitWorkflow_1.VISIT_STATUS.CHECKED_OUT,
+        canCheckIn: visit.status === visitWorkflow_1.VISIT_STATUS.PRE_REGISTERED && missingGuard.size === 0 && errors.length === 0,
+        canPrintBadge: (visit.status === visitWorkflow_1.VISIT_STATUS.PRE_REGISTERED || visit.status === visitWorkflow_1.VISIT_STATUS.CHECKED_IN || visit.status === visitWorkflow_1.VISIT_STATUS.CHECKED_OUT) && missingPrint.size === 0 && errors.length === 0,
         canCheckOut: visit.status === visitWorkflow_1.VISIT_STATUS.CHECKED_IN,
-        missingRequiredFields,
+        missingRequiredFields: Array.from(missingRequiredFields),
         errors,
         warnings,
         infos
     };
+}
+async function getConfiguredVisitCompleteness(visit) {
+    const config = await (0, fieldDefinitions_1.loadCompletenessFieldConfig)();
+    return getVisitCompleteness(visit, config ?? undefined);
 }
 async function getTodayVisitsForUser(user, options) {
     const pool = await (0, db_1.getPool)();
@@ -412,7 +495,7 @@ async function getVisitDetailForUser(user, visitId) {
         ...visit,
         siteMap: siteMapResult.recordset[0] ?? null,
         badgeTexts: badgeTextsResult.recordset,
-        completeness: getVisitCompleteness(visit)
+        completeness: await getConfiguredVisitCompleteness(visit)
     };
 }
 async function loadVisitForUpdate(transaction, visitId) {
@@ -485,7 +568,7 @@ async function checkInVisit(user, visitId, ipAddress, userAgent) {
         if (!preCheckVisit) {
             throw new Error("visit_not_found");
         }
-        const completeness = getVisitCompleteness(preCheckVisit);
+        const completeness = await getConfiguredVisitCompleteness(preCheckVisit);
         if (!completeness.canCheckIn) {
             const validationError = new Error("visit_required_fields_missing");
             validationError.details = completeness.errors;

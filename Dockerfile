@@ -20,6 +20,6 @@ COPY --from=build /app /app
 RUN npm prune --omit=dev
 RUN mkdir -p /app/uploads
 
-EXPOSE 3020
+EXPOSE 3030
 
 CMD ["npm", "run", "start", "--workspace", "@besucher-manager/backend"]

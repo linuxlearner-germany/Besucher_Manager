@@ -56,6 +56,67 @@ type AdminAuditLog = {
   metadataJson: string | null;
   timestamp: string;
 };
+type AdminFieldDefinition = {
+  id: string;
+  fieldKey: string;
+  label: string;
+  fieldType: string;
+  section: string;
+  isSystem: boolean;
+  isActive: boolean;
+  showInPublic: boolean;
+  showInGuard: boolean;
+  showInSibe: boolean;
+  showOnBadge: boolean;
+  requiredPublic: boolean;
+  requiredGuardCheckin: boolean;
+  requiredBeforePrint: boolean;
+  sortOrder: number;
+  helpText: string | null;
+  optionsJson: string | null;
+};
+
+type FieldConfigExportPayload = {
+  schema: "besucher-manager-field-config";
+  version: 1;
+  exportedAt: string;
+  app: string;
+  fields: Array<{
+    fieldKey: string;
+    label: string;
+    fieldType: string;
+    section: string;
+    isSystem: boolean;
+    isActive: boolean;
+    showInPublic: boolean;
+    showInGuard: boolean;
+    showInSibe: boolean;
+    showOnBadge: boolean;
+    requiredPublic: boolean;
+    requiredGuardCheckin: boolean;
+    requiredBeforePrint: boolean;
+    sortOrder: number;
+    helpText: string | null;
+    options: unknown;
+  }>;
+};
+
+type NewFieldDefinitionForm = {
+  label: string;
+  fieldType: string;
+  section: string;
+  helpText: string;
+  sortOrder: number;
+  showInPublic: boolean;
+  showInGuard: boolean;
+  showInSibe: boolean;
+  showOnBadge: boolean;
+  requiredPublic: boolean;
+  requiredGuardCheckin: boolean;
+  requiredBeforePrint: boolean;
+  isActive: boolean;
+  optionsJson: string;
+};
 
 type VisitRow = {
   id: string;
@@ -649,7 +710,7 @@ function AuthProvider({ children }: PropsWithChildren) {
 
 function LoadingScreen() {
   return (
-    <div className="shell">
+    <div className="shell app-shell">
       <div className="content-container loading-shell">
         <div className="loading-card">
           <img className="loading-logo" src={BRANDING.logo} alt="WIWeB" />
@@ -675,9 +736,9 @@ function AppLayout({ children }: PropsWithChildren) {
   }
 
   return (
-    <div className="shell">
+    <div className="shell app-shell">
       <div className="content-container">
-      <header className="topbar">
+      <header className="topbar app-header">
         <div className="brand-wrap">
           <img className="brand-logo" src={BRANDING.logo} alt="WIWeB" />
         </div>
@@ -1666,13 +1727,12 @@ function VisitDetailPage() {
 
                 <Card>
                   <h3>Adresse</h3>
-                  <p className="section-copy">Adresse ist vollstaendig, wenn Strasse, Hausnummer, PLZ und Wohnort gesetzt sind. Alternativ kann die Anschrift als Freitext erfasst werden.</p>
+                  <p className="section-copy">Adresse ist vollstaendig, wenn Strasse, Hausnummer, PLZ und Wohnort gesetzt sind.</p>
                   <div className="form-grid two-columns">
-                    <FormField label="Strasse" error={fieldErrors.visitorStreet}><input className={missingRequired.has("Strasse") || missingRequired.has("Adresse") ? "required-missing" : ""} value={editForm.visitorStreet} onChange={(event) => setEditForm((current) => current ? { ...current, visitorStreet: event.target.value } : current)} /></FormField>
-                    <FormField label="Hausnummer" error={fieldErrors.visitorHouseNumber}><input className={missingRequired.has("Hausnummer") || missingRequired.has("Adresse") ? "required-missing" : ""} value={editForm.visitorHouseNumber} onChange={(event) => setEditForm((current) => current ? { ...current, visitorHouseNumber: event.target.value } : current)} /></FormField>
-                    <FormField label="PLZ" error={fieldErrors.visitorPostalCode}><input className={missingRequired.has("PLZ") || missingRequired.has("Adresse") ? "required-missing" : ""} value={editForm.visitorPostalCode} onChange={(event) => setEditForm((current) => current ? { ...current, visitorPostalCode: event.target.value } : current)} /></FormField>
-                    <FormField label="Wohnort" error={fieldErrors.visitorCity}><input className={missingRequired.has("Wohnort") || missingRequired.has("Adresse") ? "required-missing" : ""} value={editForm.visitorCity} onChange={(event) => setEditForm((current) => current ? { ...current, visitorCity: event.target.value } : current)} /></FormField>
-                    <FormField label="Anschrift Freitext" error={fieldErrors.visitorAddress}><input className={missingRequired.has("Adresse") ? "required-missing" : ""} value={editForm.visitorAddress} onChange={(event) => setEditForm((current) => current ? { ...current, visitorAddress: event.target.value } : current)} /></FormField>
+                    <FormField label="Strasse" required error={fieldErrors.visitorStreet}><input className={missingRequired.has("Strasse") || missingRequired.has("Adresse") ? "required-missing" : ""} value={editForm.visitorStreet} onChange={(event) => setEditForm((current) => current ? { ...current, visitorStreet: event.target.value } : current)} /></FormField>
+                    <FormField label="Hausnummer" required error={fieldErrors.visitorHouseNumber}><input className={missingRequired.has("Hausnummer") || missingRequired.has("Adresse") ? "required-missing" : ""} value={editForm.visitorHouseNumber} onChange={(event) => setEditForm((current) => current ? { ...current, visitorHouseNumber: event.target.value } : current)} /></FormField>
+                    <FormField label="PLZ" required error={fieldErrors.visitorPostalCode}><input className={missingRequired.has("PLZ") || missingRequired.has("Adresse") ? "required-missing" : ""} value={editForm.visitorPostalCode} onChange={(event) => setEditForm((current) => current ? { ...current, visitorPostalCode: event.target.value } : current)} /></FormField>
+                    <FormField label="Wohnort" required error={fieldErrors.visitorCity}><input className={missingRequired.has("Wohnort") || missingRequired.has("Adresse") ? "required-missing" : ""} value={editForm.visitorCity} onChange={(event) => setEditForm((current) => current ? { ...current, visitorCity: event.target.value } : current)} /></FormField>
                   </div>
                 </Card>
 
@@ -1707,21 +1767,6 @@ function VisitDetailPage() {
                   </div>
                 </details>
 
-                <details className="panel">
-                  <summary>Mitgefuehrte Geraete optional</summary>
-                  <div className="form-grid two-columns">
-                    <label className="checkbox-row"><input type="checkbox" checked={editForm.devicePhotoApp} onChange={(event) => setEditForm((current) => current ? { ...current, devicePhotoApp: event.target.checked } : current)} />Foto-Apparat</label>
-                    <label className="checkbox-row"><input type="checkbox" checked={editForm.deviceFilmApp} onChange={(event) => setEditForm((current) => current ? { ...current, deviceFilmApp: event.target.checked } : current)} />Film-Apparat</label>
-                    <label className="checkbox-row"><input type="checkbox" checked={editForm.deviceVideoCamera} onChange={(event) => setEditForm((current) => current ? { ...current, deviceVideoCamera: event.target.checked } : current)} />Video-Kamera</label>
-                    <label className="checkbox-row"><input type="checkbox" checked={editForm.deviceReturnConfirmed} onChange={(event) => setEditForm((current) => current ? { ...current, deviceReturnConfirmed: event.target.checked } : current)} />Rueckgabe bestaetigt</label>
-                    <FormField label="Fabrikat"><input value={editForm.deviceManufacturer} onChange={(event) => setEditForm((current) => current ? { ...current, deviceManufacturer: event.target.value } : current)} /></FormField>
-                    <FormField label="Fabriknummer"><input value={editForm.deviceSerialNumber} onChange={(event) => setEditForm((current) => current ? { ...current, deviceSerialNumber: event.target.value } : current)} /></FormField>
-                    <FormField label="Zubehoerteile"><input value={editForm.deviceAccessories} onChange={(event) => setEditForm((current) => current ? { ...current, deviceAccessories: event.target.value } : current)} /></FormField>
-                    <FormField label="Abgabe-Bemerkung"><input value={editForm.deviceDepositNote} onChange={(event) => setEditForm((current) => current ? { ...current, deviceDepositNote: event.target.value } : current)} /></FormField>
-                    <FormField label="Rueckgabe am"><input type="datetime-local" value={editForm.deviceReturnedAt} onChange={(event) => setEditForm((current) => current ? { ...current, deviceReturnedAt: event.target.value } : current)} /></FormField>
-                  </div>
-                </details>
-
                 <Card>
                   <h3>Bemerkung</h3>
                   <FormField label="Bemerkung" error={fieldErrors.notes}><textarea rows={3} value={editForm.notes} onChange={(event) => setEditForm((current) => current ? { ...current, notes: event.target.value } : current)} /></FormField>
@@ -1745,12 +1790,11 @@ function VisitDetailPage() {
                     {visit.visitorPhone ? <div><span className="detail-label">Telefon</span><strong>{visit.visitorPhone}</strong></div> : null}
                     {visit.visitorEmail ? <div><span className="detail-label">E-Mail</span><strong>{visit.visitorEmail}</strong></div> : null}
                     {visit.licensePlate ? <div><span className="detail-label">Kennzeichen</span><strong>{visit.licensePlate}</strong></div> : null}
-                    {visit.visitorAddress || visit.visitorStreet || visit.visitorHouseNumber || visit.visitorPostalCode || visit.visitorCity ? (
+                    {visit.visitorStreet || visit.visitorHouseNumber || visit.visitorPostalCode || visit.visitorCity ? (
                       <div className="detail-span-2">
                         <span className="detail-label">Adresse</span>
                         <strong>
-                          {visit.visitorAddress
-                            || [visit.visitorStreet, visit.visitorHouseNumber, visit.visitorPostalCode, visit.visitorCity].filter(Boolean).join(", ")}
+                          {[visit.visitorStreet, visit.visitorHouseNumber, visit.visitorPostalCode, visit.visitorCity].filter(Boolean).join(", ")}
                         </strong>
                       </div>
                     ) : null}
@@ -1799,21 +1843,6 @@ function VisitDetailPage() {
                       {visit.idDocumentValidUntil ? <div><span className="detail-label">Gueltig bis</span><strong>{formatDateOnly(visit.idDocumentValidUntil)}</strong></div> : null}
                       {visit.idDocumentNumber ? <div><span className="detail-label">Ausweisnummer</span><strong>{visit.idDocumentNumber}</strong></div> : null}
                       {visit.idDocumentIssuingPlace ? <div><span className="detail-label">Ausstellungsort</span><strong>{visit.idDocumentIssuingPlace}</strong></div> : null}
-                    </div>
-                  </details>
-                ) : null}
-
-                {(visit.devicePhotoApp || visit.deviceFilmApp || visit.deviceVideoCamera || visit.deviceManufacturer || visit.deviceSerialNumber || visit.deviceAccessories || visit.deviceDepositNote) ? (
-                  <details className="panel">
-                    <summary>Mitgefuehrte Geraete</summary>
-                    <div className="detail-grid">
-                      {visit.devicePhotoApp ? <div><span className="detail-label">Foto-Apparat</span><strong>Ja</strong></div> : null}
-                      {visit.deviceFilmApp ? <div><span className="detail-label">Film-Apparat</span><strong>Ja</strong></div> : null}
-                      {visit.deviceVideoCamera ? <div><span className="detail-label">Video-Kamera</span><strong>Ja</strong></div> : null}
-                      {visit.deviceManufacturer ? <div><span className="detail-label">Fabrikat</span><strong>{visit.deviceManufacturer}</strong></div> : null}
-                      {visit.deviceSerialNumber ? <div><span className="detail-label">Fabriknummer</span><strong>{visit.deviceSerialNumber}</strong></div> : null}
-                      {visit.deviceAccessories ? <div><span className="detail-label">Zubehoer</span><strong>{visit.deviceAccessories}</strong></div> : null}
-                      {visit.deviceDepositNote ? <div className="detail-span-2"><span className="detail-label">Abgabe-Bemerkung</span><strong>{visit.deviceDepositNote}</strong></div> : null}
                     </div>
                   </details>
                 ) : null}
@@ -1918,15 +1947,7 @@ function PrintViewPage() {
     || "Fotografieren und Filmen auf dem Gelaende ist verboten.";
   const signatureText = visit?.badgeTexts.find((text) => text.textType === "signature_notice")?.content
     || "Vor Ausfahrt / Verlassen des Gelaendes durch den Ansprechpartner zu unterschreiben.";
-  const hasDeviceInfo = Boolean(
-    visit?.devicePhotoApp
-    || visit?.deviceFilmApp
-    || visit?.deviceVideoCamera
-    || visit?.deviceManufacturer
-    || visit?.deviceSerialNumber
-    || visit?.deviceAccessories
-  );
-  const hasOptionalPageTwoContent = Boolean((visit?.siteMap || securityTexts.length || hasDeviceInfo));
+  const hasOptionalPageTwoContent = Boolean((visit?.siteMap || securityTexts.length));
 
   return (
     <AppLayout>
@@ -1971,7 +1992,7 @@ function PrintViewPage() {
                 <div><span>Name</span><strong>{visit.firstName} {visit.lastName}</strong></div>
                 <div><span>Geburtsdatum</span><strong>{formatDateOnly(visit.birthDate)}</strong></div>
                 <div><span>Firma / Organisation</span><strong>{visit.company}</strong></div>
-                <div><span>Adresse</span><strong>{visit.visitorAddress || [visit.visitorStreet, visit.visitorHouseNumber, visit.visitorPostalCode, visit.visitorCity].filter(Boolean).join(", ") || "-"}</strong></div>
+                <div><span>Adresse</span><strong>{[visit.visitorStreet, visit.visitorHouseNumber, visit.visitorPostalCode, visit.visitorCity].filter(Boolean).join(", ") || "-"}</strong></div>
                 <div><span>Ansprechpartner</span><strong>{visit.hostName}</strong></div>
                 <div><span>Ansprechpartner Kontakt</span><strong>{visit.hostPhone || visit.hostEmail ? [visit.hostPhone, visit.hostEmail].filter(Boolean).join(" / ") : "-"}</strong></div>
                 <div><span>Besuchszweck</span><strong>{visit.purpose}</strong></div>
@@ -2028,21 +2049,6 @@ function PrintViewPage() {
                     )}
                   </div>
                 </section>
-
-                {hasDeviceInfo ? (
-                  <section className="print-columns">
-                    <div className="print-block avoid-break">
-                      <h3>Mitgefuehrte Geraete (optional)</h3>
-                      <ul className="text-list compact-list">
-                        <li><strong>Foto-Apparat:</strong> {visit.devicePhotoApp ? "Ja" : "Nein"}</li>
-                        <li><strong>Film-Apparat:</strong> {visit.deviceFilmApp ? "Ja" : "Nein"}</li>
-                        <li><strong>Video-Kamera:</strong> {visit.deviceVideoCamera ? "Ja" : "Nein"}</li>
-                        <li><strong>Fabrikat/Seriennr:</strong> {[visit.deviceManufacturer, visit.deviceSerialNumber].filter(Boolean).join(" / ") || "-"}</li>
-                        <li><strong>Zubehoer:</strong> {visit.deviceAccessories || "-"}</li>
-                      </ul>
-                    </div>
-                  </section>
-                ) : null}
               </div>
             ) : null}
           </div>
@@ -2072,7 +2078,7 @@ function SibeDashboardPage() {
 
   return (
     <AppLayout>
-      <main className="panel page-panel page-shell-wide">
+      <main className="panel page-panel page-shell-full admin-page-shell">
         <div className="section-header">
           <div>
             <h2>SiBe Dashboard</h2>
@@ -2339,7 +2345,6 @@ function SibeVisitDetailPage() {
               <div><dt>Telefon</dt><dd>{visit.visitorPhone || "-"}</dd></div>
               <div><dt>E-Mail</dt><dd>{visit.visitorEmail || "-"}</dd></div>
               <div><dt>Kennzeichen</dt><dd>{visit.licensePlate || "-"}</dd></div>
-              <div><dt>Anschrift</dt><dd>{visit.visitorAddress || "-"}</dd></div>
               <div><dt>Strasse</dt><dd>{visit.visitorStreet || "-"}</dd></div>
               <div><dt>Hausnummer</dt><dd>{visit.visitorHouseNumber || "-"}</dd></div>
               <div><dt>PLZ</dt><dd>{visit.visitorPostalCode || "-"}</dd></div>
@@ -2375,13 +2380,6 @@ function SibeVisitDetailPage() {
               <div><dt>Hinweis Unterschrift</dt><dd>{visit.hostSignatureNote || "-"}</dd></div>
               <div><dt>Besuchsende-Typ</dt><dd>{visit.visitEndType || "-"}</dd></div>
               <div><dt>Weitergeleitet an</dt><dd>{visit.forwardedToNote || "-"}</dd></div>
-              <div><dt>Foto-Apparat</dt><dd>{visit.devicePhotoApp ? "Ja" : "Nein"}</dd></div>
-              <div><dt>Film-Apparat</dt><dd>{visit.deviceFilmApp ? "Ja" : "Nein"}</dd></div>
-              <div><dt>Video-Kamera</dt><dd>{visit.deviceVideoCamera ? "Ja" : "Nein"}</dd></div>
-              <div><dt>Fabrikat</dt><dd>{visit.deviceManufacturer || "-"}</dd></div>
-              <div><dt>Fabriknummer</dt><dd>{visit.deviceSerialNumber || "-"}</dd></div>
-              <div><dt>Zubehoerteile</dt><dd>{visit.deviceAccessories || "-"}</dd></div>
-              <div><dt>Abgabe-Bemerkung</dt><dd>{visit.deviceDepositNote || "-"}</dd></div>
               <div><dt>Rueckgabe bestaetigt</dt><dd>{visit.deviceReturnConfirmed ? "Ja" : "Nein"}</dd></div>
               <div><dt>Rueckgabe-Zeit</dt><dd>{formatDateTime(visit.deviceReturnedAt)}</dd></div>
               <div><dt>Rueckgabe durch</dt><dd>{visit.deviceReturnedBy || "-"}</dd></div>
@@ -2489,7 +2487,7 @@ function SibeUsersPage() {
 }
 
 function AdminPage() {
-  const [activeSection, setActiveSection] = useState<"dashboard" | "wachen" | "benutzer" | "texte" | "karte" | "audit" | "system">("dashboard");
+  const [activeSection, setActiveSection] = useState<"dashboard" | "wachen" | "benutzer" | "texte" | "karte" | "felder" | "audit" | "system">("dashboard");
   const [stats, setStats] = useState<{ users: number; gates: number; templates: number } | null>(null);
   const [gates, setGates] = useState<AdminGate[]>([]);
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -2509,6 +2507,7 @@ function AdminPage() {
   } | null>(null);
   const [activeSiteMap, setActiveSiteMap] = useState<SiteMapSummary>(null);
   const [siteMaps, setSiteMaps] = useState<NonNullable<SiteMapSummary>[]>([]);
+  const [fieldDefinitions, setFieldDefinitions] = useState<AdminFieldDefinition[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedAuditLogId, setSelectedAuditLogId] = useState<string | null>(null);
@@ -2538,6 +2537,33 @@ function AdminPage() {
   const [editableGates, setEditableGates] = useState<Record<string, AdminGate>>({});
   const [editableUsers, setEditableUsers] = useState<Record<string, EditableAdminUser>>({});
   const [editableTexts, setEditableTexts] = useState<Record<string, AdminBadgeText>>({});
+  const [editableFieldDefinitions, setEditableFieldDefinitions] = useState<Record<string, AdminFieldDefinition>>({});
+  const [selectedFieldDefinitionId, setSelectedFieldDefinitionId] = useState<string | null>(null);
+  const [selectedFieldSection, setSelectedFieldSection] = useState<string | null>(null);
+  const [isCreateFieldModalOpen, setIsCreateFieldModalOpen] = useState(false);
+  const [fieldImportText, setFieldImportText] = useState("");
+  const [fieldImportFileName, setFieldImportFileName] = useState("");
+  const [fieldImportPreview, setFieldImportPreview] = useState<{
+    valid: boolean;
+    summary: { total: number; willUpdate: number; willCreate: number; willSkip: number; warnings: string[] };
+    changes: Array<{ fieldKey: string; action: "update" | "create"; label: string }>;
+  } | null>(null);
+  const [newFieldDefinition, setNewFieldDefinition] = useState<NewFieldDefinitionForm>({
+    label: "",
+    fieldType: "text",
+    section: "Besucher",
+    helpText: "",
+    sortOrder: 100,
+    showInPublic: false,
+    showInGuard: true,
+    showInSibe: true,
+    showOnBadge: false,
+    requiredPublic: false,
+    requiredGuardCheckin: false,
+    requiredBeforePrint: false,
+    isActive: true,
+    optionsJson: ""
+  });
 
   const loadAuditLogs = useCallback(async (filters = auditFilters) => {
     const params = new URLSearchParams();
@@ -2556,14 +2582,15 @@ function AdminPage() {
   const loadAll = useCallback(async () => {
     setError(null);
     try {
-      const [bootstrap, gatePayload, userPayload, textPayload, statusPayload, siteMapPayload, siteMapsPayload] = await Promise.all([
+      const [bootstrap, gatePayload, userPayload, textPayload, statusPayload, siteMapPayload, siteMapsPayload, fieldDefinitionsPayload] = await Promise.all([
         fetchJson<{ users: number; gates: number; templates: number }>("/api/admin/bootstrap", { method: "GET", headers: {} }),
         fetchJson<{ gates: AdminGate[] }>("/api/admin/gates", { method: "GET", headers: {} }),
         fetchJson<{ users: AdminUser[] }>("/api/admin/users", { method: "GET", headers: {} }),
         fetchJson<{ texts: AdminBadgeText[] }>("/api/admin/badge-texts", { method: "GET", headers: {} }),
         fetchJson<{ app: string; activeVisits: number; activeGates: number; openPreRegistrationsToday: number; signaturesPending: number; signaturesFollowUp: number; signaturesExceptions: number; staleVisits: number; retentionDays: number | null; retentionEnabled: boolean }>("/api/admin/system-status", { method: "GET", headers: {} }),
         fetchJson<{ siteMap: SiteMapSummary }>("/api/admin/site-map", { method: "GET", headers: {} }),
-        fetchJson<{ siteMaps: NonNullable<SiteMapSummary>[] }>("/api/admin/site-maps", { method: "GET", headers: {} })
+        fetchJson<{ siteMaps: NonNullable<SiteMapSummary>[] }>("/api/admin/site-maps", { method: "GET", headers: {} }),
+        fetchJson<{ definitions: AdminFieldDefinition[] }>("/api/admin/field-definitions", { method: "GET", headers: {} })
       ]);
 
       setStats(bootstrap);
@@ -2573,9 +2600,11 @@ function AdminPage() {
       setSystemStatus(statusPayload);
       setActiveSiteMap(siteMapPayload.siteMap);
       setSiteMaps(siteMapsPayload.siteMaps);
+      setFieldDefinitions(fieldDefinitionsPayload.definitions);
       setEditableGates(Object.fromEntries(gatePayload.gates.map((gate) => [gate.id, { ...gate }])));
       setEditableUsers(Object.fromEntries(userPayload.users.map((entry) => [entry.id, { ...entry, password: "" }])));
       setEditableTexts(Object.fromEntries(textPayload.texts.map((text) => [text.id, { ...text }])));
+      setEditableFieldDefinitions(Object.fromEntries(fieldDefinitionsPayload.definitions.map((field) => [field.id, { ...field }])));
       await loadAuditLogs(auditFilters);
     } catch (apiError) {
       const payload = apiError as ApiError;
@@ -2821,6 +2850,194 @@ function AdminPage() {
     }
   }
 
+  async function saveFieldDefinition(fieldId: string) {
+    const field = editableFieldDefinitions[fieldId];
+    if (!field) return;
+
+    try {
+      await fetchJson(`/api/admin/field-definitions/${fieldId}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          label: field.label,
+          section: field.section,
+          isActive: field.isActive,
+          showInPublic: field.showInPublic,
+          showInGuard: field.showInGuard,
+          showInSibe: field.showInSibe,
+          showOnBadge: field.showOnBadge,
+          requiredPublic: field.requiredPublic,
+          requiredGuardCheckin: field.requiredGuardCheckin,
+          requiredBeforePrint: field.requiredBeforePrint,
+          sortOrder: field.sortOrder,
+          helpText: field.helpText || "",
+          optionsJson: field.optionsJson || ""
+        })
+      });
+      setMessage("Felddefinition gespeichert.");
+      setError(null);
+      await loadAll();
+    } catch (apiError) {
+      const payload = apiError as ApiError;
+      setError(payload.message || "Felddefinition konnte nicht gespeichert werden.");
+    }
+  }
+
+  async function createFieldDefinition(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    try {
+      await fetchJson("/api/admin/field-definitions", {
+        method: "POST",
+        body: JSON.stringify({
+          ...newFieldDefinition,
+          optionsJson: newFieldDefinition.optionsJson?.trim() || null
+        })
+      });
+      setMessage("Feld angelegt.");
+      setError(null);
+      setIsCreateFieldModalOpen(false);
+      setNewFieldDefinition({
+        label: "",
+        fieldType: "text",
+        section: selectedFieldSection || "Besucher",
+        helpText: "",
+        sortOrder: 100,
+        showInPublic: false,
+        showInGuard: true,
+        showInSibe: true,
+        showOnBadge: false,
+        requiredPublic: false,
+        requiredGuardCheckin: false,
+        requiredBeforePrint: false,
+        isActive: true,
+        optionsJson: ""
+      });
+      await loadAll();
+    } catch (apiError) {
+      const payload = apiError as ApiError;
+      setError(payload.message || "Feld konnte nicht angelegt werden.");
+    }
+  }
+
+  async function toggleFieldDefinitionActive(field: AdminFieldDefinition) {
+    try {
+      await fetchJson(`/api/admin/field-definitions/${field.id}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          label: field.label,
+          section: field.section,
+          isActive: !field.isActive,
+          showInPublic: field.isActive ? false : field.showInPublic,
+          showInGuard: field.isActive ? false : field.showInGuard,
+          showInSibe: field.isActive ? false : field.showInSibe,
+          showOnBadge: field.isActive ? false : field.showOnBadge,
+          requiredPublic: field.isActive ? false : field.requiredPublic,
+          requiredGuardCheckin: field.isActive ? false : field.requiredGuardCheckin,
+          requiredBeforePrint: field.isActive ? false : field.requiredBeforePrint,
+          sortOrder: field.sortOrder,
+          helpText: field.helpText || "",
+          optionsJson: field.optionsJson || ""
+        })
+      });
+      setMessage(field.isActive ? "Feld ausgeblendet." : "Feld reaktiviert.");
+      setError(null);
+      await loadAll();
+    } catch (apiError) {
+      const payload = apiError as ApiError;
+      setError(payload.message || "Feldstatus konnte nicht geaendert werden.");
+    }
+  }
+
+  async function exportFieldConfiguration() {
+    try {
+      const payload = await fetchJson<FieldConfigExportPayload>("/api/admin/field-definitions/export", {
+        method: "GET",
+        headers: {}
+      });
+      const date = new Date().toISOString().slice(0, 10);
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `besucher-manager-field-config-${date}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      setMessage("Feldkonfiguration exportiert.");
+      setError(null);
+    } catch (apiError) {
+      const payload = apiError as ApiError;
+      setError(payload.message || "Export der Feldkonfiguration fehlgeschlagen.");
+    }
+  }
+
+  async function handleImportConfigFile(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    try {
+      const text = await file.text();
+      setFieldImportText(text);
+      setFieldImportFileName(file.name);
+      setFieldImportPreview(null);
+      setMessage(null);
+      setError(null);
+    } catch {
+      setError("Datei konnte nicht gelesen werden.");
+    }
+  }
+
+  async function previewFieldImport() {
+    if (!fieldImportText.trim()) {
+      setError("Bitte zuerst eine JSON-Datei fuer den Import auswaehlen.");
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(fieldImportText);
+      const preview = await fetchJson<{
+        valid: boolean;
+        summary: { total: number; willUpdate: number; willCreate: number; willSkip: number; warnings: string[] };
+        changes: Array<{ fieldKey: string; action: "update" | "create"; label: string }>;
+      }>("/api/admin/field-definitions/import/preview", {
+        method: "POST",
+        body: JSON.stringify(parsed)
+      });
+      setFieldImportPreview(preview);
+      setMessage("Importvorschau erstellt.");
+      setError(null);
+    } catch (apiError) {
+      const payload = apiError as ApiError;
+      setError(payload.message || "Importvorschau fehlgeschlagen.");
+      setFieldImportPreview(null);
+    }
+  }
+
+  async function confirmFieldImport() {
+    if (!fieldImportText.trim()) {
+      setError("Bitte zuerst eine JSON-Datei fuer den Import auswaehlen.");
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(fieldImportText);
+      const result = await fetchJson<{ imported: boolean; summary: { total: number; updated: number; created: number; skipped: number } }>(
+        "/api/admin/field-definitions/import",
+        {
+          method: "POST",
+          body: JSON.stringify(parsed)
+        }
+      );
+      setMessage(`Feldkonfiguration importiert. Aktualisiert: ${result.summary.updated}, neu: ${result.summary.created}.`);
+      setError(null);
+      setFieldImportPreview(null);
+      await loadAll();
+    } catch (apiError) {
+      const payload = apiError as ApiError;
+      setError(payload.message || "Import fehlgeschlagen.");
+    }
+  }
+
 
   async function toggleGateActive(gateId: string, active: boolean) {
     try {
@@ -2869,6 +3086,45 @@ function AdminPage() {
   }
 
   const selectedAuditLog = logs.find((entry) => entry.id === selectedAuditLogId) || null;
+  const selectedFieldDefinition = selectedFieldDefinitionId ? editableFieldDefinitions[selectedFieldDefinitionId] || null : null;
+  const fieldSectionOrder = ["Besucher", "Adresse", "Ansprechpartner", "Besuch", "Ausweis", "Ziel/Raum", "Sonstiges"];
+  const hiddenSections = new Set(["Geraete", "Mitgefuehrte Geraete"]);
+  const hiddenFieldKeys = new Set(["visitor_address"]);
+  const fieldSectionDescriptions: Record<string, string> = {
+    Besucher: "Daten zur besuchenden Person.",
+    Adresse: "Strukturierte Adressdaten fuer Check-in und Druck.",
+    Ansprechpartner: "Kontakt zur empfangenden Person im Unternehmen.",
+    Besuch: "Besuchszweck, Gueltigkeitszeitraum und Ablaufdaten.",
+    Ausweis: "Ausweisdaten fuer den Wache-Prozess.",
+    "Ziel/Raum": "Interne Ziel-, Gebaeude- und Raumangaben.",
+    Sonstiges: "Zusatzfelder ohne feste Kategorie."
+  };
+  const groupedFieldDefinitions = useMemo(() => {
+    const bySection = new Map<string, AdminFieldDefinition[]>();
+    for (const item of fieldDefinitions) {
+      if (hiddenSections.has(item.section?.trim() || "") || hiddenFieldKeys.has(item.fieldKey)) {
+        continue;
+      }
+      const section = item.section?.trim() || "Sonstiges";
+      if (!bySection.has(section)) {
+        bySection.set(section, []);
+      }
+      bySection.get(section)?.push(item);
+    }
+    for (const list of bySection.values()) {
+      list.sort((a, b) => a.sortOrder - b.sortOrder || a.label.localeCompare(b.label));
+    }
+
+    const orderedKeys = [
+      ...fieldSectionOrder.filter((key) => bySection.has(key)),
+      ...Array.from(bySection.keys()).filter((key) => !fieldSectionOrder.includes(key)).sort((a, b) => a.localeCompare(b))
+    ];
+
+    return orderedKeys.map((section) => ({ section, items: bySection.get(section) || [] }));
+  }, [fieldDefinitions]);
+  const selectedFieldSectionGroup = selectedFieldSection
+    ? groupedFieldDefinitions.find((entry) => entry.section === selectedFieldSection) || null
+    : null;
 
   return (
     <AppLayout>
@@ -2886,6 +3142,7 @@ function AdminPage() {
           <button type="button" className={activeSection === "benutzer" ? "tab-button tab-active" : "tab-button"} onClick={() => setActiveSection("benutzer")}>Benutzer</button>
           <button type="button" className={activeSection === "texte" ? "tab-button tab-active" : "tab-button"} onClick={() => setActiveSection("texte")}>Texte</button>
           <button type="button" className={activeSection === "karte" ? "tab-button tab-active" : "tab-button"} onClick={() => setActiveSection("karte")}>Karte</button>
+          <button type="button" className={activeSection === "felder" ? "tab-button tab-active" : "tab-button"} onClick={() => setActiveSection("felder")}>Felder</button>
           <button type="button" className={activeSection === "audit" ? "tab-button tab-active" : "tab-button"} onClick={() => setActiveSection("audit")}>Audit</button>
           <button type="button" className={activeSection === "system" ? "tab-button tab-active" : "tab-button"} onClick={() => setActiveSection("system")}>System</button>
         </div>
@@ -2899,6 +3156,7 @@ function AdminPage() {
             <article className="panel mini-card"><h3>Benutzer</h3><p>{users.filter((entry) => entry.isActive).length} aktive Benutzer</p><button type="button" className="secondary-button" onClick={() => setActiveSection("benutzer")}>Oeffnen</button></article>
             <article className="panel mini-card"><h3>Hinweistexte</h3><p>{texts.filter((text) => text.isActive).length} aktive Texte</p><button type="button" className="secondary-button" onClick={() => setActiveSection("texte")}>Oeffnen</button></article>
             <article className="panel mini-card"><h3>Gelaendeplan</h3><p>{activeSiteMap ? activeSiteMap.name : "Kein aktiver Plan"}</p><button type="button" className="secondary-button" onClick={() => setActiveSection("karte")}>Oeffnen</button></article>
+            <article className="panel mini-card"><h3>Feldkonfiguration</h3><p>{fieldDefinitions.filter((field) => field.isActive).length} aktive Felder</p><button type="button" className="secondary-button" onClick={() => setActiveSection("felder")}>Oeffnen</button></article>
             <article className="panel mini-card"><h3>Auditlog</h3><p>{logs.length} letzte Eintraege</p><button type="button" className="secondary-button" onClick={() => setActiveSection("audit")}>Oeffnen</button></article>
             <article className="panel mini-card"><h3>Systemstatus</h3><p>{systemStatus ? `${systemStatus.activeVisits} aktiv, ${systemStatus.signaturesFollowUp} Nachreichungen` : "Lade..."}</p><button type="button" className="secondary-button" onClick={() => setActiveSection("system")}>Oeffnen</button></article>
           </div>
@@ -3197,6 +3455,344 @@ function AdminPage() {
                 ))}
               </tbody>
             </DataTable>
+          </Card>
+        ) : null}
+
+        {activeSection === "felder" ? (
+          <Card className="admin-fields-card">
+            <h3>Feldkonfiguration</h3>
+            <p className="section-copy">Konfigurieren Sie die Felder als Modul-Baukasten. Oeffnen Sie ein Modul, um nur die dazugehoerigen Felder zu bearbeiten.</p>
+            <div className="panel field-config-transfer">
+              <h4>Import / Export</h4>
+              <p className="section-copy">Import-Modus: Zusammenfuehren. Vorhandene Felder werden anhand ihres Keys aktualisiert, nicht enthaltene Felder bleiben erhalten.</p>
+              <div className="row-actions action-bar">
+                <button type="button" onClick={() => void exportFieldConfiguration()}>Konfiguration exportieren</button>
+                <label className="secondary-button file-button-inline">
+                  JSON-Datei auswaehlen
+                  <input type="file" accept="application/json,.json" onChange={(event) => void handleImportConfigFile(event)} />
+                </label>
+                <button type="button" className="secondary-button" onClick={() => void previewFieldImport()} disabled={!fieldImportText.trim()}>
+                  Import pruefen
+                </button>
+              </div>
+              {fieldImportFileName ? <p className="section-copy">Datei: {fieldImportFileName}</p> : null}
+              {fieldImportPreview ? (
+                <div className="panel field-import-preview">
+                  <p>
+                    <strong>{fieldImportPreview.summary.total}</strong> Felder ·
+                    {" "}<strong>{fieldImportPreview.summary.willUpdate}</strong> aktualisiert ·
+                    {" "}<strong>{fieldImportPreview.summary.willCreate}</strong> neu
+                  </p>
+                  <div className="table-wrap">
+                    <table className="data-table">
+                      <thead><tr><th>Feld</th><th>Aktion</th><th>Label</th></tr></thead>
+                      <tbody>
+                        {fieldImportPreview.changes.map((item) => (
+                          <tr key={item.fieldKey}>
+                            <td><code>{item.fieldKey}</code></td>
+                            <td>{item.action === "update" ? "Update" : "Neu"}</td>
+                            <td>{item.label}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="row-actions action-bar">
+                    <button type="button" onClick={() => void confirmFieldImport()}>Import bestaetigen</button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
+            {selectedFieldSectionGroup ? (
+              <div className="field-module-detail">
+                <div className="field-module-header">
+                  <div>
+                    <p className="eyebrow">Modul</p>
+                    <h4>{selectedFieldSectionGroup.section}</h4>
+                    <p className="section-copy">{fieldSectionDescriptions[selectedFieldSectionGroup.section] || "Feldgruppe fuer diesen Bereich."}</p>
+                  </div>
+                  <div className="row-actions action-bar">
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => {
+                        setSelectedFieldSection(null);
+                        setSelectedFieldDefinitionId(null);
+                      }}
+                    >
+                      Zurueck zur Moduluebersicht
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewFieldDefinition((current) => ({ ...current, section: selectedFieldSectionGroup.section }));
+                        setIsCreateFieldModalOpen(true);
+                      }}
+                    >
+                      Neues Feld hinzufuegen
+                    </button>
+                  </div>
+                </div>
+                <div className="field-section-list">
+                  {selectedFieldSectionGroup.items.map((definition) => (
+                    <div key={definition.id} className="field-row-card">
+                      <div className="field-row-main">
+                        <div className="field-row-title">{definition.label}</div>
+                        <div className="field-row-meta">
+                          <span className="field-row-key">{definition.fieldKey}</span>
+                          <span>{definition.fieldType}</span>
+                        </div>
+                      </div>
+                      <div className="field-row-badges">
+                        {definition.isSystem ? <span className="field-config-badge">Systemfeld</span> : <span className="field-config-badge">Eigenes Feld</span>}
+                        {definition.isActive ? <span className="field-config-badge">Aktiv</span> : <span className="field-config-badge">Inaktiv</span>}
+                        {definition.showInPublic ? <span className="field-config-badge">Voranmeldung</span> : null}
+                        {definition.showInGuard ? <span className="field-config-badge">Wache</span> : null}
+                        {definition.showInSibe ? <span className="field-config-badge">SiBe</span> : null}
+                        {definition.showOnBadge ? <span className="field-config-badge">Druck</span> : null}
+                        {definition.requiredPublic ? <span className="field-config-badge">Pflicht Voranmeldung</span> : null}
+                        {definition.requiredGuardCheckin ? <span className="field-config-badge">Pflicht Check-in</span> : null}
+                        {definition.requiredBeforePrint ? <span className="field-config-badge">Pflicht Druck</span> : null}
+                      </div>
+                      <div className="field-row-actions">
+                        <button type="button" className="secondary-button" onClick={() => setSelectedFieldDefinitionId(definition.id)}>
+                          Bearbeiten
+                        </button>
+                        <button type="button" className="secondary-button" onClick={() => void toggleFieldDefinitionActive(definition)}>
+                          {definition.isActive ? "Ausblenden" : "Reaktivieren"}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="field-section-grid">
+                {groupedFieldDefinitions.map(({ section, items }) => {
+                  const activeCount = items.filter((item) => item.isActive).length;
+                  const requiredPublicCount = items.filter((item) => item.requiredPublic && item.isActive).length;
+                  const requiredCheckinCount = items.filter((item) => item.requiredGuardCheckin && item.isActive).length;
+                  const requiredPrintCount = items.filter((item) => item.requiredBeforePrint && item.isActive).length;
+                  const printCount = items.filter((item) => item.showOnBadge && item.isActive).length;
+                  return (
+                    <article key={section} className="field-section-card">
+                      <div className="field-section-summary">
+                        <h4>{section}</h4>
+                        <p>{fieldSectionDescriptions[section] || "Feldgruppe fuer diesen Bereich."}</p>
+                      </div>
+                      <ul className="field-module-stats">
+                        <li>{activeCount} aktive Felder</li>
+                        <li>{requiredPublicCount} Pflicht in Voranmeldung</li>
+                        <li>{requiredCheckinCount} Pflicht vor Check-in</li>
+                        <li>{requiredPrintCount} Pflicht vor Druck</li>
+                        <li>{printCount} Druckfelder</li>
+                      </ul>
+                      <div className="field-row-actions">
+                        <button type="button" className="secondary-button" onClick={() => setSelectedFieldSection(section)}>
+                          Oeffnen
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedFieldSection(section);
+                            setNewFieldDefinition((current) => ({ ...current, section }));
+                            setIsCreateFieldModalOpen(true);
+                          }}
+                        >
+                          Neues Feld in diesem Modul
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+
+            <details className="field-expert-details">
+              <summary>Expertenansicht anzeigen</summary>
+              <div className="table-wrap admin-fields-wrap">
+                <table className="data-table admin-fields-table">
+                  <thead>
+                    <tr>
+                      <th className="col-label">Label</th>
+                      <th className="col-key">Key</th>
+                      <th className="col-type">Typ</th>
+                      <th className="col-section">Bereich</th>
+                      <th className="col-flag">System</th>
+                      <th className="col-flag">Aktiv</th>
+                      <th className="col-flag">Public</th>
+                      <th className="col-flag">Wache</th>
+                      <th className="col-flag">SiBe</th>
+                      <th className="col-flag">Druck</th>
+                      <th className="col-flag">Pflicht Public</th>
+                      <th className="col-flag">Pflicht Check-in</th>
+                      <th className="col-flag">Pflicht Druck</th>
+                      <th className="col-order">Sortierung</th>
+                      <th className="col-actions">Aktion</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {fieldDefinitions.map((definition) => (
+                      <tr key={definition.id}>
+                        <td className="col-label">{definition.label}</td>
+                        <td className="col-key"><code>{definition.fieldKey}</code></td>
+                        <td className="col-type">{definition.fieldType}</td>
+                        <td className="col-section">{definition.section}</td>
+                        <td className="col-flag">{definition.isSystem ? "Ja" : "Nein"}</td>
+                        <td className="col-flag">{definition.isActive ? "Ja" : "Nein"}</td>
+                        <td className="col-flag">{definition.showInPublic ? "Ja" : "Nein"}</td>
+                        <td className="col-flag">{definition.showInGuard ? "Ja" : "Nein"}</td>
+                        <td className="col-flag">{definition.showInSibe ? "Ja" : "Nein"}</td>
+                        <td className="col-flag">{definition.showOnBadge ? "Ja" : "Nein"}</td>
+                        <td className="col-flag">{definition.requiredPublic ? "Ja" : "Nein"}</td>
+                        <td className="col-flag">{definition.requiredGuardCheckin ? "Ja" : "Nein"}</td>
+                        <td className="col-flag">{definition.requiredBeforePrint ? "Ja" : "Nein"}</td>
+                        <td className="col-order">{definition.sortOrder}</td>
+                        <td className="col-actions">
+                          <button type="button" className="secondary-button" onClick={() => setSelectedFieldDefinitionId(definition.id)}>
+                            Bearbeiten
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+
+            {selectedFieldDefinition ? (
+              <div className="modal-backdrop" role="dialog" aria-modal="true">
+                <div className="modal-card panel field-edit-modal">
+                  <h4>Feld bearbeiten</h4>
+                  <div className="field-edit-form">
+                    <h5>Stammdaten</h5>
+                    <div className="form-grid two-columns">
+                      <FormField label="Label">
+                        <input
+                          value={selectedFieldDefinition.label}
+                          onChange={(event) => setEditableFieldDefinitions((current) => ({
+                            ...current,
+                            [selectedFieldDefinition.id]: { ...selectedFieldDefinition, label: event.target.value }
+                          }))}
+                        />
+                      </FormField>
+                      <FormField label="Key">
+                        <input value={selectedFieldDefinition.fieldKey} readOnly />
+                      </FormField>
+                      <FormField label="Typ">
+                        <input value={selectedFieldDefinition.fieldType} readOnly />
+                      </FormField>
+                      <FormField label="Bereich">
+                        <input
+                          value={selectedFieldDefinition.section}
+                          onChange={(event) => setEditableFieldDefinitions((current) => ({
+                            ...current,
+                            [selectedFieldDefinition.id]: { ...selectedFieldDefinition, section: event.target.value }
+                          }))}
+                        />
+                      </FormField>
+                      <FormField label="Sortierung">
+                        <input
+                          type="number"
+                          value={selectedFieldDefinition.sortOrder}
+                          onChange={(event) => setEditableFieldDefinitions((current) => ({
+                            ...current,
+                            [selectedFieldDefinition.id]: { ...selectedFieldDefinition, sortOrder: Number(event.target.value) || 0 }
+                          }))}
+                        />
+                      </FormField>
+                      <FormField label="Hilfetext">
+                        <input
+                          value={selectedFieldDefinition.helpText || ""}
+                          onChange={(event) => setEditableFieldDefinitions((current) => ({
+                            ...current,
+                            [selectedFieldDefinition.id]: { ...selectedFieldDefinition, helpText: event.target.value }
+                          }))}
+                        />
+                      </FormField>
+                    </div>
+
+                    <h5>Sichtbarkeit</h5>
+                    <p className="section-copy">Legen Sie fest, in welchem Bereich dieses Feld sichtbar ist.</p>
+                    <div className="form-grid two-columns">
+                      <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.showInPublic} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [selectedFieldDefinition.id]: { ...selectedFieldDefinition, showInPublic: event.target.checked } }))} />In Voranmeldung anzeigen<div className="field-help-text">Dieses Feld erscheint im Formular fuer Mitarbeiter ohne Login.</div></label>
+                      <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.showInGuard} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [selectedFieldDefinition.id]: { ...selectedFieldDefinition, showInGuard: event.target.checked } }))} />In Wache anzeigen<div className="field-help-text">Dieses Feld ist in der Wache-Detailansicht sichtbar und bearbeitbar.</div></label>
+                      <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.showInSibe} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [selectedFieldDefinition.id]: { ...selectedFieldDefinition, showInSibe: event.target.checked } }))} />In SiBe anzeigen<div className="field-help-text">Dieses Feld ist in der lesenden SiBe-Ansicht sichtbar.</div></label>
+                      <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.showOnBadge} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [selectedFieldDefinition.id]: { ...selectedFieldDefinition, showOnBadge: event.target.checked } }))} />Auf Besucherschein drucken<div className="field-help-text">Dieses Feld wird auf dem Druckschein ausgegeben.</div></label>
+                    </div>
+
+                    <h5>Pflichtregeln</h5>
+                    <p className="section-copy">Pflichtregeln steuern, wann ein Feld zwingend ausgefuellt sein muss.</p>
+                    <div className="form-grid two-columns">
+                      <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.requiredPublic} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [selectedFieldDefinition.id]: { ...selectedFieldDefinition, requiredPublic: event.target.checked } }))} />Pflicht in Voranmeldung<div className="field-help-text">Mitarbeiter muessen dieses Feld beim Anmelden ausfuellen.</div></label>
+                      <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.requiredGuardCheckin} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [selectedFieldDefinition.id]: { ...selectedFieldDefinition, requiredGuardCheckin: event.target.checked } }))} />Pflicht vor Check-in<div className="field-help-text">Die Wache muss dieses Feld vor dem Check-in ergaenzen.</div></label>
+                      <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.requiredBeforePrint} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [selectedFieldDefinition.id]: { ...selectedFieldDefinition, requiredBeforePrint: event.target.checked } }))} />Pflicht vor Druck<div className="field-help-text">Der Besucherschein darf erst nach Ergaenzung gedruckt werden.</div></label>
+                    </div>
+
+                    <h5>Status</h5>
+                    <div className="form-grid two-columns">
+                      <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.isActive} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [selectedFieldDefinition.id]: { ...selectedFieldDefinition, isActive: event.target.checked } }))} />Aktiv<div className="field-help-text">Inaktive Felder bleiben in Daten erhalten, werden aber nicht mehr aktiv verwendet.</div></label>
+                      <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.isSystem} readOnly disabled />Systemfeld<div className="field-help-text">Systemfelder gehoeren zum Grundsystem und sind nicht loeschbar.</div></label>
+                    </div>
+                  </div>
+                  <div className="row-actions action-bar">
+                    <button type="button" onClick={() => void saveFieldDefinition(selectedFieldDefinition.id)}>Speichern</button>
+                    <button type="button" className="secondary-button" onClick={() => setSelectedFieldDefinitionId(null)}>Abbrechen</button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {isCreateFieldModalOpen ? (
+              <div className="modal-backdrop" role="dialog" aria-modal="true">
+                <div className="modal-card panel field-edit-modal">
+                  <h4>Neues Feld hinzufuegen</h4>
+                  <form className="field-edit-form" onSubmit={createFieldDefinition}>
+                    <h5>Stammdaten</h5>
+                    <div className="form-grid two-columns">
+                      <FormField label="Label" required><input value={newFieldDefinition.label} onChange={(event) => setNewFieldDefinition((current) => ({ ...current, label: event.target.value }))} /></FormField>
+                      <FormField label="Feldtyp" required>
+                        <select value={newFieldDefinition.fieldType} onChange={(event) => setNewFieldDefinition((current) => ({ ...current, fieldType: event.target.value }))}>
+                          <option value="text">Text</option>
+                          <option value="textarea">Mehrzeiliger Text</option>
+                          <option value="date">Datum</option>
+                          <option value="email">E-Mail</option>
+                          <option value="phone">Telefon</option>
+                          <option value="number">Zahl</option>
+                          <option value="checkbox">Checkbox</option>
+                          <option value="select">Auswahlfeld</option>
+                        </select>
+                      </FormField>
+                      <FormField label="Bereich" required><input value={newFieldDefinition.section} onChange={(event) => setNewFieldDefinition((current) => ({ ...current, section: event.target.value }))} /></FormField>
+                      <FormField label="Sortierung"><input type="number" value={newFieldDefinition.sortOrder} onChange={(event) => setNewFieldDefinition((current) => ({ ...current, sortOrder: Number(event.target.value) || 0 }))} /></FormField>
+                      <FormField label="Hilfetext"><input value={newFieldDefinition.helpText} onChange={(event) => setNewFieldDefinition((current) => ({ ...current, helpText: event.target.value }))} /></FormField>
+                      {newFieldDefinition.fieldType === "select" ? <FormField label="Optionen (eine pro Zeile)"><textarea rows={4} value={newFieldDefinition.optionsJson} onChange={(event) => setNewFieldDefinition((current) => ({ ...current, optionsJson: event.target.value }))} /></FormField> : null}
+                    </div>
+
+                    <h5>Sichtbarkeit</h5>
+                    <div className="form-grid two-columns">
+                      <label className="checkbox-row"><input type="checkbox" checked={newFieldDefinition.showInPublic} onChange={(event) => setNewFieldDefinition((current) => ({ ...current, showInPublic: event.target.checked }))} />In Voranmeldung anzeigen</label>
+                      <label className="checkbox-row"><input type="checkbox" checked={newFieldDefinition.showInGuard} onChange={(event) => setNewFieldDefinition((current) => ({ ...current, showInGuard: event.target.checked }))} />In Wache anzeigen</label>
+                      <label className="checkbox-row"><input type="checkbox" checked={newFieldDefinition.showInSibe} onChange={(event) => setNewFieldDefinition((current) => ({ ...current, showInSibe: event.target.checked }))} />In SiBe anzeigen</label>
+                      <label className="checkbox-row"><input type="checkbox" checked={newFieldDefinition.showOnBadge} onChange={(event) => setNewFieldDefinition((current) => ({ ...current, showOnBadge: event.target.checked }))} />Auf Besucherschein drucken</label>
+                    </div>
+
+                    <h5>Pflichtregeln</h5>
+                    <div className="form-grid two-columns">
+                      <label className="checkbox-row"><input type="checkbox" checked={newFieldDefinition.requiredPublic} onChange={(event) => setNewFieldDefinition((current) => ({ ...current, requiredPublic: event.target.checked }))} />Pflicht in Voranmeldung</label>
+                      <label className="checkbox-row"><input type="checkbox" checked={newFieldDefinition.requiredGuardCheckin} onChange={(event) => setNewFieldDefinition((current) => ({ ...current, requiredGuardCheckin: event.target.checked }))} />Pflicht vor Check-in</label>
+                      <label className="checkbox-row"><input type="checkbox" checked={newFieldDefinition.requiredBeforePrint} onChange={(event) => setNewFieldDefinition((current) => ({ ...current, requiredBeforePrint: event.target.checked }))} />Pflicht vor Druck</label>
+                      <label className="checkbox-row"><input type="checkbox" checked={newFieldDefinition.isActive} onChange={(event) => setNewFieldDefinition((current) => ({ ...current, isActive: event.target.checked }))} />Aktiv</label>
+                    </div>
+                    <div className="row-actions action-bar">
+                      <button type="submit">Feld anlegen</button>
+                      <button type="button" className="secondary-button" onClick={() => setIsCreateFieldModalOpen(false)}>Abbrechen</button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            ) : null}
           </Card>
         ) : null}
 

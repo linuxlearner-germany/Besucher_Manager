@@ -46,7 +46,7 @@ def main() -> int:
         [
             "python3",
             "scripts/ops/verify_role_access.py",
-            "--base-url", "http://localhost:3020",
+            "--base-url", "http://localhost:3030",
             "--admin-user", args.admin_user,
             "--admin-password", args.admin_password,
             "--guard-user", args.guard_user,
@@ -62,7 +62,7 @@ def main() -> int:
         [
             "python3",
             "scripts/ops/verify_mvp_flow.py",
-            "--base-url", "http://localhost:3020",
+            "--base-url", "http://localhost:3030",
             "--admin-user", args.admin_user,
             "--admin-password", args.admin_password,
             "--guard-user", args.guard_user,
@@ -78,7 +78,7 @@ def main() -> int:
         [
             "python3",
             "scripts/ops/export_signature_followups.py",
-            "--base-url", "http://localhost:3020",
+            "--base-url", "http://localhost:3030",
             "--user", args.sibe_user,
             "--password", args.sibe_password,
         ],

@@ -69,6 +69,8 @@ function createBaseVisit() {
     const visit = createBaseVisit();
     const completeness = getVisitCompleteness(visit);
     strict_1.default.equal(completeness.canCheckIn, true);
+    strict_1.default.equal(completeness.warnings.some((issue) => issue.field === "gate_id"), false);
+    strict_1.default.equal(completeness.infos.some((issue) => issue.field === "id_document"), false);
 });
 (0, node_test_1.default)("completeness accepts visitor_address free text as address alternative", () => {
     const { getVisitCompleteness } = require("./guardVisits");
@@ -91,7 +93,7 @@ function createBaseVisit() {
     visit.visitorAddress = "";
     const completeness = getVisitCompleteness(visit);
     strict_1.default.equal(completeness.canCheckIn, false);
-    strict_1.default.equal(completeness.errors.some((issue) => issue.field === "Adresse"), true);
+    strict_1.default.equal(completeness.errors.some((issue) => issue.field === "Strasse"), true);
 });
 (0, node_test_1.default)("completeness blocks check-in without id document fields", () => {
     const { getVisitCompleteness } = require("./guardVisits");
@@ -103,4 +105,29 @@ function createBaseVisit() {
     const completeness = getVisitCompleteness(visit);
     strict_1.default.equal(completeness.canCheckIn, false);
     strict_1.default.equal(completeness.errors.some((issue) => issue.field === "Ausweisnummer"), true);
+    strict_1.default.equal(completeness.infos.some((issue) => issue.field === "id_document"), false);
+});
+(0, node_test_1.default)("completeness does not warn about missing gate assignment", () => {
+    const { getVisitCompleteness } = require("./guardVisits");
+    const visit = createBaseVisit();
+    visit.gateId = null;
+    const completeness = getVisitCompleteness(visit);
+    strict_1.default.equal(completeness.warnings.some((issue) => issue.field === "gate_id"), false);
+});
+(0, node_test_1.default)("completeness respects required fields from configuration", () => {
+    const { getVisitCompleteness } = require("./guardVisits");
+    const visit = createBaseVisit();
+    visit.hostPhone = "";
+    const config = {
+        requiredGuardCheckin: [
+            { fieldKey: "visitor_first_name", label: "Vorname" }
+        ],
+        requiredBeforePrint: [
+            { fieldKey: "visitor_first_name", label: "Vorname" }
+        ],
+        optionalInfoGuard: []
+    };
+    const completeness = getVisitCompleteness(visit, config);
+    strict_1.default.equal(completeness.canCheckIn, true);
+    strict_1.default.equal(completeness.errors.some((issue) => issue.field === "Ansprechpartner Telefon"), false);
 });

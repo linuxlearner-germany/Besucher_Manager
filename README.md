@@ -41,7 +41,7 @@ Interne Besucherverwaltung fuer Wache, Empfang und Administration.
 
 ## Technischer Betrieb
 
-- App-Port: `3020`
+- App-Port: `3030`
 - keine lokale `npm install` Ausfuehrung auf dem Server notwendig
 - Build + Runtime laufen im Docker-Container
 
@@ -67,7 +67,7 @@ docker compose logs -f app
 Zieladresse:
 
 ```text
-http://deb-srv-docker:3020
+http://deb-srv-docker:3030
 ```
 
 ## Sicherheitsregeln
@@ -253,7 +253,7 @@ Optional koennen andere Zugangsdaten uebergeben werden:
 
 ```bash
 python3 scripts/ops/verify_mvp_flow.py \
-  --base-url http://deb-srv-docker:3020 \
+  --base-url http://deb-srv-docker:3030 \
   --guard-user guard.demo \
   --guard-password Test1234! \
   --sibe-user sibe.demo \
@@ -283,3 +283,29 @@ npm run verify:ops
 ## Frontend-Assets
 
 - Hintergrundbild: `apps/frontend/public/branding/background.png`
+
+## Feldkonfiguration (MVP Stufe 1)
+
+- Admin-Bereich enthaelt den Tab `Felder` zur Konfiguration von Systemfeldern.
+- Sichtbarkeit und Pflichtregeln koennen pro Kontext gesetzt werden:
+  - `show_in_public`
+  - `show_in_guard`
+  - `show_in_sibe`
+  - `show_on_badge`
+  - `required_public`
+  - `required_guard_checkin`
+  - `required_before_print`
+- Pflichtpruefungen fuer Wache/Check-in und Druck werden serverseitig aus `field_definitions` gelesen.
+- Deaktivierte Felder bleiben in Daten und Historie erhalten; es gibt keine physische Loeschung ueber die UI.
+- Eigene Zusatzfelder (Custom Fields) sind als Datenmodell vorbereitet und folgen in der naechsten Ausbaustufe.
+
+### Export / Import der Feldkonfiguration
+
+- Nur Admin kann Felddefinitionen als JSON exportieren und importieren.
+- Exportformat ist versioniert (`schema: besucher-manager-field-config`, `version: 1`).
+- Export enthaelt ausschliesslich Felddefinitionen (System- und Custom-Felder), keine Besuchs-/Benutzer-/Auditdaten.
+- Import laeuft im sicheren Merge-Modus:
+  - vorhandene Felder werden ueber `fieldKey` aktualisiert,
+  - neue `fieldKey`s werden als Custom Fields angelegt,
+  - nicht enthaltene Felder bleiben unveraendert,
+  - es werden keine Daten physisch geloescht.
