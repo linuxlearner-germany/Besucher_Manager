@@ -23,7 +23,6 @@ export function GuardDashboardPage() {
   const [calendarLoading, setCalendarLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState("all");
-  const [signatureFilter, setSignatureFilter] = useState("all");
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [activeView, setActiveView] = useState<"list" | "calendar">("list");
@@ -105,7 +104,6 @@ export function GuardDashboardPage() {
     try {
       const params = new URLSearchParams();
       params.set("status", statusFilter);
-      params.set("signatureStatus", signatureFilter);
 
       if (search) {
         params.set("search", search);
@@ -122,7 +120,7 @@ export function GuardDashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [search, signatureFilter, statusFilter]);
+  }, [search, statusFilter]);
 
   const loadCalendar = useCallback(async () => {
     setCalendarLoading(true);
@@ -202,6 +200,8 @@ export function GuardDashboardPage() {
     }));
   }
 
+  const hasActiveFilters = statusFilter !== "all" || search.trim().length > 0 || searchInput.trim().length > 0;
+
   return (
     <AppLayout>
       <main className="panel page-panel page-shell-wide guard-page">
@@ -220,41 +220,58 @@ export function GuardDashboardPage() {
           </div>
         </div>
 
-        <div className="toolbar filter-bar">
+        <div className="toolbar filter-bar guard-toolbar">
           <form
             className="toolbar-search"
             onSubmit={(event) => {
               event.preventDefault();
-              setSearch(searchInput);
+              setSearch(searchInput.trim());
             }}
           >
             <input
-              placeholder="Suche nach Besucher, Firma, Ansprechpartner oder Kennzeichen"
+              placeholder="Besucher, Firma, Ansprechpartner oder Kennzeichen"
               value={searchInput}
               onChange={(event) => setSearchInput(event.target.value)}
             />
             <button type="submit">Suchen</button>
+            {hasActiveFilters ? (
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => {
+                  setSearchInput("");
+                  setSearch("");
+                  setStatusFilter("all");
+                }}
+              >
+                Zuruecksetzen
+              </button>
+            ) : null}
           </form>
 
-          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-            <option value="all">Alle</option>
-            <option value="pre_registered">Vorangemeldet</option>
-            <option value="checked_in">Eingecheckt</option>
-            <option value="checked_out">Ausgecheckt</option>
-            <option value="cancelled">Storniert</option>
-          </select>
-
-          {activeView === "list" ? (
-            <select value={signatureFilter} onChange={(event) => setSignatureFilter(event.target.value)}>
-              <option value="all">Alle Unterschriften</option>
-              <option value="pending">Offen</option>
-              <option value="signed_same_day">Vorhanden</option>
-              <option value="signed_later">Nachgereicht</option>
-              <option value="missing_exception">Fehlt mit Ausnahme</option>
-              <option value="not_required">Nicht erforderlich</option>
-            </select>
-          ) : null}
+          <div className="guard-filter-group" aria-label="Statusfilter">
+            <button type="button" className={statusFilter === "all" ? "tab-button tab-active" : "tab-button"} onClick={() => setStatusFilter("all")}>
+              Alle
+            </button>
+            <button type="button" className={statusFilter === "pre_registered" ? "tab-button tab-active" : "tab-button"} onClick={() => setStatusFilter("pre_registered")}>
+              Vorangemeldet
+            </button>
+            <button type="button" className={statusFilter === "checked_in" ? "tab-button tab-active" : "tab-button"} onClick={() => setStatusFilter("checked_in")}>
+              Eingecheckt
+            </button>
+            <button type="button" className={statusFilter === "checked_out" ? "tab-button tab-active" : "tab-button"} onClick={() => setStatusFilter("checked_out")}>
+              Ausgecheckt
+            </button>
+          </div>
         </div>
+
+        {activeView === "list" ? (
+          <div className="guard-toolbar-meta">
+            <span>{visits.length} Eintraege</span>
+            {search ? <span>Suche: {search}</span> : null}
+            {statusFilter !== "all" ? <span>Status: {formatStatus(statusFilter)}</span> : null}
+          </div>
+        ) : null}
 
         {activeView === "list" ? (
           <div className="card-grid stat-grid">

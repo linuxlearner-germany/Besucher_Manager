@@ -55,6 +55,21 @@ export type AdminAuditLog = {
   timestamp: string;
 };
 
+export type AdminErrorLog = {
+  id: string;
+  level: string;
+  errorCode: string;
+  message: string;
+  requestPath: string | null;
+  requestMethod: string | null;
+  ipAddress: string | null;
+  userAgent: string | null;
+  userName: string | null;
+  stackTrace: string | null;
+  metadataJson: string | null;
+  timestamp: string;
+};
+
 export type AdminFieldDefinition = {
   id: string;
   fieldKey: string;
@@ -196,6 +211,7 @@ export type VisitDetail = VisitRow & {
 export type SibeVisitDetail = Omit<VisitDetail, "siteMap" | "badgeTexts">;
 
 export type FormState = {
+  gateId: string;
   firstName: string;
   lastName: string;
   company: string;
@@ -537,6 +553,7 @@ export function buildInitialFormState(): FormState {
   const today = new Date();
 
   return {
+    gateId: "",
     firstName: "",
     lastName: "",
     company: "",

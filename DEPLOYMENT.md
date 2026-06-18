@@ -57,14 +57,65 @@ AUDIT_TRUST_REMOTE_USER_HEADER=false
 AUDIT_REMOTE_USER_HEADER=x-auth-user
 ```
 
+Optional fuer Installationen hinter einem Netzwerk-Proxy:
+
+```env
+HTTP_PROXY=http://proxy.firma.local:3128
+HTTPS_PROXY=http://proxy.firma.local:3128
+NO_PROXY=localhost,127.0.0.1,sqlserver,deb-srv-docker,MS-SRV-SQL
+http_proxy=http://proxy.firma.local:3128
+https_proxy=http://proxy.firma.local:3128
+no_proxy=localhost,127.0.0.1,sqlserver,deb-srv-docker,MS-SRV-SQL
+```
+
+Hinweise:
+
+- Die Proxy-Variablen werden beim Docker-Build an `npm install` und `npm run build` durchgereicht.
+- Die gleichen Variablen werden auch an den laufenden `app`-Container weitergegeben.
+- `NO_PROXY` bzw. `no_proxy` muss interne Ziele wie `sqlserver`, `localhost`, `127.0.0.1`, den Docker-Host und den externen SQL-Server enthalten.
+
 ## 3) Build und Start
 
 ```bash
-docker compose down --remove-orphans
-docker compose build --no-cache
-docker compose up -d
-docker compose logs -f app
+npm run ops:update
 ```
+
+Optional mit Git-Update vor dem Build:
+
+```bash
+npm run ops:update -- --pull
+```
+
+Ohne Datenbank-Backup:
+
+```bash
+npm run ops:update -- --skip-backup
+```
+
+## 3a) Docker hinter Netzwerk-Proxy
+
+Wenn der Docker-Host selbst nur ueber einen Firmenproxy ins Internet kommt, reicht `.env` fuer den App-Build meist aus. Falls auch Docker selbst den Proxy kennen muss:
+
+```bash
+sudo mkdir -p /etc/systemd/system/docker.service.d
+sudo tee /etc/systemd/system/docker.service.d/http-proxy.conf >/dev/null <<'EOF'
+[Service]
+Environment="HTTP_PROXY=http://proxy.firma.local:3128"
+Environment="HTTPS_PROXY=http://proxy.firma.local:3128"
+Environment="NO_PROXY=localhost,127.0.0.1,sqlserver,deb-srv-docker,MS-SRV-SQL"
+EOF
+sudo systemctl daemon-reload
+sudo systemctl restart docker
+```
+
+Pruefen:
+
+```bash
+systemctl show --property=Environment docker
+docker compose build app
+```
+
+Wenn der Proxy Authentifizierung verlangt, Benutzername/Passwort nur in der lokalen Server-Konfiguration oder in der lokalen `.env` hinterlegen, nie im Repository.
 
 ## 4) Health und Erreichbarkeit
 
@@ -83,8 +134,10 @@ http://deb-srv-docker:3030
 
 - Migrationen laufen automatisch beim Containerstart.
 - Start-Admin wird aus `ADMIN_USERNAME`/`ADMIN_PASSWORD` erstellt oder aktualisiert.
+- `db-bootstrap` legt Datenbank, SQL-Login und DB-User bei Bedarf automatisch an.
 - Bei SQL-Login-Fehlern (`ELOGIN`) zuerst SQL-Login/Passwort/Rechte auf `MS-SRV-SQL` pruefen.
 - Uploads liegen persistent im Docker-Volume `uploads_data:/app/uploads`.
+- SQL-Backups werden ueber `npm run ops:backup` nach `archive/backups/` geschrieben.
 - Wichtige Routen:
   - `/`
   - `/login`
@@ -102,8 +155,10 @@ http://deb-srv-docker:3030
   - Texte
   - Karte
   - Audit
+  - Fehlerlog
   - System
 - Audit-Bereich mit Suche, Filtern und metadata_json-Detailansicht
+- Fehlerlog im Admin-Bereich mit Zeit, Fehlercode, Meldung, Request-Pfad, Benutzer, Stacktrace und Metadaten
 - Tabellen-Trennung:
   - `users` = Anwendungskonten
   - `visitors` = externe Besucher
@@ -111,7 +166,7 @@ http://deb-srv-docker:3030
 - Operativer Ablauf:
   - Voranmeldung -> Wache -> Check-in -> Druck -> Check-out mit Unterschrift -> Auditlog
 - Wache kann Voranmeldedaten vor dem Check-in in der Detailansicht korrigieren oder ergaenzen.
-- Oeffentliche Voranmeldungen enthalten keine Wache-Auswahl und erscheinen unzugeordnet in allen Wache-Uebersichten; die Zuordnung erfolgt beim Check-in.
+- Oeffentliche Voranmeldungen enthalten eine Wache-Auswahl und werden direkt der gewaehlten Wache zugeordnet.
 - Wache-Kalenderansicht in `/wache` zeigt Tages-/Monatsueberblick inkl. unzugeordneter Voranmeldungen.
 
 ## 5a) Gelaendeplan hochladen
@@ -210,6 +265,7 @@ npm run verify:ops
   - `badge_text_templates`
   - `system_settings`
   - `audit_logs`
+  - `error_logs`
   - `schema_migrations`
 
 Nach Deployment/Start pruefen:

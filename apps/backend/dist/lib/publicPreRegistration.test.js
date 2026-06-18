@@ -22,6 +22,7 @@ const publicPreRegistrationSchema_1 = require("./publicPreRegistrationSchema");
 });
 (0, node_test_1.default)("public pre-registration accepts valid input", () => {
     const result = publicPreRegistrationSchema_1.publicPreRegistrationSchema.safeParse({
+        gateId: "5F5EA42B-69C9-43BF-BBB5-EEBF9D9E958B",
         firstName: "Max",
         lastName: "Mustermann",
         company: "Test GmbH",
@@ -34,6 +35,20 @@ const publicPreRegistrationSchema_1 = require("./publicPreRegistrationSchema");
         validUntil: "2026-05-21T10:00:00.000Z",
         birthDate: "1990-01-15",
         email: "max@example.com"
+    });
+    strict_1.default.equal(result.success, true);
+});
+(0, node_test_1.default)("public pre-registration accepts optional gate id", () => {
+    const result = publicPreRegistrationSchema_1.publicPreRegistrationSchema.safeParse({
+        gateId: "5F5EA42B-69C9-43BF-BBB5-EEBF9D9E958B",
+        firstName: "Erika",
+        lastName: "Beispiel",
+        company: "Test GmbH",
+        hostName: "Sabine Keller",
+        hostPhone: "0123",
+        purpose: "Besprechung",
+        validFrom: "2026-05-21T08:00:00.000Z",
+        validUntil: "2026-05-21T10:00:00.000Z"
     });
     strict_1.default.equal(result.success, true);
 });

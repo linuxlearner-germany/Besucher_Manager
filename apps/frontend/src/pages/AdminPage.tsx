@@ -12,6 +12,7 @@ import {
   AppLayout,
   type AdminAuditLog,
   type AdminBadgeText,
+  type AdminErrorLog,
   type AdminFieldDefinition,
   type AdminGate,
   type AdminUser,
@@ -31,12 +32,13 @@ import {
 
 export function AdminPage() {
   const { user: currentUser } = useAuth();
-  const [activeSection, setActiveSection] = useState<"dashboard" | "wachen" | "benutzer" | "texte" | "karte" | "felder" | "audit" | "system">("dashboard");
+  const [activeSection, setActiveSection] = useState<"dashboard" | "wachen" | "benutzer" | "texte" | "karte" | "felder" | "audit" | "fehler" | "system">("dashboard");
   const [stats, setStats] = useState<{ users: number; gates: number; templates: number } | null>(null);
   const [gates, setGates] = useState<AdminGate[]>([]);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [texts, setTexts] = useState<AdminBadgeText[]>([]);
   const [logs, setLogs] = useState<AdminAuditLog[]>([]);
+  const [errorLogs, setErrorLogs] = useState<AdminErrorLog[]>([]);
   const [systemStatus, setSystemStatus] = useState<{
     app: string;
     activeVisits: number;
@@ -55,11 +57,19 @@ export function AdminPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedAuditLogId, setSelectedAuditLogId] = useState<string | null>(null);
+  const [selectedErrorLogId, setSelectedErrorLogId] = useState<string | null>(null);
   const [auditFilters, setAuditFilters] = useState({
     search: "",
     action: "",
     user: "",
     ip: "",
+    from: "",
+    to: ""
+  });
+  const [errorLogFilters, setErrorLogFilters] = useState({
+    search: "",
+    errorCode: "",
+    path: "",
     from: "",
     to: ""
   });
@@ -123,6 +133,19 @@ export function AdminPage() {
     setSelectedAuditLogId((current) => payload.logs.some((log) => log.id === current) ? current : null);
   }, [auditFilters]);
 
+  const loadErrorLogs = useCallback(async (filters = errorLogFilters) => {
+    const params = new URLSearchParams();
+    if (filters.search.trim()) params.set("search", filters.search.trim());
+    if (filters.errorCode.trim()) params.set("errorCode", filters.errorCode.trim());
+    if (filters.path.trim()) params.set("path", filters.path.trim());
+    if (filters.from.trim()) params.set("from", filters.from.trim());
+    if (filters.to.trim()) params.set("to", filters.to.trim());
+
+    const payload = await fetchJson<{ logs: AdminErrorLog[] }>(`/api/admin/error-logs?${params.toString()}`, { method: "GET", headers: {} });
+    setErrorLogs(payload.logs);
+    setSelectedErrorLogId((current) => payload.logs.some((log) => log.id === current) ? current : null);
+  }, [errorLogFilters]);
+
   const loadAll = useCallback(async () => {
     setError(null);
     try {
@@ -149,12 +172,15 @@ export function AdminPage() {
       setEditableUsers(Object.fromEntries(userPayload.users.map((entry) => [entry.id, { ...entry, password: "" }])));
       setEditableTexts(Object.fromEntries(textPayload.texts.map((text) => [text.id, { ...text }])));
       setEditableFieldDefinitions(Object.fromEntries(fieldDefinitionsPayload.definitions.map((field) => [field.id, { ...field }])));
-      await loadAuditLogs(auditFilters);
+      await Promise.all([
+        loadAuditLogs(auditFilters),
+        loadErrorLogs(errorLogFilters)
+      ]);
     } catch (apiError) {
       const payload = apiError as ApiError;
       setError(payload.message || "Admin-Daten konnten nicht geladen werden.");
     }
-  }, [auditFilters, loadAuditLogs]);
+  }, [auditFilters, errorLogFilters, loadAuditLogs, loadErrorLogs]);
 
   useEffect(() => {
     void loadAll();
@@ -676,6 +702,23 @@ export function AdminPage() {
   }
 
   const selectedAuditLog = logs.find((entry) => entry.id === selectedAuditLogId) || null;
+  const selectedErrorLog = errorLogs.find((entry) => entry.id === selectedErrorLogId) || null;
+
+  async function applyErrorLogFilters() {
+    await loadErrorLogs(errorLogFilters);
+  }
+
+  async function resetErrorLogFilters() {
+    const next = {
+      search: "",
+      errorCode: "",
+      path: "",
+      from: "",
+      to: ""
+    };
+    setErrorLogFilters(next);
+    await loadErrorLogs(next);
+  }
   const selectedFieldDefinition = selectedFieldDefinitionId ? editableFieldDefinitions[selectedFieldDefinitionId] || null : null;
   const fieldSectionOrder = ["Besucher", "Adresse", "Ansprechpartner", "Besuch", "Ausweis", "Ziel/Raum", "Sonstiges"];
   const hiddenSections = new Set(["Geraete", "Mitgefuehrte Geraete"]);
@@ -734,6 +777,7 @@ export function AdminPage() {
           <button type="button" className={activeSection === "karte" ? "tab-button tab-active" : "tab-button"} onClick={() => setActiveSection("karte")}>Karte</button>
           <button type="button" className={activeSection === "felder" ? "tab-button tab-active" : "tab-button"} onClick={() => setActiveSection("felder")}>Felder</button>
           <button type="button" className={activeSection === "audit" ? "tab-button tab-active" : "tab-button"} onClick={() => setActiveSection("audit")}>Audit</button>
+          <button type="button" className={activeSection === "fehler" ? "tab-button tab-active" : "tab-button"} onClick={() => setActiveSection("fehler")}>Fehlerlog</button>
           <button type="button" className={activeSection === "system" ? "tab-button tab-active" : "tab-button"} onClick={() => setActiveSection("system")}>System</button>
         </div>
 
@@ -748,6 +792,7 @@ export function AdminPage() {
             <article className="panel mini-card"><h3>Gelaendeplan</h3><p>{activeSiteMap ? activeSiteMap.name : "Kein aktiver Plan"}</p><button type="button" className="secondary-button" onClick={() => setActiveSection("karte")}>Oeffnen</button></article>
             <article className="panel mini-card"><h3>Feldkonfiguration</h3><p>{fieldDefinitions.filter((field) => field.isActive).length} aktive Felder</p><button type="button" className="secondary-button" onClick={() => setActiveSection("felder")}>Oeffnen</button></article>
             <article className="panel mini-card"><h3>Auditlog</h3><p>{logs.length} letzte Eintraege</p><button type="button" className="secondary-button" onClick={() => setActiveSection("audit")}>Oeffnen</button></article>
+            <article className="panel mini-card"><h3>Fehlerlog</h3><p>{errorLogs.length} letzte Eintraege</p><button type="button" className="secondary-button" onClick={() => setActiveSection("fehler")}>Oeffnen</button></article>
             <article className="panel mini-card"><h3>Systemstatus</h3><p>{systemStatus ? `${systemStatus.activeVisits} aktiv, ${systemStatus.signaturesFollowUp} Nachreichungen` : "Lade..."}</p><button type="button" className="secondary-button" onClick={() => setActiveSection("system")}>Oeffnen</button></article>
           </div>
         ) : null}
@@ -1516,6 +1561,98 @@ export function AdminPage() {
                 </dl>
                 <FormField label="metadata_json">
                   <textarea readOnly rows={10} value={selectedAuditLog.metadataJson || "{}"} />
+                </FormField>
+              </div>
+            ) : null}
+          </Card>
+        ) : null}
+
+        {activeSection === "fehler" ? (
+          <Card>
+            <h3>Fehlerlog</h3>
+            <div className="toolbar audit-toolbar">
+              <input
+                placeholder="Suche nach Meldung, Benutzer oder Pfad"
+                value={errorLogFilters.search}
+                onChange={(event) => setErrorLogFilters((current) => ({ ...current, search: event.target.value }))}
+              />
+              <input
+                placeholder="Fehlercode"
+                value={errorLogFilters.errorCode}
+                onChange={(event) => setErrorLogFilters((current) => ({ ...current, errorCode: event.target.value }))}
+              />
+              <input
+                placeholder="Pfad"
+                value={errorLogFilters.path}
+                onChange={(event) => setErrorLogFilters((current) => ({ ...current, path: event.target.value }))}
+              />
+              <input
+                type="datetime-local"
+                value={errorLogFilters.from}
+                onChange={(event) => setErrorLogFilters((current) => ({ ...current, from: event.target.value }))}
+              />
+              <input
+                type="datetime-local"
+                value={errorLogFilters.to}
+                onChange={(event) => setErrorLogFilters((current) => ({ ...current, to: event.target.value }))}
+              />
+              <button type="button" onClick={() => void applyErrorLogFilters()}>Filter anwenden</button>
+              <button type="button" className="secondary-button" onClick={() => void resetErrorLogFilters()}>Zuruecksetzen</button>
+            </div>
+            <DataTable>
+              <thead>
+                <tr>
+                  <th>Zeit</th>
+                  <th>Code</th>
+                  <th>Meldung</th>
+                  <th>Pfad</th>
+                  <th>Benutzer</th>
+                  <th>Details</th>
+                </tr>
+              </thead>
+              <tbody>
+                {errorLogs.length ? errorLogs.map((entry) => (
+                  <tr key={entry.id}>
+                    <td>{formatDateTime(entry.timestamp)}</td>
+                    <td>{entry.errorCode}</td>
+                    <td>{entry.message}</td>
+                    <td>{entry.requestMethod || "-"} {entry.requestPath || "-"}</td>
+                    <td>{entry.userName || "-"}</td>
+                    <td>
+                      <button type="button" className="secondary-button" onClick={() => setSelectedErrorLogId(entry.id)}>
+                        Anzeigen
+                      </button>
+                    </td>
+                  </tr>
+                )) : (
+                  <tr>
+                    <td colSpan={6}>Keine Fehler fuer die aktuelle Auswahl gefunden.</td>
+                  </tr>
+                )}
+              </tbody>
+            </DataTable>
+
+            {selectedErrorLog ? (
+              <div className="audit-detail-panel">
+                <div className="section-header">
+                  <div>
+                    <h3>Fehlerdetails</h3>
+                    <p className="section-copy">{selectedErrorLog.errorCode} am {formatDateTime(selectedErrorLog.timestamp)}</p>
+                  </div>
+                </div>
+                <dl className="detail-grid">
+                  <div><dt>Benutzer</dt><dd>{selectedErrorLog.userName || "-"}</dd></div>
+                  <div><dt>IP</dt><dd>{selectedErrorLog.ipAddress || "-"}</dd></div>
+                  <div><dt>Pfad</dt><dd>{selectedErrorLog.requestPath || "-"}</dd></div>
+                  <div><dt>Methode</dt><dd>{selectedErrorLog.requestMethod || "-"}</dd></div>
+                  <div className="detail-span-2"><dt>User-Agent</dt><dd>{selectedErrorLog.userAgent || "-"}</dd></div>
+                  <div className="detail-span-2"><dt>Meldung</dt><dd>{selectedErrorLog.message}</dd></div>
+                </dl>
+                <FormField label="stack_trace">
+                  <textarea readOnly rows={12} value={selectedErrorLog.stackTrace || "-"} />
+                </FormField>
+                <FormField label="metadata_json">
+                  <textarea readOnly rows={8} value={selectedErrorLog.metadataJson || "{}"} />
                 </FormField>
               </div>
             ) : null}

@@ -11,6 +11,8 @@
     "create-admin": "npm run create-admin --workspace @besucher-manager/backend",
     "test:backend": "npm run test --workspace @besucher-manager/backend",
     "typecheck": "npm run typecheck --workspace @besucher-manager/backend && npm run typecheck --workspace @besucher-manager/frontend",
+    "ops:backup": "bash scripts/ops/backup_sqlserver.sh",
+    "ops:update": "bash scripts/ops/update_stack.sh",
     "verify:mvp": "python3 scripts/ops/verify_mvp_flow.py --base-url http://localhost:3030",
     "verify:roles": "python3 scripts/ops/verify_role_access.py --base-url http://localhost:3030",
     "report:signatures": "python3 scripts/ops/export_signature_followups.py --base-url http://localhost:3030",

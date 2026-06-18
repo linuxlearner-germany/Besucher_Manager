@@ -59,6 +59,20 @@ function createScopeClause(user) {
 function isBlank(value) {
     return !value || value.trim().length === 0;
 }
+function normalizeDateOnlyStart(value) {
+    const parsed = new Date(value);
+    const utcYear = parsed.getUTCFullYear();
+    const utcMonth = parsed.getUTCMonth();
+    const utcDay = parsed.getUTCDate();
+    return new Date(Date.UTC(utcYear, utcMonth, utcDay, 0, 0, 0, 0));
+}
+function normalizeDateOnlyEnd(value) {
+    const parsed = new Date(value);
+    const utcYear = parsed.getUTCFullYear();
+    const utcMonth = parsed.getUTCMonth();
+    const utcDay = parsed.getUTCDate();
+    return new Date(Date.UTC(utcYear, utcMonth, utcDay, 23, 59, 59, 999));
+}
 function getSystemFieldValue(visit, fieldKey) {
     const mapping = {
         visitor_first_name: visit.firstName,
@@ -531,6 +545,9 @@ async function checkInVisit(user, visitId, ipAddress, userAgent) {
         if (visit.gateId && !(0, visitWorkflow_1.canAccessGate)(user, visit.gateId)) {
             throw new Error("visit_scope_forbidden");
         }
+        if (!visit.gateId && user.role === "admin" && !user.gateId) {
+            throw new Error("visit_gate_required_for_checkin");
+        }
         const preCheckResult = await new mssql_1.default.Request(transaction)
             .input("visitId", mssql_1.default.UniqueIdentifier, visitId)
             .query(`
@@ -578,10 +595,12 @@ async function checkInVisit(user, visitId, ipAddress, userAgent) {
         await new mssql_1.default.Request(transaction)
             .input("visitId", mssql_1.default.UniqueIdentifier, visitId)
             .input("checkInBy", mssql_1.default.UniqueIdentifier, user.id)
+            .input("gateId", mssql_1.default.UniqueIdentifier, user.gateId)
             .query(`
         UPDATE dbo.visits
         SET
           status = '${visitWorkflow_1.VISIT_STATUS.CHECKED_IN}',
+          gate_id = COALESCE(gate_id, @gateId),
           check_in_at = SYSUTCDATETIME(),
           check_in_by = @checkInBy,
           updated_at = SYSUTCDATETIME()
@@ -763,13 +782,18 @@ async function updateVisitForGuard(user, visitId, input, ipAddress, userAgent) {
         if (!visit) {
             throw new Error("visit_not_found");
         }
-        if (visit.gateId) {
-            if (!(0, visitWorkflow_1.canAccessGate)(user, visit.gateId)) {
+        if (!(0, visitWorkflow_1.canManageGuardScopedVisit)(user, visit, { allowUnassignedPreRegistered: true })) {
+            throw new Error("visit_scope_forbidden");
+        }
+        let nextGateId = visit.gateId ?? null;
+        if (typeof input.gateId === "string" && input.gateId.trim().length > 0) {
+            if (!(0, visitWorkflow_1.canAccessGate)(user, input.gateId)) {
                 throw new Error("visit_scope_forbidden");
             }
+            nextGateId = input.gateId;
         }
-        else if (!(visit.status === visitWorkflow_1.VISIT_STATUS.PRE_REGISTERED && user.role === "guard" && user.gateId)) {
-            throw new Error("visit_scope_forbidden");
+        else if (user.role === "admin") {
+            nextGateId = null;
         }
         if (visit.status !== visitWorkflow_1.VISIT_STATUS.PRE_REGISTERED && visit.status !== visitWorkflow_1.VISIT_STATUS.CHECKED_IN) {
             throw new Error("visit_update_status_forbidden");
@@ -788,8 +812,9 @@ async function updateVisitForGuard(user, visitId, input, ipAddress, userAgent) {
             .input("hostPhone", mssql_1.default.NVarChar(80), input.hostPhone?.trim() || null)
             .input("hostDepartment", mssql_1.default.NVarChar(255), input.hostDepartment?.trim() || null)
             .input("purpose", mssql_1.default.NVarChar(500), input.purpose.trim())
-            .input("validFrom", mssql_1.default.DateTime2, new Date(input.validFrom))
-            .input("validUntil", mssql_1.default.DateTime2, new Date(input.validUntil))
+            .input("gateId", mssql_1.default.UniqueIdentifier, nextGateId)
+            .input("validFrom", mssql_1.default.DateTime2, normalizeDateOnlyStart(input.validFrom))
+            .input("validUntil", mssql_1.default.DateTime2, normalizeDateOnlyEnd(input.validUntil))
             .input("notes", mssql_1.default.NVarChar(mssql_1.default.MAX), input.notes?.trim() || null)
             .input("visitorStreet", mssql_1.default.NVarChar(255), input.visitorStreet?.trim() || null)
             .input("visitorHouseNumber", mssql_1.default.NVarChar(40), input.visitorHouseNumber?.trim() || null)
@@ -846,6 +871,7 @@ async function updateVisitForGuard(user, visitId, input, ipAddress, userAgent) {
           host_phone = @hostPhone,
           host_department = @hostDepartment,
           purpose = @purpose,
+          gate_id = @gateId,
           valid_from = @validFrom,
           valid_until = @validUntil,
           license_plate = @licensePlate,

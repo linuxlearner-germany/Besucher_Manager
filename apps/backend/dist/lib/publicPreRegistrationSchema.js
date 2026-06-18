@@ -4,6 +4,7 @@ exports.publicPreRegistrationSchema = void 0;
 const zod_1 = require("zod");
 exports.publicPreRegistrationSchema = zod_1.z
     .object({
+    gateId: zod_1.z.string().uuid().optional().or(zod_1.z.literal("")),
     firstName: zod_1.z.string().trim().min(1, "Vorname ist erforderlich."),
     lastName: zod_1.z.string().trim().min(1, "Nachname ist erforderlich."),
     company: zod_1.z.string().trim().min(1, "Firma / Organisation ist erforderlich."),

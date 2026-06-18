@@ -129,6 +129,7 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
 
     const visitInsert = await new sql.Request(transaction)
       .input("visitorId", sql.UniqueIdentifier, visitorId)
+      .input("gateId", sql.UniqueIdentifier, cleanOptional(input.gateId))
       .input("hostName", sql.NVarChar(255), input.hostName.trim())
       .input("hostEmail", sql.NVarChar(255), cleanOptional(input.hostEmail))
       .input("hostPhone", sql.NVarChar(80), cleanOptional(input.hostPhone))
@@ -161,7 +162,7 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
         OUTPUT inserted.id, inserted.status
         VALUES (
           @visitorId,
-          NULL,
+          @gateId,
           @hostName,
           @hostEmail,
           @hostPhone,

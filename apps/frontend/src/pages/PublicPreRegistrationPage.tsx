@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Alert, Card, FormField } from "../components/ui";
+import { Alert, FormField } from "../components/ui";
 import {
   AppLayout,
   type ApiError,
@@ -8,6 +8,7 @@ import {
   fetchJson,
   type FieldErrorState,
   type FormState,
+  type Gate,
   toDateInputValue
 } from "../app/core";
 
@@ -22,17 +23,21 @@ export function PublicPreRegistrationPage() {
   const [fieldErrors, setFieldErrors] = useState<FieldErrorState>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [csrfToken, setCsrfToken] = useState("");
-  const [activeGateCount, setActiveGateCount] = useState(0);
+  const [gates, setGates] = useState<Gate[]>([]);
 
   useEffect(() => {
     async function loadCsrf() {
       try {
         const payload = await fetchJson<{ csrfToken: string; gates: Array<{ id: string }> }>("/api/public/gates", { method: "GET", headers: {} });
         setCsrfToken(payload.csrfToken);
-        setActiveGateCount(payload.gates.length);
+        setGates(payload.gates as Gate[]);
+        setForm((current) => ({
+          ...current,
+          gateId: current.gateId || payload.gates[0]?.id || ""
+        }));
       } catch {
         setCsrfToken("");
-        setActiveGateCount(0);
+        setGates([]);
       }
     }
 
@@ -88,7 +93,7 @@ export function PublicPreRegistrationPage() {
 
   return (
     <AppLayout>
-      <main className="page-panel page-shell-form public-page-shell">
+      <main className="page-panel page-shell-form">
         <section className="panel public-form-panel">
           <div className="section-header">
             <div>
@@ -101,6 +106,16 @@ export function PublicPreRegistrationPage() {
             <div className="form-section">
               <h3>Besucher</h3>
               <div className="form-grid two-columns">
+                <FormField label="Wache / Eingang" required error={fieldErrors.gateId}>
+                  <select required value={form.gateId} onChange={(event) => updateField("gateId", event.target.value)}>
+                    <option value="">Bitte waehlen</option>
+                    {gates.map((gate) => (
+                      <option key={gate.id} value={gate.id}>
+                        {gate.name}
+                      </option>
+                    ))}
+                  </select>
+                </FormField>
                 <FormField label="Vorname" required error={fieldErrors.firstName}>
                   <input required value={form.firstName} onChange={(event) => updateField("firstName", event.target.value)} />
                 </FormField>
@@ -185,27 +200,6 @@ export function PublicPreRegistrationPage() {
             {submitState.kind === "error" ? <Alert type="error">{submitState.message}</Alert> : null}
           </form>
         </section>
-
-        <aside className="public-side-column">
-          <Card className="public-side-card">
-            <h3>Ablauf</h3>
-            <ol className="public-checklist">
-              <li>Daten der besuchenden Person erfassen</li>
-              <li>Ansprechpartner und Zeitraum festlegen</li>
-              <li>Voranmeldung absenden</li>
-              <li>Wache ergaenzt Pflichtdaten beim Check-in</li>
-            </ol>
-          </Card>
-
-          <Card className="public-side-card">
-            <h3>Hinweise</h3>
-            <div className="public-meta-list">
-              <span><strong>Pflichtfelder:</strong> alle mit *</span>
-              <span><strong>Aktive Wachen:</strong> {activeGateCount || "-"}</span>
-              <span><strong>Speicherung:</strong> direkt im lokalen System</span>
-            </div>
-          </Card>
-        </aside>
       </main>
     </AppLayout>
   );

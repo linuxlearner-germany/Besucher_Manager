@@ -3,6 +3,7 @@ import sql from "mssql";
 import type { Request, Response } from "express";
 import { env } from "../config/env";
 import { clearSessionCookie, getSessionCookieName, readSessionToken } from "../lib/authSession";
+import { writeErrorLog } from "../lib/errorLogs";
 import { findUserById } from "../lib/users";
 import type { AuthenticatedUser } from "../lib/visitWorkflow";
 
@@ -66,6 +67,31 @@ export function handleUnexpectedError(
   fallbackMessage: string
 ) {
   console.error(error);
+  const request = response.req;
+  const userName = request?.auth?.username
+    || (typeof request?.body?.username === "string" ? request.body.username : null)
+    || null;
+  const errorMessage = error instanceof Error ? error.message : fallbackMessage;
+  const stackTrace = error instanceof Error ? error.stack ?? null : null;
+  const metadataJson = JSON.stringify({
+    fallbackMessage,
+    originalType: error instanceof Error ? error.name : typeof error
+  });
+
+  void writeErrorLog({
+    errorCode: fallbackErrorCode,
+    message: errorMessage,
+    requestPath: request?.originalUrl ?? request?.url ?? null,
+    requestMethod: request?.method ?? null,
+    ipAddress: request ? getRequestIp(request) : null,
+    userAgent: request ? getRequestUserAgent(request) : null,
+    userName,
+    stackTrace,
+    metadataJson
+  }).catch((loggingError) => {
+    console.error("error log write failed", loggingError);
+  });
+
   return sendError(response, 500, fallbackErrorCode, fallbackMessage);
 }
 

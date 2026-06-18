@@ -7,6 +7,7 @@ exports.assertCanCheckOut = assertCanCheckOut;
 exports.assertReturnedBadgeNumberMatches = assertReturnedBadgeNumberMatches;
 exports.assertCanUpdateHostSignature = assertCanUpdateHostSignature;
 exports.canAccessGate = canAccessGate;
+exports.canManageGuardScopedVisit = canManageGuardScopedVisit;
 exports.VISIT_STATUS = {
     PRE_REGISTERED: "pre_registered",
     CHECKED_IN: "checked_in",
@@ -77,4 +78,20 @@ function canAccessGate(user, gateId) {
         return true;
     }
     return Boolean(user.gateId && user.gateId === gateId);
+}
+function canManageGuardScopedVisit(user, visit, options) {
+    if (visit.gateId) {
+        return canAccessGate(user, visit.gateId);
+    }
+    if (!options?.allowUnassignedPreRegistered) {
+        return false;
+    }
+    const normalizedStatus = normalizeVisitStatus(visit.status);
+    if (normalizedStatus !== exports.VISIT_STATUS.PRE_REGISTERED) {
+        return false;
+    }
+    if (user.role === "admin") {
+        return true;
+    }
+    return user.role === "guard" && Boolean(user.gateId);
 }

@@ -102,6 +102,7 @@ async function createPreRegistration(input) {
         }
         const visitInsert = await new mssql_1.default.Request(transaction)
             .input("visitorId", mssql_1.default.UniqueIdentifier, visitorId)
+            .input("gateId", mssql_1.default.UniqueIdentifier, cleanOptional(input.gateId))
             .input("hostName", mssql_1.default.NVarChar(255), input.hostName.trim())
             .input("hostEmail", mssql_1.default.NVarChar(255), cleanOptional(input.hostEmail))
             .input("hostPhone", mssql_1.default.NVarChar(80), cleanOptional(input.hostPhone))
@@ -134,7 +135,7 @@ async function createPreRegistration(input) {
         OUTPUT inserted.id, inserted.status
         VALUES (
           @visitorId,
-          NULL,
+          @gateId,
           @hostName,
           @hostEmail,
           @hostPhone,

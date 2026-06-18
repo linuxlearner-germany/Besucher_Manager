@@ -8,6 +8,9 @@ const node_path_1 = __importDefault(require("node:path"));
 const dotenv_1 = __importDefault(require("dotenv"));
 const zod_1 = require("zod");
 dotenv_1.default.config();
+if (!process.env.APP_PORT && process.env.PORT) {
+    process.env.APP_PORT = process.env.PORT;
+}
 const booleanish = zod_1.z.preprocess((value) => {
     if (typeof value === "string") {
         const normalized = value.trim().toLowerCase();

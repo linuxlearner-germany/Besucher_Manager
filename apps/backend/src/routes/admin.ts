@@ -1738,6 +1738,82 @@ adminRouter.get("/api/admin/audit-logs", async (request, response) => {
   }
 });
 
+adminRouter.get("/api/admin/error-logs", async (request, response) => {
+  const user = await requireRole(request, response, ["admin"]);
+  if (!user) return;
+  try {
+    const pool = await getPool();
+    const requestBuilder = pool.request();
+    const conditions = ["1 = 1"];
+    const search = typeof request.query.search === "string" ? request.query.search.trim() : "";
+    const errorCode = typeof request.query.errorCode === "string" ? request.query.errorCode.trim() : "";
+    const pathFilter = typeof request.query.path === "string" ? request.query.path.trim() : "";
+    const from = typeof request.query.from === "string" ? request.query.from.trim() : "";
+    const to = typeof request.query.to === "string" ? request.query.to.trim() : "";
+
+    if (search) {
+      requestBuilder.input("search", sql.NVarChar(255), `%${search}%`);
+      conditions.push("([message] LIKE @search OR ISNULL(user_name, '') LIKE @search OR ISNULL(request_path, '') LIKE @search OR error_code LIKE @search)");
+    }
+
+    if (errorCode) {
+      requestBuilder.input("errorCode", sql.NVarChar(120), errorCode);
+      conditions.push("error_code = @errorCode");
+    }
+
+    if (pathFilter) {
+      requestBuilder.input("pathFilter", sql.NVarChar(500), `%${pathFilter}%`);
+      conditions.push("ISNULL(request_path, '') LIKE @pathFilter");
+    }
+
+    if (from) {
+      requestBuilder.input("from", sql.DateTime2, new Date(from));
+      conditions.push("[timestamp] >= @from");
+    }
+
+    if (to) {
+      requestBuilder.input("to", sql.DateTime2, new Date(to));
+      conditions.push("[timestamp] <= @to");
+    }
+
+    const result = await requestBuilder.query<{
+      id: string;
+      level: string;
+      errorCode: string;
+      message: string;
+      requestPath: string | null;
+      requestMethod: string | null;
+      ipAddress: string | null;
+      userAgent: string | null;
+      userName: string | null;
+      stackTrace: string | null;
+      metadataJson: string | null;
+      timestamp: string;
+    }>(`
+      SELECT TOP 200
+        id,
+        [level],
+        error_code AS errorCode,
+        [message],
+        request_path AS requestPath,
+        request_method AS requestMethod,
+        ip_address AS ipAddress,
+        user_agent AS userAgent,
+        user_name AS userName,
+        stack_trace AS stackTrace,
+        metadata_json AS metadataJson,
+        CONVERT(NVARCHAR(30), [timestamp], 127) AS [timestamp]
+      FROM dbo.error_logs
+      WHERE ${conditions.join(" AND ")}
+      ORDER BY [timestamp] DESC
+    `);
+
+    response.json({ logs: result.recordset });
+  } catch (error) {
+    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Das Fehlerlog konnte nicht geladen werden.");
+  }
+});
+
 adminRouter.get("/api/admin/system-status", async (request, response) => {
   const user = await requireRole(request, response, ["admin"]);
   if (!user) return;

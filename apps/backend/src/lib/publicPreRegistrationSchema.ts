@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const publicPreRegistrationSchema = z
   .object({
+    gateId: z.string().uuid().optional().or(z.literal("")),
     firstName: z.string().trim().min(1, "Vorname ist erforderlich."),
     lastName: z.string().trim().min(1, "Nachname ist erforderlich."),
     company: z.string().trim().min(1, "Firma / Organisation ist erforderlich."),

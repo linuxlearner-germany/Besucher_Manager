@@ -473,43 +473,8 @@ textarea {
   width: min(460px, 100%);
 }
 
-.public-page-shell {
-  display: grid;
-  grid-template-columns: minmax(0, 1.9fr) minmax(280px, 0.9fr);
-  gap: 20px;
-  align-items: start;
-}
-
 .public-form-panel {
   min-width: 0;
-}
-
-.public-side-column {
-  display: grid;
-  gap: 16px;
-  align-content: start;
-}
-
-.public-side-card {
-  display: grid;
-  gap: 14px;
-}
-
-.public-checklist,
-.public-meta-list {
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 10px;
-  color: var(--muted);
-}
-
-.public-checklist {
-  padding-left: 18px;
-}
-
-.public-meta-list span {
-  display: block;
 }
 
 .public-success-block {
@@ -634,6 +599,11 @@ textarea {
   align-items: stretch;
 }
 
+.guard-toolbar {
+  display: grid;
+  gap: 12px;
+}
+
 .toolbar-search {
   display: flex;
   flex: 1 1 520px;
@@ -660,6 +630,27 @@ textarea {
   border-radius: 8px;
   background: var(--panel-bg);
   color: var(--text);
+}
+
+.guard-filter-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.guard-toolbar-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: -2px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.guard-toolbar-meta span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
 }
 
 .table-wrap,
@@ -1357,6 +1348,7 @@ input[type="checkbox"] {
   gap: 4px;
   padding-bottom: 10px;
   border-bottom: 1px solid #e2e8f0;
+  min-height: 58px;
 }
 
 .badge-grid span {
@@ -1365,9 +1357,90 @@ input[type="checkbox"] {
   color: var(--muted);
 }
 
+.print-front-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.print-info-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: var(--surface-subtle);
+}
+
+.print-info-card h3 {
+  font-size: 15px;
+}
+
+.print-info-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.print-info-list div {
+  display: grid;
+  gap: 2px;
+}
+
+.print-info-list dt {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.print-info-list dd {
+  margin: 0;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.print-front-footer {
+  display: grid;
+  gap: 12px;
+}
+
+.print-validity-card {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: var(--surface-subtle);
+}
+
+.print-validity-card div {
+  display: grid;
+  gap: 2px;
+}
+
+.print-validity-card span {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.print-validity-card strong {
+  font-size: 14px;
+}
+
+.print-signature-compact {
+  margin-top: 0;
+}
+
 .print-columns {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(260px, 0.8fr);
+  gap: 18px;
+}
+
+.print-back-stack {
+  display: grid;
   gap: 18px;
 }
 
@@ -1759,6 +1832,15 @@ input[type="checkbox"] {
     min-width: 0;
   }
 
+  .guard-filter-group {
+    width: 100%;
+  }
+
+  .guard-filter-group .tab-button {
+    flex: 1 1 calc(50% - 8px);
+    justify-content: center;
+  }
+
   .toolbar select {
     min-width: 0;
     width: 100%;
@@ -1937,6 +2019,8 @@ input[type="checkbox"] {
 
   body {
     background: #ffffff;
+    font-size: 10.5pt;
+    line-height: 1.22;
   }
 
   .topbar,
@@ -1954,6 +2038,19 @@ input[type="checkbox"] {
     box-shadow: none;
   }
 
+  .shell,
+  .content-container,
+  .app-shell,
+  .app-header,
+  .print-layout {
+    margin: 0;
+  }
+
+  .print-layout {
+    display: block;
+    gap: 0;
+  }
+
   .content-container {
     width: 100%;
     max-width: none;
@@ -1966,25 +2063,25 @@ input[type="checkbox"] {
   .badge-sheet {
     width: 100%;
     max-width: none;
-    gap: 10px;
+    min-height: auto;
+    gap: 4mm;
+    margin: 0;
+    overflow: visible;
   }
 
   .print-page {
-    break-after: page;
-    page-break-after: always;
-  }
-
-  .print-page:last-child {
     break-after: auto;
     page-break-after: auto;
   }
 
   .page-1 {
-    min-height: auto;
+    break-after: page;
+    page-break-after: always;
   }
 
   .page-2 {
-    min-height: auto;
+    break-after: auto;
+    page-break-after: auto;
   }
 
   .avoid-break {
@@ -2000,6 +2097,147 @@ input[type="checkbox"] {
   .panel {
     border: 0;
     padding: 0;
+  }
+
+  .badge-header {
+    align-items: start;
+    gap: 6mm;
+    margin-bottom: 1mm;
+  }
+
+  .badge-header h2 {
+    font-size: 18pt;
+    line-height: 1;
+  }
+
+  .eyebrow {
+    margin-bottom: 2mm;
+    font-size: 8pt;
+  }
+
+  .badge-number {
+    font-size: 8.5pt;
+    gap: 1mm;
+  }
+
+  .badge-number strong {
+    font-size: 15pt;
+    line-height: 1;
+  }
+
+  .badge-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 3mm 4mm;
+  }
+
+  .badge-grid div {
+    min-height: 0;
+    gap: 1mm;
+    padding-bottom: 1.5mm;
+  }
+
+  .badge-grid span {
+    font-size: 7.5pt;
+    line-height: 1.1;
+  }
+
+  .badge-grid strong {
+    font-size: 9.5pt;
+    line-height: 1.18;
+    overflow-wrap: anywhere;
+  }
+
+  .signature-section {
+    margin-top: 2mm;
+    gap: 2mm;
+  }
+
+  .signature-section h3 {
+    font-size: 10.5pt;
+  }
+
+  .signature-box {
+    min-height: 14mm;
+    padding: 0;
+  }
+
+  .signature-line {
+    min-height: 12mm;
+  }
+
+  .signature-section p {
+    font-size: 8.5pt;
+    line-height: 1.18;
+  }
+
+  .print-back-stack {
+    gap: 4mm;
+  }
+
+  .print-front-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 3mm;
+  }
+
+  .print-info-card {
+    gap: 2mm;
+    padding: 2.5mm;
+    border-radius: 0;
+  }
+
+  .print-info-card h3 {
+    font-size: 10pt;
+  }
+
+  .print-info-list {
+    gap: 1.6mm;
+  }
+
+  .print-info-list dt,
+  .print-validity-card span {
+    font-size: 7.5pt;
+    line-height: 1.1;
+  }
+
+  .print-info-list dd,
+  .print-validity-card strong {
+    font-size: 9pt;
+    line-height: 1.18;
+  }
+
+  .print-front-footer {
+    gap: 3mm;
+  }
+
+  .print-validity-card {
+    gap: 3mm;
+    padding: 2.5mm;
+    border-radius: 0;
+  }
+
+  .print-signature-compact {
+    gap: 1.5mm;
+  }
+
+  .print-block h3,
+  .print-callout strong {
+    font-size: 10.5pt;
+  }
+
+  .text-list {
+    padding-left: 5mm;
+  }
+
+  .text-list li,
+  .print-callout p {
+    font-size: 9pt;
+    line-height: 1.22;
+  }
+
+  .print-callout {
+    gap: 1.5mm;
+    padding: 3mm 3.5mm;
+    border-radius: 0;
   }
 
   .badge-header,
