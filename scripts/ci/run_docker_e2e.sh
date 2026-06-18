@@ -3,12 +3,17 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ENV_FILE="${ROOT_DIR}/.env.ci"
+DEFAULT_ENV_FILE="${ROOT_DIR}/.env"
 BASE_URL="${BASE_URL:-http://127.0.0.1:3030}"
+CREATED_DEFAULT_ENV=0
 
 cleanup() {
   cd "${ROOT_DIR}"
   docker compose --env-file "${ENV_FILE}" down -v >/dev/null 2>&1 || true
   rm -f "${ENV_FILE}"
+  if [[ "${CREATED_DEFAULT_ENV}" -eq 1 ]]; then
+    rm -f "${DEFAULT_ENV_FILE}"
+  fi
 }
 
 trap cleanup EXIT
@@ -34,6 +39,11 @@ AUDIT_REVERSE_DNS_ENABLED=false
 AUDIT_TRUST_REMOTE_USER_HEADER=false
 AUDIT_REMOTE_USER_HEADER=x-auth-user
 EOF
+
+if [[ ! -f "${DEFAULT_ENV_FILE}" ]]; then
+  cp "${ENV_FILE}" "${DEFAULT_ENV_FILE}"
+  CREATED_DEFAULT_ENV=1
+fi
 
 cd "${ROOT_DIR}"
 docker compose --env-file "${ENV_FILE}" up -d --build
