@@ -23,8 +23,10 @@ jobs:
 
       - name: Fix esbuild permissions
         run: |
+          find ./node_modules/.bin -type f -exec chmod +x {} \; || true
           chmod +x ./node_modules/@esbuild/linux-x64/bin/esbuild || true
           chmod +x ./node_modules/.bin/esbuild || true
+          chmod +x ./node_modules/vite/bin/vite.js || true
 
       - name: Backend tests
         run: npm run test:backend
