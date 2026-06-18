@@ -52,7 +52,7 @@ class HttpClient:
 
 def login(client: HttpClient, username: str, password: str) -> None:
     payload = client.request("POST", "/api/auth/login", {"username": username, "password": password})
-    if not isinstance(payload, dict) or not payload.get("authenticated"):
+    if not isinstance(payload, dict) or not payload.get("user"):
         raise RuntimeError("Anmeldung fuer den Export fehlgeschlagen.")
 
 

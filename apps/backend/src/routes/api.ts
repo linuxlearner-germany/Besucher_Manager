@@ -125,9 +125,16 @@ apiRouter.post("/api/public/pre-registrations", async (request, response) => {
   }
 
   try {
-    await createPreRegistration(parsed.data);
+    const created = await createPreRegistration({
+      ...parsed.data,
+      submittedIpAddress: request.ip || request.socket.remoteAddress || null,
+      userAgent: typeof request.headers["user-agent"] === "string" ? request.headers["user-agent"] : null
+    });
     return response.status(201).json({
-      message: "Voranmeldung erfolgreich gespeichert."
+      message: "Voranmeldung erfolgreich gespeichert.",
+      visitId: created.visitId,
+      visitorId: created.visitorId,
+      status: created.status
     });
   } catch (error) {
     return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Voranmeldung konnte nicht gespeichert werden.");

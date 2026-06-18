@@ -81,7 +81,7 @@ class HttpClient:
             raise ApiError(error.code, payload) from error
 
 
-def make_public_payload(gate_id: str, suffix: str) -> dict[str, Any]:
+def make_public_payload(suffix: str) -> dict[str, Any]:
     now = dt.datetime.now().astimezone().replace(microsecond=0)
     valid_from = now - dt.timedelta(minutes=30)
     valid_until = now + dt.timedelta(hours=2)
@@ -98,7 +98,6 @@ def make_public_payload(gate_id: str, suffix: str) -> dict[str, Any]:
         "hostPhone": "0401234567",
         "hostDepartment": "Empfang",
         "purpose": "Automatischer MVP-Test",
-        "gateId": gate_id,
         "validFrom": valid_from.isoformat(),
         "validUntil": valid_until.isoformat(),
         "notes": "Automatisch angelegte Voranmeldung",
@@ -108,6 +107,7 @@ def make_public_payload(gate_id: str, suffix: str) -> dict[str, Any]:
 def make_guard_update_payload(detail: dict[str, Any]) -> dict[str, Any]:
     valid_from = dt.datetime.fromisoformat(detail["validFrom"])
     valid_until = valid_from + dt.timedelta(hours=3)
+    id_document_valid_until = dt.date.today() + dt.timedelta(days=365 * 3)
     return {
         "firstName": detail["firstName"],
         "lastName": "Flow-Aktualisiert",
@@ -121,10 +121,19 @@ def make_guard_update_payload(detail: dict[str, Any]) -> dict[str, Any]:
         "hostPhone": "0407654321",
         "hostDepartment": "Wache",
         "purpose": "MVP-Flow mit Guard-Bearbeitung",
-        "gateId": detail["gateId"],
+        "gateId": detail.get("gateId") or "",
         "validFrom": valid_from.isoformat(),
         "validUntil": valid_until.isoformat(),
         "notes": "Per Guard aktualisiert",
+        "visitorStreet": "Musterstrasse",
+        "visitorHouseNumber": "12",
+        "visitorPostalCode": "30159",
+        "visitorCity": "Hannover",
+        "visitorAddress": "",
+        "idDocumentType": "identity_card",
+        "idDocumentValidUntil": id_document_valid_until.isoformat(),
+        "idDocumentNumber": f"TEST{detail['id'][:8]}",
+        "idDocumentIssuingPlace": "Hannover",
     }
 
 
@@ -156,7 +165,7 @@ def main() -> int:
     parser.add_argument("--sibe-password", default="Test1234!")
     parser.add_argument("--admin-user", default=os.environ.get("ADMIN_USERNAME", "admin"))
     parser.add_argument("--admin-password", default=os.environ.get("ADMIN_PASSWORD", "StrongPassw0rd!"))
-    parser.add_argument("--signature-status", default="signed_later", choices=["signed_same_day", "signed_later", "missing_exception", "not_required"])
+    parser.add_argument("--signature-status", default="signed_same_day", choices=["signed_same_day", "signed_later", "missing_exception", "not_required"])
     args = parser.parse_args()
 
     suffix = str(int(dt.datetime.now().timestamp()))
@@ -186,7 +195,7 @@ def main() -> int:
     pre_registration = public_client.request(
         "POST",
         "/api/public/pre-registrations",
-        payload=make_public_payload(gate["id"], suffix),
+        payload=make_public_payload(suffix),
         headers={"X-CSRF-Token": csrf_token, "User-Agent": "MVP-Flow-Check/1.0"},
     )
     visit_id = pre_registration["visitId"]
@@ -246,7 +255,14 @@ def main() -> int:
         raise RuntimeError("Signaturerfassung hat keinen bestaetigenden Benutzer oder Zeitstempel hinterlegt.")
 
     print("8/9 Guard checkt mit Unterschriftsstatus aus...")
-    check_out = guard_client.request("POST", f"/api/guard/visits/{visit_id}/check-out", payload=signature_payload)
+    check_out = guard_client.request(
+        "POST",
+        f"/api/guard/visits/{visit_id}/check-out",
+        payload={
+            "signed_by_host_confirmed": True,
+            "returned_badge_number": detail_after_signature["badgeNumber"],
+        },
+    )
     if check_out.get("status") != "checked_out":
         raise RuntimeError("Check-out hat nicht den erwarteten Status geliefert.")
 

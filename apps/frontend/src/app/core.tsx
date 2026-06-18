@@ -670,12 +670,12 @@ export function AuthProvider({ children }: PropsWithChildren) {
     setLoading(true);
 
     try {
-      const response = await fetchJson<{ authenticated: boolean; user?: User }>("/api/auth/me", {
+      const response = await fetchJson<{ user: User | null }>("/api/auth/me", {
         method: "GET",
         headers: {}
       });
 
-      setUser(response.authenticated ? response.user ?? null : null);
+      setUser(response.user ?? null);
     } catch {
       setUser(null);
     } finally {

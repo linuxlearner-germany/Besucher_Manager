@@ -68,7 +68,7 @@ class HttpClient:
 
 def login(client: HttpClient, username: str, password: str) -> None:
     status, payload = client.request("POST", "/api/auth/login", {"username": username, "password": password})
-    if status != 200 or not isinstance(payload, dict) or not payload.get("authenticated"):
+    if status != 200 or not isinstance(payload, dict) or not payload.get("user"):
         raise ApiError(status, payload)
 
 
