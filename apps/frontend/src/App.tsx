@@ -9,313 +9,46 @@ import {
   type PropsWithChildren
 } from "react";
 import {
-  Link,
   Navigate,
   Route,
   Routes,
-  useLocation,
-  useNavigate,
+  Link,
   useParams
 } from "react-router-dom";
 import { Alert, Card, DataTable, FormField } from "./components/ui";
 import { AdminPage } from "./pages/AdminPage";
+import { LoginPage } from "./pages/LoginPage";
+import { PublicPreRegistrationPage } from "./pages/PublicPreRegistrationPage";
 import { VisitDetailPage } from "./pages/VisitDetailPage";
 import {
   AppLayout,
   AuthProvider,
-  type AdminAuditLog,
-  type AdminBadgeText,
-  type AdminFieldDefinition,
-  type AdminGate,
-  type AdminUser,
   type ApiError,
-  buildInitialFormState,
   buildInitialCheckoutState,
   buildCheckoutStateFromVisit,
   buildGuardVisitEditState,
-  type EditableAdminUser,
-  extractFieldErrors,
   fetchJson,
   formatDateOnly,
   formatDateTime,
-  formatFileSize,
   formatSignatureStatus,
   formatStatus,
-  formatTextType,
-  formatUserAgent,
-  type FieldConfigExportPayload,
-  type FieldErrorState,
-  type FormState,
-  type Gate,
   getNextStepHint,
+  toDateInputValue,
   type GuardVisitEditState,
-  BRANDING,
   type GuardCalendarItem,
-  type NewFieldDefinitionForm,
   type CheckoutFormState,
   type SibeSummary,
   type SibeVisitRow,
   type SibeUserRow,
   type SibeVisitDetail,
   type SibeVisitorRow,
-  type SiteMapSummary,
   statusClassName,
-  type SubmitState,
   ThemeProvider,
-  toDateInputValue,
   useAuth,
-  type User,
   type VisitDetail,
   type VisitRow,
   RequireRoles
 } from "./app/core";
-
-function PublicPreRegistrationPage() {
-  const [form, setForm] = useState<FormState>(() => buildInitialFormState());
-  const [submitState, setSubmitState] = useState<SubmitState>({ kind: "idle" });
-  const [fieldErrors, setFieldErrors] = useState<FieldErrorState>({});
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [csrfToken, setCsrfToken] = useState("");
-
-  useEffect(() => {
-    async function loadCsrf() {
-      try {
-        const payload = await fetchJson<{ csrfToken: string }>("/api/public/gates", { method: "GET", headers: {} });
-        setCsrfToken(payload.csrfToken);
-      } catch {
-        setCsrfToken("");
-      }
-    }
-
-    void loadCsrf();
-  }, []);
-
-  function updateField<Key extends keyof FormState>(key: Key, value: FormState[Key]) {
-    setForm((current) => ({ ...current, [key]: value }));
-  }
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setIsSubmitting(true);
-    setSubmitState({ kind: "idle" });
-    setFieldErrors({});
-
-    try {
-      const payload = await fetchJson<{ message: string }>("/api/public/pre-registrations", {
-        method: "POST",
-        headers: {
-          "X-CSRF-Token": csrfToken
-        },
-        body: JSON.stringify({
-          ...form,
-          birthDate: form.birthDate || "",
-          validFrom: form.validFrom,
-          validUntil: form.validUntil
-        })
-      });
-
-      setSubmitState({
-        kind: "success",
-        message: payload.message || "Voranmeldung wurde erfolgreich gespeichert."
-      });
-      setForm(buildInitialFormState());
-    } catch (error) {
-      const apiError = error as ApiError;
-      setFieldErrors(extractFieldErrors(apiError) as FieldErrorState);
-      setSubmitState({
-        kind: "error",
-        message:
-          apiError.error === "FORBIDDEN"
-            ? "Die Sitzung fuer das Formular ist abgelaufen. Bitte Seite neu laden."
-            : apiError.message || "Die Voranmeldung konnte nicht gespeichert werden."
-      });
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
-
-  return (
-    <AppLayout>
-      <main className="panel page-panel page-shell-form">
-        <section>
-          <div className="section-header">
-            <div>
-              <h2>Voranmeldung Besucher</h2>
-              <p className="section-copy">* Pflichtfeld</p>
-            </div>
-          </div>
-
-          <form className="pre-registration-form" onSubmit={handleSubmit}>
-            <div className="form-section">
-              <h3>Besucher</h3>
-              <div className="form-grid two-columns">
-                <label>
-                  Vorname *
-                  <input required value={form.firstName} onChange={(event) => updateField("firstName", event.target.value)} />
-                  {fieldErrors.firstName ? <span className="field-error">{fieldErrors.firstName}</span> : null}
-                </label>
-                <label>
-                  Nachname *
-                  <input required value={form.lastName} onChange={(event) => updateField("lastName", event.target.value)} />
-                  {fieldErrors.lastName ? <span className="field-error">{fieldErrors.lastName}</span> : null}
-                </label>
-                <label>
-                  Firma / Organisation *
-                  <input required value={form.company} onChange={(event) => updateField("company", event.target.value)} />
-                  {fieldErrors.company ? <span className="field-error">{fieldErrors.company}</span> : null}
-                </label>
-                <label>
-                  Geburtsdatum
-                  <input type="date" max={toDateInputValue(new Date())} value={form.birthDate} onChange={(event) => updateField("birthDate", event.target.value)} />
-                  {fieldErrors.birthDate ? <span className="field-error">{fieldErrors.birthDate}</span> : null}
-                </label>
-                <label>
-                  Telefonnummer
-                  <input value={form.phone} onChange={(event) => updateField("phone", event.target.value)} />
-                </label>
-                <label>
-                  E-Mail-Adresse
-                  <input type="email" value={form.email} onChange={(event) => updateField("email", event.target.value)} />
-                </label>
-                <label>
-                  Kennzeichen
-                  <input value={form.licensePlate} onChange={(event) => updateField("licensePlate", event.target.value)} />
-                </label>
-                <label>
-                  Besuchszweck *
-                  <input required value={form.purpose} onChange={(event) => updateField("purpose", event.target.value)} />
-                  {fieldErrors.purpose ? <span className="field-error">{fieldErrors.purpose}</span> : null}
-                </label>
-              </div>
-            </div>
-
-            <div className="form-section">
-              <h3>Ansprechpartner</h3>
-              <div className="form-grid two-columns">
-                <label>
-                  Ansprechpartner *
-                  <input required value={form.hostName} onChange={(event) => updateField("hostName", event.target.value)} />
-                  {fieldErrors.hostName ? <span className="field-error">{fieldErrors.hostName}</span> : null}
-                </label>
-                <label>
-                  Ansprechpartner E-Mail
-                  <input type="email" value={form.hostEmail} onChange={(event) => updateField("hostEmail", event.target.value)} />
-                </label>
-                <label>
-                  Ansprechpartner Telefon *
-                  <input required value={form.hostPhone} onChange={(event) => updateField("hostPhone", event.target.value)} />
-                  {fieldErrors.hostPhone ? <span className="field-error">{fieldErrors.hostPhone}</span> : null}
-                </label>
-                <label>
-                  Abteilung / Bereich
-                  <input
-                    value={form.hostDepartment}
-                    onChange={(event) => updateField("hostDepartment", event.target.value)}
-                  />
-                  {fieldErrors.hostDepartment ? <span className="field-error">{fieldErrors.hostDepartment}</span> : null}
-                </label>
-                <label>
-                  Gueltig von *
-                  <input
-                    required
-                    type="date"
-                    value={form.validFrom}
-                    onChange={(event) => updateField("validFrom", event.target.value)}
-                  />
-                  {fieldErrors.validFrom ? <span className="field-error">{fieldErrors.validFrom}</span> : null}
-                </label>
-                <label>
-                  Gueltig bis *
-                  <input
-                    required
-                    type="date"
-                    value={form.validUntil}
-                    onChange={(event) => updateField("validUntil", event.target.value)}
-                  />
-                  {fieldErrors.validUntil ? <span className="field-error">{fieldErrors.validUntil}</span> : null}
-                </label>
-              </div>
-              <label>
-                Bemerkung
-                <textarea rows={4} value={form.notes} onChange={(event) => updateField("notes", event.target.value)} />
-              </label>
-            </div>
-
-            <div className="form-actions">
-              <button type="submit" disabled={isSubmitting || !csrfToken}>
-                {isSubmitting ? "Speichert..." : "Voranmeldung senden"}
-              </button>
-            </div>
-
-            {submitState.kind === "success" ? <div className="feedback success">{submitState.message}</div> : null}
-            {submitState.kind === "error" ? <div className="feedback error">{submitState.message}</div> : null}
-          </form>
-        </section>
-      </main>
-    </AppLayout>
-  );
-}
-
-function LoginPage() {
-  const { user, setUser } = useAuth();
-  const navigate = useNavigate();
-  const location = useLocation();
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    if (user) {
-      navigate(user.role === "admin" ? "/admin" : user.role === "sibe" ? "/sibe" : "/wache", { replace: true });
-    }
-  }, [navigate, user]);
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setSubmitting(true);
-    setError(null);
-
-    try {
-      const payload = await fetchJson<{ user: User; redirectTo: string }>("/api/auth/login", {
-        method: "POST",
-        body: JSON.stringify({ username, password })
-      });
-
-      setUser(payload.user);
-      navigate((location.state as { from?: string } | null)?.from || payload.redirectTo, { replace: true });
-    } catch (apiError) {
-      const errorPayload = apiError as ApiError;
-      setError(errorPayload.message || "Benutzername oder Passwort ist falsch.");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <AppLayout>
-      <main className="login-layout">
-        <section className="panel login-panel">
-          <h2>Anmeldung</h2>
-          <form className="pre-registration-form" onSubmit={handleSubmit}>
-            <label>
-              Benutzername
-              <input value={username} onChange={(event) => setUsername(event.target.value)} />
-            </label>
-            <label>
-              Passwort
-              <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
-            </label>
-            <button type="submit" disabled={submitting}>
-              {submitting ? "Prueft..." : "Anmelden"}
-            </button>
-            {error ? <div className="feedback error">{error}</div> : null}
-          </form>
-        </section>
-      </main>
-    </AppLayout>
-  );
-}
 
 function GuardDashboardPage() {
   const [visits, setVisits] = useState<VisitRow[]>([]);

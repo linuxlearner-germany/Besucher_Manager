@@ -473,6 +473,116 @@ textarea {
   width: min(460px, 100%);
 }
 
+.public-page-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1.9fr) minmax(280px, 0.9fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.public-form-panel {
+  min-width: 0;
+}
+
+.public-side-column {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+}
+
+.public-side-card {
+  display: grid;
+  gap: 14px;
+}
+
+.public-checklist,
+.public-meta-list {
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+  color: var(--muted);
+}
+
+.public-checklist {
+  padding-left: 18px;
+}
+
+.public-meta-list span {
+  display: block;
+}
+
+.public-success-block {
+  display: grid;
+  gap: 12px;
+}
+
+.public-reference-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.public-reference-card {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  background: var(--surface-subtle);
+}
+
+.public-reference-card code,
+.public-reference-card strong {
+  overflow-wrap: anywhere;
+}
+
+.public-reference-label {
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.login-shell {
+  width: 100%;
+  max-width: 1180px;
+  margin: 0 auto;
+  min-height: calc(100vh - 140px);
+  display: grid;
+  align-items: center;
+}
+
+.login-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+  gap: 20px;
+  align-items: stretch;
+}
+
+.login-side-card {
+  display: grid;
+  gap: 16px;
+}
+
+.login-role-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.login-role-card {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  background: var(--surface-subtle);
+}
+
+.login-role-card span {
+  color: var(--muted);
+  font-size: 14px;
+}
+
 .loading-shell {
   min-height: calc(100vh - 48px);
   display: grid;
@@ -1676,6 +1786,11 @@ input[type="checkbox"] {
     padding: 20px;
   }
 
+  .public-page-shell,
+  .login-grid {
+    grid-template-columns: 1fr;
+  }
+
   .card-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1695,6 +1810,10 @@ input[type="checkbox"] {
 }
 
 @media (max-width: 600px) {
+  .public-reference-grid {
+    grid-template-columns: 1fr;
+  }
+
   .card-grid {
     grid-template-columns: 1fr;
   }
@@ -1803,6 +1922,10 @@ input[type="checkbox"] {
 
   .field-row-actions button {
     width: 100%;
+  }
+
+  .login-shell {
+    min-height: auto;
   }
 }
 
