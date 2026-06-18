@@ -1,7 +1,32 @@
 services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: Express
+      SA_PASSWORD: ${MSSQL_PASSWORD}
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "grep -q 'SQL Server is now ready for client connections' /var/opt/mssql/log/errorlog"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
   app:
     build: .
     restart: unless-stopped
+    depends_on:
+      sqlserver:
+        condition: service_healthy
     env_file:
       - .env
     environment:
@@ -24,3 +49,4 @@ services:
 
 volumes:
   uploads_data:
+  sqlserver_data:

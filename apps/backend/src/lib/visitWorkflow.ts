@@ -25,6 +25,11 @@ export type AuthenticatedUser = {
   gateId: string | null;
 };
 
+export type GuardScopedVisitTarget = {
+  gateId: string | null;
+  status: string;
+};
+
 export function normalizeVisitStatus(status: string): VisitStatus {
   switch (status) {
     case "vorangemeldet":
@@ -114,4 +119,30 @@ export function canAccessGate(user: AuthenticatedUser, gateId: string): boolean 
   }
 
   return Boolean(user.gateId && user.gateId === gateId);
+}
+
+export function canManageGuardScopedVisit(
+  user: AuthenticatedUser,
+  visit: GuardScopedVisitTarget,
+  options?: { allowUnassignedPreRegistered?: boolean }
+): boolean {
+  if (visit.gateId) {
+    return canAccessGate(user, visit.gateId);
+  }
+
+  if (!options?.allowUnassignedPreRegistered) {
+    return false;
+  }
+
+  const normalizedStatus = normalizeVisitStatus(visit.status);
+
+  if (normalizedStatus !== VISIT_STATUS.PRE_REGISTERED) {
+    return false;
+  }
+
+  if (user.role === "admin") {
+    return true;
+  }
+
+  return user.role === "guard" && Boolean(user.gateId);
 }

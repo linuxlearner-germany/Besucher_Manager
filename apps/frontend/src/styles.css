@@ -714,6 +714,9 @@ textarea {
 
 .field-edit-modal {
   width: min(900px, 96vw);
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
 }
 
 .field-edit-form {
@@ -1040,9 +1043,11 @@ textarea {
 }
 
 .checkbox-row {
-  display: flex;
-  gap: 8px;
-  align-items: center;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  column-gap: 8px;
+  row-gap: 2px;
+  align-items: start;
   font-size: 13px;
   color: var(--text);
 }
@@ -1053,6 +1058,21 @@ textarea {
   align-items: center;
   font-size: 13px;
   color: var(--text);
+}
+
+.checkbox-row input[type="checkbox"],
+.checkbox-inline input[type="checkbox"],
+input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  min-height: 0;
+  margin: 2px 0 0;
+  padding: 0;
+  accent-color: #1f5ea8;
+}
+
+.checkbox-row .field-help-text {
+  grid-column: 2;
 }
 
 .card-grid {
@@ -1486,6 +1506,42 @@ textarea {
 
 .modal-card {
   width: min(560px, 96vw);
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+}
+
+.modal-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: -4px 0 12px;
+  padding-bottom: 12px;
+  background: var(--panel-bg);
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.modal-header h4 {
+  min-width: 0;
+}
+
+.modal-close-button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.modal-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  margin-top: 16px;
+  padding-top: 12px;
+  background: var(--panel-bg);
+  border-top: 1px solid var(--panel-border);
 }
 
 .compact-details {

@@ -8,6 +8,7 @@ import {
   assertReturnedBadgeNumberMatches,
   assertCanUpdateHostSignature,
   canAccessGate,
+  canManageGuardScopedVisit,
   HOST_SIGNATURE_STATUS,
   type AuthenticatedUser,
   type HostSignatureStatus,
@@ -178,6 +179,22 @@ function createScopeClause(user: AuthenticatedUser): string {
 
 function isBlank(value: string | null | undefined): boolean {
   return !value || value.trim().length === 0;
+}
+
+function normalizeDateOnlyStart(value: string): Date {
+  const parsed = new Date(value);
+  const utcYear = parsed.getUTCFullYear();
+  const utcMonth = parsed.getUTCMonth();
+  const utcDay = parsed.getUTCDate();
+  return new Date(Date.UTC(utcYear, utcMonth, utcDay, 0, 0, 0, 0));
+}
+
+function normalizeDateOnlyEnd(value: string): Date {
+  const parsed = new Date(value);
+  const utcYear = parsed.getUTCFullYear();
+  const utcMonth = parsed.getUTCMonth();
+  const utcDay = parsed.getUTCDate();
+  return new Date(Date.UTC(utcYear, utcMonth, utcDay, 23, 59, 59, 999));
 }
 
 type CompletenessSourceVisit = {
@@ -737,6 +754,10 @@ export async function checkInVisit(
       throw new Error("visit_scope_forbidden");
     }
 
+    if (!visit.gateId && user.role === "admin" && !user.gateId) {
+      throw new Error("visit_gate_required_for_checkin");
+    }
+
     const preCheckResult = await new sql.Request(transaction)
       .input("visitId", sql.UniqueIdentifier, visitId)
       .query<{
@@ -814,10 +835,12 @@ export async function checkInVisit(
     await new sql.Request(transaction)
       .input("visitId", sql.UniqueIdentifier, visitId)
       .input("checkInBy", sql.UniqueIdentifier, user.id)
+      .input("gateId", sql.UniqueIdentifier, user.gateId)
       .query(`
         UPDATE dbo.visits
         SET
           status = '${VISIT_STATUS.CHECKED_IN}',
+          gate_id = COALESCE(gate_id, @gateId),
           check_in_at = SYSUTCDATETIME(),
           check_in_by = @checkInBy,
           updated_at = SYSUTCDATETIME()
@@ -1106,12 +1129,19 @@ export async function updateVisitForGuard(
       throw new Error("visit_not_found");
     }
 
-    if (visit.gateId) {
-      if (!canAccessGate(user, visit.gateId)) {
+    if (!canManageGuardScopedVisit(user, visit, { allowUnassignedPreRegistered: true })) {
+      throw new Error("visit_scope_forbidden");
+    }
+
+    let nextGateId: string | null = visit.gateId ?? null;
+
+    if (typeof input.gateId === "string" && input.gateId.trim().length > 0) {
+      if (!canAccessGate(user, input.gateId)) {
         throw new Error("visit_scope_forbidden");
       }
-    } else if (!(visit.status === VISIT_STATUS.PRE_REGISTERED && user.role === "guard" && user.gateId)) {
-      throw new Error("visit_scope_forbidden");
+      nextGateId = input.gateId;
+    } else if (user.role === "admin") {
+      nextGateId = null;
     }
 
     if (visit.status !== VISIT_STATUS.PRE_REGISTERED && visit.status !== VISIT_STATUS.CHECKED_IN) {
@@ -1132,8 +1162,9 @@ export async function updateVisitForGuard(
       .input("hostPhone", sql.NVarChar(80), input.hostPhone?.trim() || null)
       .input("hostDepartment", sql.NVarChar(255), input.hostDepartment?.trim() || null)
       .input("purpose", sql.NVarChar(500), input.purpose.trim())
-      .input("validFrom", sql.DateTime2, new Date(input.validFrom))
-      .input("validUntil", sql.DateTime2, new Date(input.validUntil))
+      .input("gateId", sql.UniqueIdentifier, nextGateId)
+      .input("validFrom", sql.DateTime2, normalizeDateOnlyStart(input.validFrom))
+      .input("validUntil", sql.DateTime2, normalizeDateOnlyEnd(input.validUntil))
       .input("notes", sql.NVarChar(sql.MAX), input.notes?.trim() || null)
       .input("visitorStreet", sql.NVarChar(255), input.visitorStreet?.trim() || null)
       .input("visitorHouseNumber", sql.NVarChar(40), input.visitorHouseNumber?.trim() || null)
@@ -1190,6 +1221,7 @@ export async function updateVisitForGuard(
           host_phone = @hostPhone,
           host_department = @hostDepartment,
           purpose = @purpose,
+          gate_id = @gateId,
           valid_from = @validFrom,
           valid_until = @validUntil,
           license_plate = @licensePlate,

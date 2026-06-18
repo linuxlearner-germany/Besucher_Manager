@@ -6,6 +6,7 @@ import {
   assertReturnedBadgeNumberMatches,
   assertCanUpdateHostSignature,
   canAccessGate,
+  canManageGuardScopedVisit,
   HOST_SIGNATURE_STATUS,
   VISIT_STATUS,
   type AuthenticatedUser
@@ -53,6 +54,53 @@ test("signature follow-up keeps signed_later and missing_exception strict", () =
   assert.doesNotThrow(() => assertCanUpdateHostSignature(VISIT_STATUS.CHECKED_OUT, { status: HOST_SIGNATURE_STATUS.MISSING_EXCEPTION, note: "Begruendung vorhanden" }));
 });
 
+test("admin can access any assigned gate", () => {
+  const admin: AuthenticatedUser = {
+    id: "admin-id",
+    username: "admin",
+    role: "admin",
+    gateId: null
+  };
+
+  assert.equal(canAccessGate(admin, "gate-1"), true);
+});
+
+test("admin can update unassigned pre-registered visits in guard workflow", () => {
+  const admin: AuthenticatedUser = {
+    id: "admin-id",
+    username: "admin",
+    role: "admin",
+    gateId: null
+  };
+
+  assert.equal(
+    canManageGuardScopedVisit(admin, { gateId: null, status: VISIT_STATUS.PRE_REGISTERED }, { allowUnassignedPreRegistered: true }),
+    true
+  );
+});
+
+test("guard can update unassigned pre-registered visits only with own gate context", () => {
+  const guard: AuthenticatedUser = {
+    id: "guard-id",
+    username: "guard",
+    role: "guard",
+    gateId: "gate-1"
+  };
+  const guardWithoutGate: AuthenticatedUser = {
+    ...guard,
+    gateId: null
+  };
+
+  assert.equal(
+    canManageGuardScopedVisit(guard, { gateId: null, status: VISIT_STATUS.PRE_REGISTERED }, { allowUnassignedPreRegistered: true }),
+    true
+  );
+  assert.equal(
+    canManageGuardScopedVisit(guardWithoutGate, { gateId: null, status: VISIT_STATUS.PRE_REGISTERED }, { allowUnassignedPreRegistered: true }),
+    false
+  );
+});
+
 test("guard users are restricted to their own gate", () => {
   const guard: AuthenticatedUser = {
     id: "1",
@@ -65,18 +113,6 @@ test("guard users are restricted to their own gate", () => {
   assert.equal(canAccessGate(guard, "gate-2"), false);
 });
 
-test("admin can access all gates", () => {
-  const admin: AuthenticatedUser = {
-    id: "2",
-    username: "admin",
-    role: "admin",
-    gateId: null
-  };
-
-  assert.equal(canAccessGate(admin, "gate-1"), true);
-  assert.equal(canAccessGate(admin, "gate-2"), true);
-});
-
 test("sibe has no implicit guard scope access", () => {
   const sibe: AuthenticatedUser = {
     id: "3",
@@ -86,4 +122,18 @@ test("sibe has no implicit guard scope access", () => {
   };
 
   assert.equal(canAccessGate(sibe, "gate-1"), false);
+});
+
+test("unassigned visits remain blocked when the workflow requires an assigned gate", () => {
+  const admin: AuthenticatedUser = {
+    id: "admin-id",
+    username: "admin",
+    role: "admin",
+    gateId: null
+  };
+
+  assert.equal(
+    canManageGuardScopedVisit(admin, { gateId: null, status: VISIT_STATUS.PRE_REGISTERED }),
+    false
+  );
 });
