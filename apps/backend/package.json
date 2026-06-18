@@ -5,7 +5,7 @@
   "type": "commonjs",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json",
     "start": "node dist/scripts/start.js",
     "migrate": "tsx src/scripts/migrate.ts",
     "migrate:compiled": "node dist/scripts/migrate.js",
@@ -14,7 +14,7 @@
     "seed:sample": "DOTENV_CONFIG_PATH=../../.env node -r dotenv/config --import tsx src/scripts/seedSampleData.ts",
     "seed:sample:compiled": "DOTENV_CONFIG_PATH=../../.env node -r dotenv/config dist/scripts/seedSampleData.js",
     "test": "node --import tsx --test src/**/*.test.ts",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "node ../../node_modules/typescript/bin/tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@types/multer": "^2.1.0",
