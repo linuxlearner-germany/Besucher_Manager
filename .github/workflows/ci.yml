@@ -21,6 +21,11 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Fix esbuild permissions
+        run: |
+          chmod +x ./node_modules/@esbuild/linux-x64/bin/esbuild || true
+          chmod +x ./node_modules/.bin/esbuild || true
+
       - name: Backend tests
         run: npm run test:backend
 
