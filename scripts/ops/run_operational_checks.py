@@ -15,6 +15,8 @@ import os
 import subprocess
 import sys
 
+from env_loader import env_default
+
 
 def run_command(label: str, command: list[str], cwd: str) -> str:
     print(f"\n== {label} ==")
@@ -30,8 +32,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Fuehrt die wichtigsten operativen Besucher-MVP-Checks aus.")
     parser.add_argument("--cwd", default=os.getcwd(), help="Repository-Wurzel")
     parser.add_argument("--skip-seed", action="store_true", help="Seed-Lauf ueberspringen")
-    parser.add_argument("--admin-user", default=os.environ.get("ADMIN_USERNAME", "admin"))
-    parser.add_argument("--admin-password", default=os.environ.get("ADMIN_PASSWORD", "StrongPassw0rd!"))
+    parser.add_argument("--admin-user", default=env_default("ADMIN_USERNAME", "admin"))
+    parser.add_argument("--admin-password", default=env_default("ADMIN_PASSWORD", "StrongPassw0rd!"))
     parser.add_argument("--guard-user", default="guard.demo")
     parser.add_argument("--guard-password", default="Test1234!")
     parser.add_argument("--sibe-user", default="sibe.demo")
@@ -39,7 +41,7 @@ def main() -> int:
     args = parser.parse_args()
 
     if not args.skip_seed:
-        run_command("Seed-Daten", ["npm", "run", "seed:sample", "--workspace", "@besucher-manager/backend"], args.cwd)
+        run_command("Seed-Daten", ["npm", "run", "seed:sample"], args.cwd)
 
     run_command(
         "Rollencheck",

@@ -16,6 +16,7 @@ const db_1 = require("./db");
 const auditLog_1 = require("./auditLog");
 const fieldDefinitions_1 = require("./fieldDefinitions");
 const visitWorkflow_1 = require("./visitWorkflow");
+const MISSING_IMPORT_VALUE = "[fehlt]";
 const normalizedStatusSql = `
   CASE
     WHEN v.status = 'vorangemeldet' THEN '${visitWorkflow_1.VISIT_STATUS.PRE_REGISTERED}'
@@ -57,7 +58,8 @@ function createScopeClause(user) {
     return "1 = 1";
 }
 function isBlank(value) {
-    return !value || value.trim().length === 0;
+    const normalized = value?.trim();
+    return !normalized || normalized.toLowerCase() === MISSING_IMPORT_VALUE;
 }
 function normalizeDateOnlyStart(value) {
     const parsed = new Date(value);
@@ -72,6 +74,9 @@ function normalizeDateOnlyEnd(value) {
     const utcMonth = parsed.getUTCMonth();
     const utcDay = parsed.getUTCDate();
     return new Date(Date.UTC(utcYear, utcMonth, utcDay, 23, 59, 59, 999));
+}
+function isDateOnlyValue(value) {
+    return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.trim());
 }
 function getSystemFieldValue(visit, fieldKey) {
     const mapping = {
@@ -94,8 +99,7 @@ function getSystemFieldValue(visit, fieldKey) {
         valid_until: visit.validUntil,
         id_document_type: visit.idDocumentType,
         id_document_valid_until: visit.idDocumentValidUntil || null,
-        id_document_number: visit.idDocumentNumber,
-        id_document_issuing_place: visit.idDocumentIssuingPlace || null
+        id_document_number: visit.idDocumentNumber
     };
     return mapping[fieldKey] ?? null;
 }
@@ -107,16 +111,15 @@ function defaultCompletenessConfig() {
         ["host_name", "Ansprechpartner"],
         ["host_phone", "Ansprechpartner Telefon"],
         ["visit_purpose", "Besuchszweck"],
-        ["valid_from", "Gueltig von"],
-        ["valid_until", "Gueltig bis"],
-        ["visitor_street", "Strasse"],
+        ["valid_from", "Gültig von"],
+        ["valid_until", "Gültig bis"],
+        ["visitor_street", "Straße"],
         ["visitor_house_number", "Hausnummer"],
         ["visitor_postal_code", "PLZ"],
         ["visitor_city", "Wohnort"],
         ["id_document_type", "Ausweisart"],
-        ["id_document_valid_until", "Ausweis gueltig bis"],
-        ["id_document_number", "Ausweisnummer"],
-        ["id_document_issuing_place", "Ausstellungsort"]
+        ["id_document_valid_until", "Ausweis gültig bis"],
+        ["id_document_number", "Ausweisnummer"]
     ].map(([fieldKey, label], index) => ({
         id: `default-${fieldKey}`,
         fieldKey,
@@ -208,9 +211,11 @@ function getVisitCompleteness(visit, config) {
         errors.push({ field, message: `${field} fehlt.`, severity: "error" });
     }
     const validFromDate = new Date(visit.validFrom);
-    const validUntilDate = new Date(visit.validUntil);
+    const validUntilDate = isDateOnlyValue(visit.validUntil)
+        ? normalizeDateOnlyEnd(visit.validUntil)
+        : new Date(visit.validUntil);
     if (!Number.isNaN(validFromDate.getTime()) && !Number.isNaN(validUntilDate.getTime()) && validUntilDate <= validFromDate) {
-        errors.push({ field: "valid_until", message: "Gueltig bis liegt vor oder auf Gueltig von.", severity: "error" });
+        errors.push({ field: "valid_until", message: "Gültig bis liegt vor oder auf Gültig von.", severity: "error" });
     }
     const now = new Date();
     const validUntilEndOfDayUtc = new Date(validUntilDate);
@@ -220,7 +225,17 @@ function getVisitCompleteness(visit, config) {
     if (!Number.isNaN(validUntilEndOfDayUtc.getTime())
         && validUntilEndOfDayUtc < now
         && (visit.status === visitWorkflow_1.VISIT_STATUS.PRE_REGISTERED || visit.status === visitWorkflow_1.VISIT_STATUS.CHECKED_IN)) {
-        warnings.push({ field: "valid_until", message: "Besuch ist ueberfaellig.", severity: "warning" });
+        warnings.push({ field: "valid_until", message: "Besuch ist überfällig.", severity: "warning" });
+    }
+    if (!isBlank(visit.idDocumentValidUntil)) {
+        const documentValidUntil = new Date(`${visit.idDocumentValidUntil}T23:59:59.999Z`);
+        if (!Number.isNaN(documentValidUntil.getTime()) && documentValidUntil < now) {
+            warnings.push({
+                field: "id_document_valid_until",
+                message: "Ausweisdokument ist abgelaufen.",
+                severity: "warning"
+            });
+        }
     }
     if (isBlank(visit.badgeNumber)) {
         warnings.push({ field: "badge_number", message: "Besuchsnummer fehlt.", severity: "warning" });

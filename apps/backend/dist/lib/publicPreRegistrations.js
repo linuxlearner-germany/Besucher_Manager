@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.listActiveGates = listActiveGates;
+exports.findActiveGateById = findActiveGateById;
 exports.createPreRegistration = createPreRegistration;
 const mssql_1 = __importDefault(require("mssql"));
 const auditLog_1 = require("./auditLog");
@@ -64,6 +65,22 @@ async function listActiveGates() {
   `);
     return result.recordset;
 }
+async function findActiveGateById(id) {
+    const pool = await (0, db_1.getPool)();
+    const result = await pool.request()
+        .input("id", mssql_1.default.UniqueIdentifier, id)
+        .query(`
+      SELECT
+        id,
+        name,
+        description,
+        location
+      FROM dbo.gates
+      WHERE id = @id
+        AND is_active = 1
+    `);
+    return result.recordset[0] ?? null;
+}
 async function createPreRegistration(input) {
     const pool = await (0, db_1.getPool)();
     const transaction = new mssql_1.default.Transaction(pool);
@@ -77,6 +94,9 @@ async function createPreRegistration(input) {
             .input("birthDate", mssql_1.default.Date, cleanOptional(input.birthDate))
             .input("phone", mssql_1.default.NVarChar(80), cleanOptional(input.phone))
             .input("email", mssql_1.default.NVarChar(255), cleanOptional(input.email))
+            .input("idDocumentType", mssql_1.default.NVarChar(40), cleanOptional(input.idDocumentType))
+            .input("idDocumentValidUntil", mssql_1.default.Date, cleanOptional(input.idDocumentValidUntil))
+            .input("idDocumentNumber", mssql_1.default.NVarChar(120), cleanOptional(input.idDocumentNumber))
             .query(`
         INSERT INTO dbo.visitors (
           first_name,
@@ -84,7 +104,10 @@ async function createPreRegistration(input) {
           company,
           birth_date,
           phone_optional,
-          email_optional
+          email_optional,
+          id_document_type,
+          id_document_valid_until,
+          id_document_number
         )
         OUTPUT inserted.id
         VALUES (
@@ -93,7 +116,10 @@ async function createPreRegistration(input) {
           @company,
           @birthDate,
           @phone,
-          @email
+          @email,
+          @idDocumentType,
+          @idDocumentValidUntil,
+          @idDocumentNumber
         )
       `);
         const visitorId = visitorInsert.recordset[0]?.id;

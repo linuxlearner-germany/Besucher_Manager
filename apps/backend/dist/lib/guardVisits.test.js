@@ -64,6 +64,14 @@ function createBaseVisit() {
     strict_1.default.equal(completeness.canCheckIn, false);
     strict_1.default.equal(completeness.errors.some((issue) => issue.field === "valid_until"), true);
 });
+(0, node_test_1.default)("completeness accepts same-day date-only ranges", () => {
+    const { getVisitCompleteness } = require("./guardVisits");
+    const visit = createBaseVisit();
+    visit.validFrom = "2026-05-26";
+    visit.validUntil = "2026-05-26";
+    const completeness = getVisitCompleteness(visit);
+    strict_1.default.equal(completeness.errors.some((issue) => issue.field === "valid_until"), false);
+});
 (0, node_test_1.default)("completeness allows check-in when required fields are present", () => {
     const { getVisitCompleteness } = require("./guardVisits");
     const visit = createBaseVisit();
@@ -93,7 +101,7 @@ function createBaseVisit() {
     visit.visitorAddress = "";
     const completeness = getVisitCompleteness(visit);
     strict_1.default.equal(completeness.canCheckIn, false);
-    strict_1.default.equal(completeness.errors.some((issue) => issue.field === "Strasse"), true);
+    strict_1.default.equal(completeness.errors.some((issue) => issue.field === "Straße"), true);
 });
 (0, node_test_1.default)("completeness blocks check-in without id document fields", () => {
     const { getVisitCompleteness } = require("./guardVisits");

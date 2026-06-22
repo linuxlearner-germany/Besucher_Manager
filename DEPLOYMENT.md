@@ -5,9 +5,10 @@ Diese Anwendung wird ausschliesslich per Docker betrieben.
 ## Zielumgebung
 
 - Docker-Host: `deb-srv-docker`
-- SQL-Server: `MS-SRV-SQL`
+- SQL-Server: lokaler Compose-Service `sqlserver`
 - Datenbank: `Besuchermngmt`
 - App-Port: `3030`
+- SQL-Port: `1433`
 
 ## Wichtige Regeln
 
@@ -15,8 +16,9 @@ Diese Anwendung wird ausschliesslich per Docker betrieben.
 - kein manuelles `npm install` auf dem Server
 - keine Secrets in Git
 - `.env` nur lokal auf dem Server pflegen
-- Rollen im System: `admin`, `guard`, `sibe`
+- Rollen im System: `admin`, `guard`, `sibe`, `kaskdt`
 - Daten werden nicht physisch geloescht
+- Updates muessen Datenbank und Uploads erhalten
 
 ## 1) Repository vorbereiten
 
@@ -38,7 +40,7 @@ PUBLIC_BASE_URL=http://deb-srv-docker:3030
 PORT=3030
 APP_SECURE_COOKIES=false
 
-MSSQL_HOST=MS-SRV-SQL
+MSSQL_HOST=sqlserver
 MSSQL_PORT=1433
 MSSQL_DATABASE=Besuchermngmt
 MSSQL_USER=dockerBesuchermngmt
@@ -62,17 +64,17 @@ Optional fuer Installationen hinter einem Netzwerk-Proxy:
 ```env
 HTTP_PROXY=http://proxy.firma.local:3128
 HTTPS_PROXY=http://proxy.firma.local:3128
-NO_PROXY=localhost,127.0.0.1,sqlserver,deb-srv-docker,MS-SRV-SQL
+NO_PROXY=localhost,127.0.0.1,sqlserver,deb-srv-docker
 http_proxy=http://proxy.firma.local:3128
 https_proxy=http://proxy.firma.local:3128
-no_proxy=localhost,127.0.0.1,sqlserver,deb-srv-docker,MS-SRV-SQL
+no_proxy=localhost,127.0.0.1,sqlserver,deb-srv-docker
 ```
 
 Hinweise:
 
 - Die Proxy-Variablen werden beim Docker-Build an `npm install` und `npm run build` durchgereicht.
 - Die gleichen Variablen werden auch an den laufenden `app`-Container weitergegeben.
-- `NO_PROXY` bzw. `no_proxy` muss interne Ziele wie `sqlserver`, `localhost`, `127.0.0.1`, den Docker-Host und den externen SQL-Server enthalten.
+- `NO_PROXY` bzw. `no_proxy` muss interne Ziele wie `sqlserver`, `localhost`, `127.0.0.1` und den Docker-Host enthalten.
 
 ## 3) Build und Start
 
@@ -102,7 +104,7 @@ sudo tee /etc/systemd/system/docker.service.d/http-proxy.conf >/dev/null <<'EOF'
 [Service]
 Environment="HTTP_PROXY=http://proxy.firma.local:3128"
 Environment="HTTPS_PROXY=http://proxy.firma.local:3128"
-Environment="NO_PROXY=localhost,127.0.0.1,sqlserver,deb-srv-docker,MS-SRV-SQL"
+Environment="NO_PROXY=localhost,127.0.0.1,sqlserver,deb-srv-docker"
 EOF
 sudo systemctl daemon-reload
 sudo systemctl restart docker
@@ -122,6 +124,7 @@ Wenn der Proxy Authentifizierung verlangt, Benutzername/Passwort nur in der loka
 ```bash
 curl -s http://localhost:3030/health
 curl -s http://localhost:3030/api/health
+docker compose ps
 ```
 
 Browser:
@@ -134,17 +137,23 @@ http://deb-srv-docker:3030
 
 - Migrationen laufen automatisch beim Containerstart.
 - Start-Admin wird aus `ADMIN_USERNAME`/`ADMIN_PASSWORD` erstellt oder aktualisiert.
-- `db-bootstrap` legt Datenbank, SQL-Login und DB-User bei Bedarf automatisch an.
-- Bei SQL-Login-Fehlern (`ELOGIN`) zuerst SQL-Login/Passwort/Rechte auf `MS-SRV-SQL` pruefen.
+- `db-bootstrap` legt Datenbank, SQL-Login und DB-User im lokalen MSSQL-Container bei Bedarf automatisch an.
+- Bei SQL-Login-Fehlern (`ELOGIN`) zuerst `.env`, `db-bootstrap` und den `sqlserver`-Container pruefen.
 - Uploads liegen persistent im Docker-Volume `uploads_data:/app/uploads`.
+- SQL-Daten liegen persistent im Docker-Volume `sqlserver_data:/var/opt/mssql`.
 - SQL-Backups werden ueber `npm run ops:backup` nach `archive/backups/` geschrieben.
+- `npm run ops:update` erstellt standardmaessig erst ein SQL-Backup und baut dann die App neu.
+- Rebuilds mit `docker compose build app && docker compose up -d` behalten Daten und Uploads, solange die Volumes nicht geloescht werden.
 - Wichtige Routen:
   - `/`
   - `/login`
   - `/wache`
   - `/wache/besuche/:id`
   - `/wache/besuche/:id/druck`
+  - `/import`
   - `/sibe`
+  - `/kaskdt`
+  - `/kaskdt/texte`
   - `/sibe/besucher`
   - `/sibe/benutzer`
   - `/admin`
@@ -154,6 +163,7 @@ http://deb-srv-docker:3030
   - Benutzer
   - Texte
   - Karte
+  - Felder
   - Audit
   - Fehlerlog
   - System
@@ -161,13 +171,19 @@ http://deb-srv-docker:3030
 - Fehlerlog im Admin-Bereich mit Zeit, Fehlercode, Meldung, Request-Pfad, Benutzer, Stacktrace und Metadaten
 - Tabellen-Trennung:
   - `users` = Anwendungskonten
+  - `user_groups` = Benutzergruppen
+  - `user_menu_access` = Menuezugriffe
   - `visitors` = externe Besucher
   - `visits` = konkrete Besuchsvorgaenge
 - Operativer Ablauf:
-  - Voranmeldung -> Wache -> Check-in -> Druck -> Check-out mit Unterschrift -> Auditlog
+  - Voranmeldung/Gruppenformular/Import -> Wache -> Check-in -> Druck -> Check-out mit Unterschrift -> Auditlog
 - Wache kann Voranmeldedaten vor dem Check-in in der Detailansicht korrigieren oder ergaenzen.
-- Oeffentliche Voranmeldungen enthalten eine Wache-Auswahl und werden direkt der gewaehlten Wache zugeordnet.
+- Guard-Benutzer waehlen bei jeder Anmeldung ihre aktive Wache neu aus.
+- Oeffentliche Voranmeldungen koennen eine Wache bereits mitgeben.
+- Besucher-Import ist auch ohne Anmeldung moeglich.
+- Fuer den Import stehen CSV- und Excel-Vorlagen direkt in der App bereit; Excel ist die empfohlene Vorlage.
 - Wache-Kalenderansicht in `/wache` zeigt Tages-/Monatsueberblick inkl. unzugeordneter Voranmeldungen.
+- `admin` und `kaskdt` duerfen Texte mit Vorschau und Druckvorschau bearbeiten.
 
 ## 5a) Gelaendeplan hochladen
 
@@ -185,6 +201,7 @@ http://deb-srv-docker:3030
 - Header und Navigation werden ueber Print-CSS ausgeblendet.
 - Wenn Browser URL, Datum oder Seitenzahl mitdrucken, im Druckdialog die Option fuer Kopf- und Fusszeilen deaktivieren.
 - Kein QR-Code im Besucherschein.
+- Ziel ist maximal Vorder-/Rueckseite fuer den A5-Druck.
 
 ## 5c) Check-out mit Besuchsnummer und Unterschrift
 
@@ -216,6 +233,15 @@ Das Hilfsskript verwendet nur Python-Standardbibliothek und spricht gegen die la
 npm run verify:mvp
 ```
 
+Falls die Demo-Benutzer fuer die Pruefung noch fehlen:
+
+```bash
+npm run seed:sample
+```
+
+Der Wrapper fuehrt das Seed im Docker-Betrieb direkt im laufenden `app`-Container aus. Ohne laufenden Container wechselt er lokal automatisch von `sqlserver` auf `127.0.0.1`, damit das Standard-Compose-Setup auch ausserhalb des Container-Netzes seedbar bleibt.
+`npm run verify:mvp`, `npm run verify:roles` und `npm run verify:ops` lesen die Admin-Zugangsdaten dabei automatisch aus der Repo-`.env`, wenn keine CLI-Werte gesetzt werden.
+
 Es prueft:
 
 - Voranmeldung
@@ -244,6 +270,24 @@ Fuer einen Sammellauf aller operativen Kernpruefungen:
 ```bash
 npm run verify:ops
 ```
+
+## 5f) Import und Vorlagen
+
+- Route: `/import`
+- Oeffentlicher Import ohne Login sowie interner Import mit Rollenfreigabe
+- Formate: `CSV`, `XLSX`, `XLS`
+- Vorlagen:
+  - `/api/public/visits/import-template.csv`
+  - `/api/public/visits/import-template.xlsx`
+  - `/api/sibe/visits/import-template.csv`
+  - `/api/sibe/visits/import-template.xlsx`
+- Die Excel-Vorlage ist die bevorzugte Vorlage fuer Anwender.
+- Fehlende Daten werden im Import-Ergebnis sichtbar markiert und koennen danach in der Wache ergaenzt werden.
+
+## 5g) Lokaler Build-Hinweis
+
+- Das Frontend ruft vor `vite build` automatisch `scripts/ops/fix_node_permissions.sh` auf.
+- Damit werden bekannte `esbuild EACCES`-Probleme nach `npm install` sowohl lokal als auch im Container-Build abgefangen.
 
 ## 6) Legacy-Django-Tabellen bereinigen
 

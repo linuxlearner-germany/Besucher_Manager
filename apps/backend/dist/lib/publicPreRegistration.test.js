@@ -6,6 +6,11 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const node_test_1 = __importDefault(require("node:test"));
 const strict_1 = __importDefault(require("node:assert/strict"));
 const publicPreRegistrationSchema_1 = require("./publicPreRegistrationSchema");
+const idDocumentFields = {
+    idDocumentType: "identity_card",
+    idDocumentValidUntil: "2030-12-31",
+    idDocumentNumber: "A1234567"
+};
 (0, node_test_1.default)("public pre-registration requires validUntil after validFrom", () => {
     const result = publicPreRegistrationSchema_1.publicPreRegistrationSchema.safeParse({
         firstName: "Max",
@@ -16,7 +21,8 @@ const publicPreRegistrationSchema_1 = require("./publicPreRegistrationSchema");
         hostPhone: "0123",
         purpose: "Besprechung",
         validFrom: "2026-05-21T10:00:00.000Z",
-        validUntil: "2026-05-21T09:00:00.000Z"
+        validUntil: "2026-05-21T09:00:00.000Z",
+        ...idDocumentFields
     });
     strict_1.default.equal(result.success, false);
 });
@@ -34,7 +40,8 @@ const publicPreRegistrationSchema_1 = require("./publicPreRegistrationSchema");
         validFrom: "2026-05-21T08:00:00.000Z",
         validUntil: "2026-05-21T10:00:00.000Z",
         birthDate: "1990-01-15",
-        email: "max@example.com"
+        email: "max@example.com",
+        ...idDocumentFields
     });
     strict_1.default.equal(result.success, true);
 });
@@ -48,7 +55,8 @@ const publicPreRegistrationSchema_1 = require("./publicPreRegistrationSchema");
         hostPhone: "0123",
         purpose: "Besprechung",
         validFrom: "2026-05-21T08:00:00.000Z",
-        validUntil: "2026-05-21T10:00:00.000Z"
+        validUntil: "2026-05-21T10:00:00.000Z",
+        ...idDocumentFields
     });
     strict_1.default.equal(result.success, true);
 });
@@ -63,7 +71,8 @@ const publicPreRegistrationSchema_1 = require("./publicPreRegistrationSchema");
         purpose: "Besprechung",
         validFrom: "2026-05-21T08:00:00.000Z",
         validUntil: "2026-05-21T10:00:00.000Z",
-        email: "not-an-email"
+        email: "not-an-email",
+        ...idDocumentFields
     });
     strict_1.default.equal(result.success, false);
 });
@@ -77,7 +86,8 @@ const publicPreRegistrationSchema_1 = require("./publicPreRegistrationSchema");
         hostDepartment: "",
         purpose: "",
         validFrom: "2026-05-21T08:00:00.000Z",
-        validUntil: "2026-05-21T10:00:00.000Z"
+        validUntil: "2026-05-21T10:00:00.000Z",
+        ...idDocumentFields
     });
     strict_1.default.equal(result.success, false);
 });
@@ -92,7 +102,8 @@ const publicPreRegistrationSchema_1 = require("./publicPreRegistrationSchema");
         purpose: "Besprechung",
         validFrom: "2026-05-21T08:00:00.000Z",
         validUntil: "2026-05-21T10:00:00.000Z",
-        birthDate: "2999-01-01"
+        birthDate: "2999-01-01",
+        ...idDocumentFields
     });
     strict_1.default.equal(result.success, false);
 });
@@ -106,7 +117,8 @@ const publicPreRegistrationSchema_1 = require("./publicPreRegistrationSchema");
         hostDepartment: "",
         purpose: "Besprechung",
         validFrom: "2026-05-21T08:00:00.000Z",
-        validUntil: "2026-05-21T10:00:00.000Z"
+        validUntil: "2026-05-21T10:00:00.000Z",
+        ...idDocumentFields
     });
     strict_1.default.equal(withoutDepartment.success, true);
     const withoutHostPhone = publicPreRegistrationSchema_1.publicPreRegistrationSchema.safeParse({
@@ -117,7 +129,8 @@ const publicPreRegistrationSchema_1 = require("./publicPreRegistrationSchema");
         hostPhone: "",
         purpose: "Besprechung",
         validFrom: "2026-05-21T08:00:00.000Z",
-        validUntil: "2026-05-21T10:00:00.000Z"
+        validUntil: "2026-05-21T10:00:00.000Z",
+        ...idDocumentFields
     });
     strict_1.default.equal(withoutHostPhone.success, false);
 });

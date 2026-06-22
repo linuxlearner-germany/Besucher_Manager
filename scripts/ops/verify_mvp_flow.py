@@ -22,13 +22,15 @@ import argparse
 import datetime as dt
 import http.cookiejar
 import json
-import os
+import uuid
 import sys
 import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from typing import Any
+
+from env_loader import env_default
 
 
 class ApiError(RuntimeError):
@@ -80,6 +82,48 @@ class HttpClient:
                 payload = {"message": body or error.reason}
             raise ApiError(error.code, payload) from error
 
+    def upload_file(
+        self,
+        path: str,
+        *,
+        field_name: str,
+        filename: str,
+        content: bytes,
+        content_type: str,
+        headers: dict[str, str] | None = None,
+    ) -> Any:
+        boundary = f"----CodexBoundary{uuid.uuid4().hex}"
+        request_headers = {
+            "Accept": "application/json",
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            **(headers or {}),
+        }
+        body = b"".join([
+            f"--{boundary}\r\n".encode("utf-8"),
+            f'Content-Disposition: form-data; name="{field_name}"; filename="{filename}"\r\n'.encode("utf-8"),
+            f"Content-Type: {content_type}\r\n\r\n".encode("utf-8"),
+            content,
+            b"\r\n",
+            f"--{boundary}--\r\n".encode("utf-8"),
+        ])
+        req = urllib.request.Request(
+            urllib.parse.urljoin(self.base_url, path),
+            data=body,
+            method="POST",
+            headers=request_headers,
+        )
+        try:
+            with self.opener.open(req) as response:
+                payload = response.read().decode("utf-8")
+                return json.loads(payload) if payload else None
+        except urllib.error.HTTPError as error:
+            payload = error.read().decode("utf-8")
+            try:
+                error_payload = json.loads(payload) if payload else {"message": error.reason}
+            except json.JSONDecodeError:
+                error_payload = {"message": payload or error.reason}
+            raise ApiError(error.code, error_payload) from error
+
 
 def make_public_payload(suffix: str) -> dict[str, Any]:
     now = dt.datetime.now().astimezone().replace(microsecond=0)
@@ -100,6 +144,9 @@ def make_public_payload(suffix: str) -> dict[str, Any]:
         "purpose": "Automatischer MVP-Test",
         "validFrom": valid_from.isoformat(),
         "validUntil": valid_until.isoformat(),
+        "idDocumentType": "identity_card",
+        "idDocumentValidUntil": (dt.date.today() + dt.timedelta(days=365 * 2)).isoformat(),
+        "idDocumentNumber": f"MVP{suffix[-6:]}",
         "notes": "Automatisch angelegte Voranmeldung",
     }
 
@@ -137,8 +184,63 @@ def make_guard_update_payload(detail: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def login(client: HttpClient, username: str, password: str) -> dict[str, Any]:
-    return client.request("POST", "/api/auth/login", payload={"username": username, "password": password})
+def build_import_csv(gate_name: str, suffix: str) -> bytes:
+    today = dt.date.today().strftime("%d.%m.%Y")
+    rows = [
+        [
+            "Vorname [Pflicht]",
+            "Nachname [Pflicht]",
+            "Firma / Organisation [Pflicht]",
+            "Ansprechpartner [Pflicht]",
+            "Besuchszweck [Pflicht]",
+            "Gültig von [Pflicht]",
+            "Gültig bis [Pflicht]",
+            "Wache [Optional]",
+            "Ansprechpartner Telefon [Optional]",
+            "Ausweisart [Optional]",
+            "Ausweisnummer [Optional]",
+        ],
+        [
+            "Import",
+            f"Voll-{suffix}",
+            "Codex Import GmbH",
+            "Import Ansprechpartner",
+            "Importtest vollständig",
+            today,
+            today,
+            gate_name,
+            "0401234567",
+            "Personalausweis",
+            f"IMP{suffix[-6:]}A",
+        ],
+        [
+            "Import",
+            f"Offen-{suffix}",
+            "Codex Import GmbH",
+            "Import Ansprechpartner",
+            "Importtest unvollständig",
+            today,
+            today,
+            gate_name,
+            "",
+            "",
+            "",
+        ],
+    ]
+    csv_text = "\r\n".join(";".join(values) for values in rows)
+    return csv_text.encode("utf-8")
+
+
+def login(client: HttpClient, username: str, password: str, gate_name: str = "") -> dict[str, Any]:
+    payload = client.request("POST", "/api/auth/login", payload={"username": username, "password": password})
+    if payload.get("requiresGateSelection"):
+        gates = payload.get("gates", [])
+        if not gates:
+            raise RuntimeError("Login verlangt Wache, liefert aber keine Wachen.")
+        gate = next((entry for entry in gates if entry.get("name") == gate_name), None) if gate_name else None
+        gate = gate or gates[0]
+        payload = client.request("POST", "/api/auth/login", payload={"username": username, "password": password, "gateId": gate["id"]})
+    return payload
 
 
 def require_actions(logs: list[dict[str, Any]], required_actions: set[str]) -> None:
@@ -163,8 +265,8 @@ def main() -> int:
     parser.add_argument("--guard-password", default="Test1234!")
     parser.add_argument("--sibe-user", default="sibe.demo")
     parser.add_argument("--sibe-password", default="Test1234!")
-    parser.add_argument("--admin-user", default=os.environ.get("ADMIN_USERNAME", "admin"))
-    parser.add_argument("--admin-password", default=os.environ.get("ADMIN_PASSWORD", "StrongPassw0rd!"))
+    parser.add_argument("--admin-user", default=env_default("ADMIN_USERNAME", "admin"))
+    parser.add_argument("--admin-password", default=env_default("ADMIN_PASSWORD", "StrongPassw0rd!"))
     parser.add_argument("--signature-status", default="signed_same_day", choices=["signed_same_day", "signed_later", "missing_exception", "not_required"])
     args = parser.parse_args()
 
@@ -174,24 +276,36 @@ def main() -> int:
     sibe_client = HttpClient(args.base_url)
     admin_client = HttpClient(args.base_url)
 
-    print("1/9 Lade aktive Wachen und CSRF-Token...")
+    print("1/10 Lade aktive Wachen und CSRF-Token...")
     gates_payload = public_client.request("GET", "/api/public/gates")
     gates = gates_payload.get("gates", [])
     csrf_token = gates_payload.get("csrfToken")
     if not gates or not csrf_token:
       raise RuntimeError("Keine aktiven Wachen oder kein CSRF-Token verfuegbar.")
-
-    guard_login = login(guard_client, args.guard_user, args.guard_password)
-    guard_gate_id = guard_login.get("user", {}).get("gateId")
     gate = None
     if args.gate_name:
         gate = next((entry for entry in gates if entry.get("name") == args.gate_name), None)
-    elif guard_gate_id:
-        gate = next((entry for entry in gates if entry.get("id") == guard_gate_id), None)
     if gate is None:
         gate = gates[0]
 
-    print("2/9 Lege oeffentliche Voranmeldung an...")
+    print("2/10 Pruefe oeffentlichen CSV-Import mit Nachbearbeitung...")
+    import_result = public_client.upload_file(
+        "/api/public/visits/import",
+        field_name="file",
+        filename="besucher-import-test.csv",
+        content=build_import_csv(gate["name"], suffix),
+        content_type="text/csv",
+    )
+    if int(import_result.get("imported", 0)) != 2:
+        raise RuntimeError("Oeffentlicher Import hat nicht zwei Eintraege verarbeitet.")
+    if int(import_result.get("needsReview", 0)) < 1:
+        raise RuntimeError("Oeffentlicher Import hat keinen Nachbearbeitungsfall erzeugt.")
+    imported_review_row = next((row for row in import_result.get("rows", []) if row.get("needsReview")), None)
+    if not imported_review_row:
+        raise RuntimeError("Import-Ergebnis enthaelt keinen markierten Nachbearbeitungsfall.")
+    imported_visit_id = imported_review_row["visitId"]
+
+    print("3/10 Lege oeffentliche Voranmeldung an...")
     pre_registration = public_client.request(
         "POST",
         "/api/public/pre-registrations",
@@ -201,25 +315,35 @@ def main() -> int:
     visit_id = pre_registration["visitId"]
     visitor_id = pre_registration["visitorId"]
 
-    print("3/9 Guard meldet sich an und findet den Besuch...")
+    print("4/10 Guard meldet sich an und findet den Besuch...")
+    guard_login = login(guard_client, args.guard_user, args.guard_password, gate["name"])
     visits_payload = guard_client.request("GET", "/api/guard/visits/today?status=all")
     visits = visits_payload.get("visits", [])
     require_visit(visits, visit_id, "Wache-Tagesuebersicht")
+    require_visit(visits, imported_visit_id, "Importierter Besuch in Wache")
     pending_visits = guard_client.request("GET", "/api/guard/visits/today?status=all&signatureStatus=pending")["visits"]
     pending_visit = require_visit(pending_visits, visit_id, "Wache-Unterschriftsfilter vor Check-out")
     if pending_visit.get("hostSignatureStatus") != "pending":
         raise RuntimeError("Wache zeigt vor Check-out keinen offenen Unterschriftsstatus.")
 
-    print("4/9 Guard aktualisiert Voranmeldedaten...")
+    print("5/10 Guard aktualisiert Voranmeldedaten...")
     detail_before = guard_client.request("GET", f"/api/guard/visits/{visit_id}")["visit"]
     guard_client.request("PUT", f"/api/guard/visits/{visit_id}", payload=make_guard_update_payload(detail_before))
 
-    print("5/9 Guard checkt den Besucher ein...")
+    print("6/10 Guard prueft Import-Nachbearbeitung...")
+    imported_detail = guard_client.request("GET", f"/api/guard/visits/{imported_visit_id}")["visit"]
+    if imported_detail.get("status") != "pre_registered":
+        raise RuntimeError("Importierter Besuch ist nicht vorangemeldet.")
+    completeness = imported_detail.get("completeness", {})
+    if not completeness.get("warnings") and not completeness.get("errors"):
+        raise RuntimeError("Importierter Nachbearbeitungsfall erscheint im Besuchsdetail nicht als unvollstaendig.")
+
+    print("7/10 Guard checkt den Besucher ein...")
     check_in = guard_client.request("POST", f"/api/guard/visits/{visit_id}/check-in", payload={})
     if check_in.get("status") != "checked_in":
         raise RuntimeError("Check-in hat nicht den erwarteten Status geliefert.")
 
-    print("6/9 Guard schreibt Druck-Audit...")
+    print("8/10 Guard schreibt Druck-Audit...")
     guard_client.request("POST", f"/api/guard/visits/{visit_id}/print-log", payload={})
 
     signature_payload: dict[str, Any] = {
@@ -234,7 +358,7 @@ def main() -> int:
     elif args.signature_status == "not_required":
         signature_payload["host_signature_note"] = "Fachlich nicht erforderlich"
 
-    print("7/9 Guard erfasst den Unterschriftsstatus waehrend des laufenden Besuchs...")
+    print("9/10 Guard erfasst den Unterschriftsstatus waehrend des laufenden Besuchs...")
     guard_client.request(
         "PUT",
         f"/api/guard/visits/{visit_id}/signature",
@@ -254,7 +378,7 @@ def main() -> int:
     if not signature_captured_at or not signature_captured_by:
         raise RuntimeError("Signaturerfassung hat keinen bestaetigenden Benutzer oder Zeitstempel hinterlegt.")
 
-    print("8/9 Guard checkt mit Unterschriftsstatus aus...")
+    print("10/10 Guard checkt mit Unterschriftsstatus aus und SiBe/Admin pruefen Nachvollziehbarkeit...")
     check_out = guard_client.request(
         "POST",
         f"/api/guard/visits/{visit_id}/check-out",
@@ -281,7 +405,6 @@ def main() -> int:
     )["visits"]
     require_visit(filtered_after_checkout, visit_id, "Wache-Unterschriftsfilter nach Check-out")
 
-    print("9/9 SiBe/Admin pruefen Nachvollziehbarkeit...")
     login(sibe_client, args.sibe_user, args.sibe_password)
     sibe_summary = sibe_client.request("GET", "/api/sibe/summary")
     sibe_visits = sibe_client.request(
@@ -302,12 +425,14 @@ def main() -> int:
     admin_system = admin_client.request("GET", "/api/admin/system-status")
     visit_logs = admin_client.request("GET", f"/api/admin/audit-logs?search={visit_id}")["logs"]
     visitor_logs = admin_client.request("GET", f"/api/admin/audit-logs?search={visitor_id}")["logs"]
-    audit_logs_by_id = {entry["id"]: entry for entry in [*visit_logs, *visitor_logs]}
+    import_logs = admin_client.request("GET", "/api/admin/audit-logs?action=VISITS_IMPORTED_FROM_FILE")["logs"]
+    audit_logs_by_id = {entry["id"]: entry for entry in [*visit_logs, *visitor_logs, *import_logs]}
     audit_logs = list(audit_logs_by_id.values())
     require_actions(
         audit_logs,
         {
             "PUBLIC_PRE_REGISTRATION_CREATED",
+            "VISITS_IMPORTED_FROM_FILE",
             "VISITOR_UPDATED_BY_GUARD",
             "VISIT_UPDATED_BY_GUARD",
             "VISIT_CHECKED_IN",

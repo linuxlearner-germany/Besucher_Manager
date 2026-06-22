@@ -5,19 +5,27 @@ Interne Besucherverwaltung fuer Wache, Empfang und Administration.
 ## Aktueller Stand (MVP)
 
 - Node.js/TypeScript Monorepo (`apps/backend`, `apps/frontend`)
-- Docker-only Betrieb (kein Django, kein Python)
-- Externer Microsoft SQL Server
+- Docker-only Betrieb (kein Django, kein Python-Backend)
+- Microsoft SQL Server 2022 als Compose-Service mit Bootstrap-Container
 - Oeffentliche Voranmeldung mit CSRF + Rate-Limit
-- Login mit Rollen `admin`, `guard` und `sibe`
+- Oeffentliche Gruppen-Voranmeldung als Formular
+- Oeffentlicher Besucher-Import per CSV und Excel
+- Login mit Rollen `admin`, `guard`, `sibe` und `kaskdt`
+- Menuebasierte Rechte und Benutzergruppen im Admin-Panel
+- Guard-Login mit Wache-Auswahl bei jeder Anmeldung
 - Wache-Tagesuebersicht mit Suche/Filter, Check-in, Check-out, Druck
 - Besucherdetailseite
-- SiBe-Dashboard mit Besucher-, Besuchs- und Benutzerrecherche
-- Admin-Panel mit Dashboard sowie getrennten Bereichen fuer Wachen, Benutzer, Hinweistexte, Gelaendeplan, Auditlog und System
+- Importbereich mit Excel-/CSV-Vorlagen und Nachbearbeitungsstatus
+- SiBe-/KasKdt-Dashboard mit Besucher-, Besuchs- und Benutzerrecherche
+- Admin-Panel mit Dashboard sowie getrennten Bereichen fuer Wachen, Benutzer, Texte, Gelaendeplan, Felder, Auditlog, Fehlerlog und System
+- Texte-Bearbeitung mit Suche, Typ-/Statusfiltern, Vorschau, Druck und Aktiv/Inaktiv-Schaltung
 - Auditlog im Admin mit Suche, Filtern und metadata_json-Detailansicht
+- Fehlerlog im Admin mit Request-, Benutzer- und Stacktrace-Daten
 - Gelaendeplan-Upload per Drag-and-Drop im Admin-Panel
 - Dark Mode mit Persistenz (`localStorage`)
 - Globaler Hintergrund ueber `background.png`
-- Besucher koennen optional mit `Geburtsdatum` erfasst werden
+- Ausweisdaten bereits in der Voranmeldung und im Import
+- Excel-Importvorlage mit vereinfachtem Aufbau und Download aus der App
 
 ## Wichtige Routen
 
@@ -26,24 +34,33 @@ Interne Besucherverwaltung fuer Wache, Empfang und Administration.
 - `/wache` Tagesuebersicht Wache
 - `/wache/besuche/:id` Besucherdetails
 - `/wache/besuche/:id/druck` Druckansicht
+- `/import` Besucher-Import
 - `/sibe` SiBe-Dashboard
+- `/kaskdt` KasKdt-Dashboard
+- `/kaskdt/texte` Texte-Bearbeitung
 - `/sibe/besucher` Besucher- und Besuchsrecherche
 - `/sibe/benutzer` Benutzerrecherche
 - `/admin` Administration
 
 ## Rollen und Zugriff
 
-- Nicht eingeloggt: Voranmeldung, Login
-- Guard: Voranmeldung, Wache
-- SiBe: Voranmeldung, SiBe
-- Admin: Voranmeldung, Wache, Admin, SiBe
-- API-Schutz serverseitig ueber Rollenpruefung und Wache-Scope
+- Nicht eingeloggt: Voranmeldung, Gruppenformular, Import, Login
+- Guard: Wache, Import
+- SiBe: SiBe, Import
+- KasKdt: KasKdt, Import, Texte
+- Admin: alle Menues
+- Benutzer koennen zusaetzlich ueber Menuepunkte freigeschaltet oder eingeschraenkt werden.
+- API-Schutz serverseitig ueber Rollenpruefung, Menuefreigaben und Wache-Scope
 
 ## Technischer Betrieb
 
 - App-Port: `3030`
+- SQL-Port: `1433`
 - keine lokale `npm install` Ausfuehrung auf dem Server notwendig
 - Build + Runtime laufen im Docker-Container
+- `sqlserver_data` haelt die MSSQL-Daten persistent
+- `uploads_data` haelt Uploads wie Gelaendeplaene persistent
+- Updates laufen ueber `npm run ops:update` oder `docker compose build app && docker compose up -d`
 
 ## Entwicklung lokal
 
@@ -58,10 +75,7 @@ npm run build
 ## Deployment (Docker-only)
 
 ```bash
-docker compose down --remove-orphans
-docker compose build --no-cache
-docker compose up -d
-docker compose logs -f app
+npm run ops:update
 ```
 
 Zieladresse:
@@ -81,9 +95,12 @@ http://deb-srv-docker:3030
 ## Datenhaltung
 
 - `users` = Anwendungskonten
+- `user_groups` = frei definierbare Benutzergruppen
+- `user_menu_access` = freigeschaltete Menuepunkte pro Benutzer
 - `visitors` = externe Besucher
 - `visits` = konkrete Besuchsvorgaenge
 - `visitors.birth_date` = optionales Geburtsdatum externer Besucher
+- `error_logs` = technische Fehler fuer die Admin-Auswertung
 - Benutzer werden deaktiviert, nicht geloescht.
 - Besucher werden archiviert/markiert, nicht geloescht.
 - Besuche werden storniert, nicht geloescht.
@@ -136,12 +153,49 @@ http://deb-srv-docker:3030
 - Beim Guard-Check-in wird eine unzugeordnete Voranmeldung automatisch der Guard-Wache zugewiesen.
 - Ein Klick auf einen Kalendertag zeigt die Besuchsliste fuer diesen Tag; von dort geht es in die Detailansicht.
 
-## Oeffentliche Voranmeldung ohne Wache
+## Oeffentliche Voranmeldung und Gruppenformular
 
-- Das Formular `/` enthaelt keine Wache-Auswahl mehr.
-- Oeffentliche Voranmeldungen werden zunaechst ohne feste Wache gespeichert.
-- Diese Voranmeldungen erscheinen in allen Wache-Tagesuebersichten.
-- Beim Check-in durch einen Guard wird der Besuch automatisch der Guard-Wache zugeordnet.
+- Das Formular `/` enthaelt Besuchs-, Ansprechpartner- und Ausweisdaten.
+- Eine Wache kann bereits in der Voranmeldung mitgegeben werden.
+- Es gibt zusaetzlich ein Gruppenformular fuer mehrere Besucher mit gemeinsamen Besuchsdaten.
+- Abgelaufene Ausweisdokumente werden im Formular sichtbar als Fehler markiert.
+- Unvollstaendige Import- oder Gruppenzeilen koennen spaeter durch die Wache nachbearbeitet werden.
+
+## Besucher-Import
+
+- Route: `/import`
+- Ohne Login verfuegbar fuer oeffentlichen Import.
+- Mit Login verfuegbar fuer `guard`, `sibe`, `kaskdt` und `admin`.
+- Unterstuetzte Formate: `CSV`, `XLSX`, `XLS`
+- Downloadbare Vorlagen:
+  - `Excel-Vorlage herunterladen (Empfohlen)`
+  - `CSV-Vorlage herunterladen`
+- Die Excel-Vorlage ist bewusst vereinfacht und enthaelt Pflicht-/Optionalspalten sowie Dropdown-Hilfen.
+- Fehlende Daten blockieren den Import nicht grundsaetzlich; solche Eintraege werden mit Nachbearbeitungsbedarf markiert.
+- Mit Login verlinkt das Ergebnis direkt in die Detailbearbeitung des angelegten Besuchs.
+
+## Texte-Bearbeitung
+
+- Eigene Texte-Seite unter `/kaskdt/texte`
+- Zugriff fuer `admin` und `kaskdt`
+- Suche nach Name, Typ und Inhalt
+- Filter nach Typ und Status
+- Vorschau und separate Druckvorschau
+- Duplizieren, Zuruecksetzen sowie Aktiv/Inaktiv-Schaltung
+- Freie Texttypen zusaetzlich zu den Standardtypen fuer Druckausgabe
+
+## Benutzer und Rechte
+
+- Guard-Benutzer waehlen bei jeder Anmeldung ihre aktive Wache neu aus.
+- Admin-Benutzer pflegen Rollen, Gruppen und Menuezugriffe im Admin-Panel.
+- Standard-Menues:
+  - `wache`
+  - `import`
+  - `admin`
+  - `sibe`
+  - `kaskdt`
+  - `texte`
+- Die Zielseite nach dem Login wird aus den erlaubten Menues bestimmt.
 
 ## Check-out mit Ansprechpartner-Unterschrift
 
@@ -217,6 +271,8 @@ ORDER BY TABLE_NAME;
 ## Operativer MVP-Ablauf
 
 - `Voranmeldung`: oeffentlich ueber `/`
+- `Gruppenformular`: oeffentlich ueber `/`
+- `Import`: oeffentlich ueber `/import` oder intern mit Login
 - `Wache`: Besuch erscheint in `/wache`
 - `Check-in`: nur fuer vorangemeldete Besuche
 - `Druck`: Besucherschein ueber `/wache/besuche/:id/druck`
@@ -237,6 +293,15 @@ Fuer einen reproduzierbaren End-to-End-Check gibt es:
 ```bash
 npm run verify:mvp
 ```
+
+Die Standard-Seed-Benutzer koennen vorher oder separat mit folgendem Wrapper geladen werden:
+
+```bash
+npm run seed:sample
+```
+
+Der Wrapper nutzt im Docker-Betrieb automatisch den laufenden `app`-Container. Ohne laufenden Container setzt er lokal bei Bedarf `MSSQL_HOST=127.0.0.1`, damit das Seed auch mit dem Standard-Compose-Setup funktioniert.
+Die Verifikationsskripte lesen `ADMIN_USERNAME` und `ADMIN_PASSWORD` automatisch aus der Projekt-`.env`, falls keine Parameter uebergeben werden.
 
 Das Skript prueft:
 

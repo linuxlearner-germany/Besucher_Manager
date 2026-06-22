@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import { ImportReviewModal } from "../components/ImportReviewModal";
 import { Alert, Card } from "../components/ui";
 import { AppLayout, type ApiError, fetchJson, useAuth } from "../app/core";
 
@@ -25,6 +26,7 @@ export function ImportPage() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [reviewModalOpen, setReviewModalOpen] = useState(false);
 
   async function handleImport() {
     if (!importFile) {
@@ -47,6 +49,7 @@ export function ImportPage() {
       setImportResult(payload);
       setMessage(payload.message);
       setImportFile(null);
+      setReviewModalOpen(payload.needsReview > 0);
     } catch (apiError) {
       const errorPayload = apiError as ApiError;
       setError(errorPayload.message || "Import konnte nicht verarbeitet werden.");
@@ -136,6 +139,15 @@ export function ImportPage() {
               </table>
             </div>
           </Card>
+        ) : null}
+
+        {reviewModalOpen && importResult ? (
+          <ImportReviewModal
+            rows={importResult.rows}
+            detailBasePath={user ? detailBasePath : null}
+            showLoginHint={!user}
+            onClose={() => setReviewModalOpen(false)}
+          />
         ) : null}
       </main>
     </AppLayout>

@@ -16,13 +16,14 @@ from __future__ import annotations
 import argparse
 import http.cookiejar
 import json
-import os
 import sys
 import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from typing import Any
+
+from env_loader import env_default
 
 
 class ApiError(RuntimeError):
@@ -66,8 +67,19 @@ class HttpClient:
             return error.code, payload
 
 
-def login(client: HttpClient, username: str, password: str) -> None:
+def login(client: HttpClient, username: str, password: str, gate_name: str = "") -> None:
     status, payload = client.request("POST", "/api/auth/login", {"username": username, "password": password})
+    if status != 200 or not isinstance(payload, dict):
+        raise ApiError(status, payload)
+
+    if payload.get("requiresGateSelection"):
+        gates = payload.get("gates") or []
+        if not gates:
+            raise RuntimeError("Login verlangt Wache, liefert aber keine Wachen.")
+        gate = next((entry for entry in gates if entry.get("name") == gate_name), None) if gate_name else None
+        gate = gate or gates[0]
+        status, payload = client.request("POST", "/api/auth/login", {"username": username, "password": password, "gateId": gate.get("id", "")})
+
     if status != 200 or not isinstance(payload, dict) or not payload.get("user"):
         raise ApiError(status, payload)
 
@@ -80,12 +92,13 @@ def assert_status(actual: int, expected: int, label: str) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Prueft Rollen- und Zugriffssicherheit der Besucher-App.")
     parser.add_argument("--base-url", default="http://localhost:3030")
+    parser.add_argument("--gate-name", default="")
     parser.add_argument("--guard-user", default="guard.demo")
     parser.add_argument("--guard-password", default="Test1234!")
     parser.add_argument("--sibe-user", default="sibe.demo")
     parser.add_argument("--sibe-password", default="Test1234!")
-    parser.add_argument("--admin-user", default=os.environ.get("ADMIN_USERNAME", "admin"))
-    parser.add_argument("--admin-password", default=os.environ.get("ADMIN_PASSWORD", "StrongPassw0rd!"))
+    parser.add_argument("--admin-user", default=env_default("ADMIN_USERNAME", "admin"))
+    parser.add_argument("--admin-password", default=env_default("ADMIN_PASSWORD", "StrongPassw0rd!"))
     args = parser.parse_args()
 
     unauth = HttpClient(args.base_url)
@@ -104,7 +117,7 @@ def main() -> int:
         assert_status(status, expected, label)
 
     print("2/4 Guard pruefen...")
-    login(guard, args.guard_user, args.guard_password)
+    login(guard, args.guard_user, args.guard_password, args.gate_name)
     guard_checks = [
         ("GET", "/api/guard/visits/today", 200, "guard own area"),
         ("GET", "/api/sibe/summary", 403, "guard blocked from sibe"),

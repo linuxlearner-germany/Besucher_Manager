@@ -7,14 +7,16 @@ type BadgeTextManagerProps = {
   description?: string;
 };
 
-const defaultTextTypes = ["security_notice", "photo_ban", "signature_notice", "footer"];
-
 type BadgeTextDraft = {
   name: string;
   textType: string;
   content: string;
   isActive: boolean;
 };
+
+type StatusFilter = "all" | "active" | "inactive";
+
+const defaultTextTypes = ["security_notice", "photo_ban", "signature_notice", "footer"];
 
 function escapeHtml(value: string): string {
   return value
@@ -25,13 +27,30 @@ function escapeHtml(value: string): string {
     .replace(/'/g, "&#39;");
 }
 
-function getInitialDraft(): BadgeTextDraft {
+function createDraft(text?: AdminBadgeText): BadgeTextDraft {
   return {
-    name: "",
-    textType: "security_notice",
-    content: "",
-    isActive: true
+    name: text?.name ?? "",
+    textType: text?.textType ?? "security_notice",
+    content: text?.content ?? "",
+    isActive: text?.isActive ?? true
   };
+}
+
+function isDirty(original: AdminBadgeText, draft: AdminBadgeText | BadgeTextDraft): boolean {
+  return (
+    original.name !== draft.name ||
+    original.textType !== draft.textType ||
+    original.content !== draft.content ||
+    original.isActive !== draft.isActive
+  );
+}
+
+function summarizeContent(content: string): string {
+  const normalized = content.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return "Kein Inhalt";
+  }
+  return normalized.length > 120 ? `${normalized.slice(0, 117)}...` : normalized;
 }
 
 export function BadgeTextManager({
@@ -40,8 +59,13 @@ export function BadgeTextManager({
 }: BadgeTextManagerProps) {
   const [texts, setTexts] = useState<AdminBadgeText[]>([]);
   const [editableTexts, setEditableTexts] = useState<Record<string, AdminBadgeText>>({});
-  const [newText, setNewText] = useState<BadgeTextDraft>(getInitialDraft());
+  const [newText, setNewText] = useState<BadgeTextDraft>(createDraft());
+  const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [previewText, setPreviewText] = useState<BadgeTextDraft | null>(null);
+  const [savePendingId, setSavePendingId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -49,10 +73,9 @@ export function BadgeTextManager({
     () => Array.from(new Set([
       ...defaultTextTypes,
       ...texts.map((text) => text.textType),
-      newText.textType,
-      ...(previewText ? [previewText.textType] : [])
+      newText.textType
     ].filter((entry) => entry.trim()))).sort((left, right) => left.localeCompare(right, "de")),
-    [newText.textType, previewText, texts]
+    [newText.textType, texts]
   );
 
   const loadTexts = useCallback(async () => {
@@ -61,6 +84,12 @@ export function BadgeTextManager({
       const payload = await fetchJson<{ texts: AdminBadgeText[] }>("/api/admin/badge-texts", { method: "GET", headers: {} });
       setTexts(payload.texts);
       setEditableTexts(Object.fromEntries(payload.texts.map((text) => [text.id, { ...text }])));
+      setSelectedTextId((current) => {
+        if (current && payload.texts.some((text) => text.id === current)) {
+          return current;
+        }
+        return payload.texts[0]?.id ?? null;
+      });
     } catch (apiError) {
       const payload = apiError as ApiError;
       setError(payload.message || "Texte konnten nicht geladen werden.");
@@ -70,6 +99,53 @@ export function BadgeTextManager({
   useEffect(() => {
     void loadTexts();
   }, [loadTexts]);
+
+  const typeCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const text of texts) {
+      counts.set(text.textType, (counts.get(text.textType) ?? 0) + 1);
+    }
+    return counts;
+  }, [texts]);
+
+  const filteredTexts = useMemo(() => {
+    const search = searchTerm.trim().toLocaleLowerCase("de");
+
+    return [...texts]
+      .filter((text) => {
+        if (typeFilter !== "all" && text.textType !== typeFilter) {
+          return false;
+        }
+        if (statusFilter === "active" && !text.isActive) {
+          return false;
+        }
+        if (statusFilter === "inactive" && text.isActive) {
+          return false;
+        }
+        if (!search) {
+          return true;
+        }
+        return [text.name, text.textType, text.content]
+          .join(" ")
+          .toLocaleLowerCase("de")
+          .includes(search);
+      })
+      .sort((left, right) => {
+        if (left.isActive !== right.isActive) {
+          return left.isActive ? -1 : 1;
+        }
+        return left.name.localeCompare(right.name, "de");
+      });
+  }, [searchTerm, statusFilter, texts, typeFilter]);
+
+  const selectedText = useMemo(
+    () => texts.find((text) => text.id === selectedTextId) ?? null,
+    [selectedTextId, texts]
+  );
+
+  const selectedDraft = selectedText
+    ? (editableTexts[selectedText.id] ?? selectedText)
+    : null;
 
   function openPrintPreview(text: BadgeTextDraft) {
     const popup = window.open("", "_blank", "noopener,noreferrer,width=860,height=900");
@@ -88,7 +164,7 @@ export function BadgeTextManager({
       .sheet { max-width: 760px; margin: 0 auto; border: 1px solid #c8d4e3; border-radius: 12px; padding: 28px; }
       .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 24px; }
       .header img { width: 150px; height: auto; object-fit: contain; }
-      .eyebrow { margin: 0 0 6px; font-size: 12px; letter-spacing: 0; text-transform: uppercase; color: #51657e; }
+      .eyebrow { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; color: #51657e; }
       h1 { margin: 0 0 12px; font-size: 28px; }
       .meta { display: grid; gap: 8px; margin-bottom: 18px; }
       .meta div { display: grid; gap: 4px; }
@@ -132,45 +208,88 @@ export function BadgeTextManager({
         method: "POST",
         body: JSON.stringify(newText)
       });
-      setNewText(getInitialDraft());
-      setMessage("Hinweistext angelegt.");
+      setNewText(createDraft());
+      setMessage("Text angelegt.");
       setError(null);
       await loadTexts();
     } catch (apiError) {
       const payload = apiError as ApiError;
-      setError(payload.message || "Hinweistext konnte nicht angelegt werden.");
+      setError(payload.message || "Text konnte nicht angelegt werden.");
     }
   }
 
   async function saveText(text: AdminBadgeText) {
+    setSavePendingId(text.id);
     try {
       await fetchJson(`/api/admin/badge-texts/${text.id}`, {
         method: "PUT",
         body: JSON.stringify(text)
       });
-      setMessage("Hinweistext gespeichert.");
+      setMessage("Text gespeichert.");
       setError(null);
       await loadTexts();
     } catch (apiError) {
       const payload = apiError as ApiError;
-      setError(payload.message || "Hinweistext konnte nicht gespeichert werden.");
+      setError(payload.message || "Text konnte nicht gespeichert werden.");
+    } finally {
+      setSavePendingId(null);
     }
   }
 
-  async function toggleTextActive(textId: string, isActive: boolean) {
+  async function toggleTextActive(text: AdminBadgeText) {
     try {
-      await fetchJson(`/api/admin/badge-texts/${textId}/${isActive ? "deactivate" : "reactivate"}`, {
+      await fetchJson(`/api/admin/badge-texts/${text.id}/${text.isActive ? "deactivate" : "reactivate"}`, {
         method: "POST",
         body: JSON.stringify({})
       });
-      setMessage(isActive ? "Hinweistext deaktiviert." : "Hinweistext reaktiviert.");
+      setMessage(text.isActive ? "Text deaktiviert." : "Text reaktiviert.");
       setError(null);
       await loadTexts();
     } catch (apiError) {
       const payload = apiError as ApiError;
-      setError(payload.message || "Hinweistext konnte nicht aktualisiert werden.");
+      setError(payload.message || "Text konnte nicht aktualisiert werden.");
     }
   }
+
+  function updateSelectedText<K extends keyof AdminBadgeText>(key: K, value: AdminBadgeText[K]) {
+    if (!selectedText) {
+      return;
+    }
+    setEditableTexts((current) => ({
+      ...current,
+      [selectedText.id]: {
+        ...(current[selectedText.id] ?? selectedText),
+        [key]: value
+      }
+    }));
+  }
+
+  function duplicateIntoNewText() {
+    if (!selectedDraft) {
+      return;
+    }
+    setNewText({
+      name: selectedDraft.name ? `${selectedDraft.name} Kopie` : "",
+      textType: selectedDraft.textType,
+      content: selectedDraft.content,
+      isActive: selectedDraft.isActive
+    });
+    setMessage("Text als Vorlage in den Bereich 'Neu anlegen' uebernommen.");
+    setError(null);
+  }
+
+  function resetSelectedDraft() {
+    if (!selectedText) {
+      return;
+    }
+    setEditableTexts((current) => ({
+      ...current,
+      [selectedText.id]: { ...selectedText }
+    }));
+  }
+
+  const activeCount = texts.filter((text) => text.isActive).length;
+  const inactiveCount = texts.length - activeCount;
 
   return (
     <div className="badge-text-manager">
@@ -184,113 +303,230 @@ export function BadgeTextManager({
       {message ? <Alert type="success">{message}</Alert> : null}
       {error ? <Alert type="error">{error}</Alert> : null}
 
-      <Card className="text-editor-card">
-        <h4>Neuer Text</h4>
-        <form className="form-grid two-columns" onSubmit={createText}>
-          <FormField label="Name" required>
-            <input value={newText.name} onChange={(event) => setNewText((current) => ({ ...current, name: event.target.value }))} />
-          </FormField>
-          <FormField label="Typ" required>
+      <section className="panel text-manager-toolbar">
+        <div className="text-manager-toolbar-grid">
+          <FormField label="Suche">
             <input
-              list="badge-text-type-options"
-              value={newText.textType}
-              onChange={(event) => setNewText((current) => ({ ...current, textType: event.target.value }))}
-              placeholder="z. B. sicherheit"
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder="Name, Typ oder Inhalt"
             />
           </FormField>
-          <div className="text-type-chip-row">
-            {knownTypes.map((type) => (
-              <button
-                key={type}
-                type="button"
-                className={newText.textType === type ? "secondary-button active-chip" : "secondary-button"}
-                onClick={() => setNewText((current) => ({ ...current, textType: type }))}
-              >
-                {formatTextType(type)}
+          <FormField label="Status">
+            <div className="text-filter-row">
+              <button type="button" className={statusFilter === "all" ? "secondary-button active-chip" : "secondary-button"} onClick={() => setStatusFilter("all")}>
+                Alle ({texts.length})
               </button>
-            ))}
-          </div>
-          <label className="checkbox-row text-active-toggle">
-            <input type="checkbox" checked={newText.isActive} onChange={(event) => setNewText((current) => ({ ...current, isActive: event.target.checked }))} />
-            Aktiv
-          </label>
-          <FormField label="Inhalt" required>
-            <textarea className="text-editor-area" rows={8} value={newText.content} onChange={(event) => setNewText((current) => ({ ...current, content: event.target.value }))} />
+              <button type="button" className={statusFilter === "active" ? "secondary-button active-chip" : "secondary-button"} onClick={() => setStatusFilter("active")}>
+                Aktiv ({activeCount})
+              </button>
+              <button type="button" className={statusFilter === "inactive" ? "secondary-button active-chip" : "secondary-button"} onClick={() => setStatusFilter("inactive")}>
+                Inaktiv ({inactiveCount})
+              </button>
+            </div>
           </FormField>
-          <div className="row-actions text-editor-actions">
-            <button type="submit">Text anlegen</button>
-            <button type="button" className="secondary-button" onClick={() => setPreviewText(newText)} disabled={!newText.name.trim() && !newText.content.trim()}>
-              Vorschau
+        </div>
+        <div className="text-type-chip-row">
+          <button type="button" className={typeFilter === "all" ? "secondary-button active-chip" : "secondary-button"} onClick={() => setTypeFilter("all")}>
+            Alle Typen
+          </button>
+          {knownTypes.map((type) => (
+            <button
+              key={type}
+              type="button"
+              className={typeFilter === type ? "secondary-button active-chip" : "secondary-button"}
+              onClick={() => setTypeFilter(type)}
+            >
+              {formatTextType(type)} ({typeCounts.get(type) ?? 0})
             </button>
-            <button type="button" className="secondary-button" onClick={() => openPrintPreview(newText)} disabled={!newText.name.trim() && !newText.content.trim()}>
-              Drucken
-            </button>
-          </div>
-        </form>
-      </Card>
+          ))}
+        </div>
+      </section>
+
+      <div className="text-manager-layout">
+        <div className="text-manager-sidebar">
+          <Card className="text-editor-card">
+            <div className="text-section-header">
+              <div>
+                <h4>Neu anlegen</h4>
+                <p className="section-copy">Name, Typ und Inhalt direkt erfassen.</p>
+              </div>
+            </div>
+            <form className="form-grid" onSubmit={createText}>
+              <div className="form-grid two-columns">
+                <FormField label="Name" required>
+                  <input value={newText.name} onChange={(event) => setNewText((current) => ({ ...current, name: event.target.value }))} />
+                </FormField>
+                <FormField label="Typ" required>
+                  <input
+                    list="badge-text-type-options"
+                    value={newText.textType}
+                    onChange={(event) => setNewText((current) => ({ ...current, textType: event.target.value }))}
+                    placeholder="z. B. Sicherheit"
+                  />
+                </FormField>
+              </div>
+              <div className="text-type-chip-row">
+                {knownTypes.map((type) => (
+                  <button
+                    key={type}
+                    type="button"
+                    className={newText.textType === type ? "secondary-button active-chip" : "secondary-button"}
+                    onClick={() => setNewText((current) => ({ ...current, textType: type }))}
+                  >
+                    {formatTextType(type)}
+                  </button>
+                ))}
+              </div>
+              <label className="checkbox-row text-active-toggle">
+                <input type="checkbox" checked={newText.isActive} onChange={(event) => setNewText((current) => ({ ...current, isActive: event.target.checked }))} />
+                Aktiv
+              </label>
+              <FormField label="Inhalt" required>
+                <textarea className="text-editor-area text-editor-area-compact" rows={6} value={newText.content} onChange={(event) => setNewText((current) => ({ ...current, content: event.target.value }))} />
+              </FormField>
+              <div className="row-actions text-editor-actions">
+                <button type="submit">Anlegen</button>
+                <button type="button" className="secondary-button" onClick={() => setPreviewText(newText)} disabled={!newText.name.trim() && !newText.content.trim()}>
+                  Vorschau
+                </button>
+                <button type="button" className="secondary-button" onClick={() => openPrintPreview(newText)} disabled={!newText.name.trim() && !newText.content.trim()}>
+                  Drucken
+                </button>
+                <button type="button" className="secondary-button" onClick={() => setNewText(createDraft())}>
+                  Leeren
+                </button>
+              </div>
+            </form>
+          </Card>
+
+          <Card className="text-list-card">
+            <div className="text-section-header">
+              <div>
+                <h4>Vorhandene Texte</h4>
+                <p className="section-copy">{filteredTexts.length} von {texts.length} Eintraegen sichtbar.</p>
+              </div>
+            </div>
+            <div className="text-record-list">
+              {filteredTexts.length ? filteredTexts.map((text) => {
+                const draft = editableTexts[text.id] ?? text;
+                const dirty = isDirty(text, draft);
+
+                return (
+                  <button
+                    key={text.id}
+                    type="button"
+                    className={selectedTextId === text.id ? "text-record-button active-record" : "text-record-button"}
+                    onClick={() => setSelectedTextId(text.id)}
+                  >
+                    <div className="text-record-header">
+                      <strong>{text.name}</strong>
+                      <span className="field-config-badge">{text.isActive ? "Aktiv" : "Inaktiv"}</span>
+                    </div>
+                    <div className="text-record-meta">
+                      <span className="field-config-badge">{formatTextType(text.textType)}</span>
+                      {dirty ? <span className="field-config-badge">Ungespeichert</span> : null}
+                    </div>
+                    <p>{summarizeContent(draft.content)}</p>
+                  </button>
+                );
+              }) : (
+                <div className="text-empty-state">
+                  Keine Texte fuer die aktuelle Suche gefunden.
+                </div>
+              )}
+            </div>
+          </Card>
+        </div>
+
+        <Card className="text-detail-card">
+          {selectedText && selectedDraft ? (
+            <>
+              <div className="text-section-header">
+                <div>
+                  <h4>{selectedText.name}</h4>
+                  <p className="section-copy">{formatTextType(selectedDraft.textType)}</p>
+                </div>
+                <div className="text-detail-status">
+                  <span className="field-config-badge">{selectedDraft.isActive ? "Aktiv" : "Inaktiv"}</span>
+                  {isDirty(selectedText, selectedDraft) ? <span className="field-config-badge">Ungespeichert</span> : null}
+                </div>
+              </div>
+
+              <div className="form-grid">
+                <div className="form-grid two-columns">
+                  <FormField label="Name">
+                    <input value={selectedDraft.name} onChange={(event) => updateSelectedText("name", event.target.value)} />
+                  </FormField>
+                  <FormField label="Typ">
+                    <input
+                      list="badge-text-type-options"
+                      value={selectedDraft.textType}
+                      onChange={(event) => updateSelectedText("textType", event.target.value)}
+                    />
+                  </FormField>
+                </div>
+
+                <div className="text-type-chip-row">
+                  {knownTypes.map((type) => (
+                    <button
+                      key={type}
+                      type="button"
+                      className={selectedDraft.textType === type ? "secondary-button active-chip" : "secondary-button"}
+                      onClick={() => updateSelectedText("textType", type)}
+                    >
+                      {formatTextType(type)}
+                    </button>
+                  ))}
+                </div>
+
+                <label className="checkbox-row text-active-toggle">
+                  <input type="checkbox" checked={selectedDraft.isActive} onChange={(event) => updateSelectedText("isActive", event.target.checked)} />
+                  Aktiv
+                </label>
+
+                <FormField label="Inhalt">
+                  <textarea
+                    className="text-editor-area"
+                    rows={14}
+                    value={selectedDraft.content}
+                    onChange={(event) => updateSelectedText("content", event.target.value)}
+                  />
+                </FormField>
+
+                <div className="row-actions text-editor-actions">
+                  <button type="button" onClick={() => void saveText(selectedDraft)} disabled={savePendingId === selectedDraft.id}>
+                    {savePendingId === selectedDraft.id ? "Speichert..." : "Speichern"}
+                  </button>
+                  <button type="button" className="secondary-button" onClick={() => setPreviewText(selectedDraft)}>
+                    Vorschau
+                  </button>
+                  <button type="button" className="secondary-button" onClick={() => openPrintPreview(selectedDraft)}>
+                    Drucken
+                  </button>
+                  <button type="button" className="secondary-button" onClick={() => duplicateIntoNewText()}>
+                    Duplizieren
+                  </button>
+                  <button type="button" className="secondary-button" onClick={() => resetSelectedDraft()} disabled={!isDirty(selectedText, selectedDraft)}>
+                    Zuruecksetzen
+                  </button>
+                  <button type="button" className="danger-button" onClick={() => void toggleTextActive(selectedText)}>
+                    {selectedText.isActive ? "Deaktivieren" : "Reaktivieren"}
+                  </button>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="text-empty-state text-empty-state-large">
+              Links einen Text auswaehlen, um ihn zu bearbeiten.
+            </div>
+          )}
+        </Card>
+      </div>
 
       <datalist id="badge-text-type-options">
         {knownTypes.map((type) => <option key={type} value={type} />)}
       </datalist>
-
-      <div className="badge-text-type-list">
-        {knownTypes.map((type) => <span key={type} className="field-config-badge">{formatTextType(type)}</span>)}
-      </div>
-
-      <div className="text-entry-stack">
-        {texts.map((text) => (
-          <Card key={text.id} className="text-entry-card">
-            <div className="text-entry-header">
-              <h4>{text.name}</h4>
-              <span className="field-config-badge">{editableTexts[text.id]?.isActive ?? text.isActive ? "Aktiv" : "Inaktiv"}</span>
-            </div>
-            <div className="form-grid two-columns">
-              <FormField label="Name">
-                <input
-                  value={editableTexts[text.id]?.name || ""}
-                  onChange={(event) => setEditableTexts((current) => ({ ...current, [text.id]: { ...(current[text.id] || text), name: event.target.value } }))}
-                />
-              </FormField>
-              <FormField label="Typ">
-                <input
-                  list="badge-text-type-options"
-                  value={editableTexts[text.id]?.textType || text.textType}
-                  onChange={(event) => setEditableTexts((current) => ({ ...current, [text.id]: { ...(current[text.id] || text), textType: event.target.value } }))}
-                />
-              </FormField>
-              <label className="checkbox-row text-active-toggle">
-                <input
-                  type="checkbox"
-                  checked={editableTexts[text.id]?.isActive ?? text.isActive}
-                  onChange={(event) => setEditableTexts((current) => ({ ...current, [text.id]: { ...(current[text.id] || text), isActive: event.target.checked } }))}
-                />
-                Aktiv
-              </label>
-              <div />
-              <FormField label="Inhalt">
-                <textarea
-                  className="text-editor-area"
-                  rows={7}
-                  value={editableTexts[text.id]?.content || ""}
-                  onChange={(event) => setEditableTexts((current) => ({ ...current, [text.id]: { ...(current[text.id] || text), content: event.target.value } }))}
-                />
-              </FormField>
-              <div className="row-actions text-editor-actions">
-                <button type="button" onClick={() => void saveText(editableTexts[text.id] || text)}>Speichern</button>
-                <button type="button" className="secondary-button" onClick={() => setPreviewText(editableTexts[text.id] || text)}>
-                  Vorschau
-                </button>
-                <button type="button" className="secondary-button" onClick={() => openPrintPreview(editableTexts[text.id] || text)}>
-                  Drucken
-                </button>
-                <button className="danger-button" type="button" onClick={() => void toggleTextActive(text.id, text.isActive)}>
-                  {text.isActive ? "Deaktivieren" : "Reaktivieren"}
-                </button>
-              </div>
-            </div>
-          </Card>
-        ))}
-      </div>
 
       {previewText ? (
         <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={(event) => {

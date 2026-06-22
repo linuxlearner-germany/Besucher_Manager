@@ -1,6 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.HOST_SIGNATURE_STATUS = exports.VISIT_STATUS = void 0;
+exports.APP_MENU_KEYS = exports.HOST_SIGNATURE_STATUS = exports.VISIT_STATUS = void 0;
+exports.getDefaultMenuAccessForRole = getDefaultMenuAccessForRole;
+exports.getAllowedMenuAccessForRole = getAllowedMenuAccessForRole;
 exports.normalizeVisitStatus = normalizeVisitStatus;
 exports.assertCanCheckIn = assertCanCheckIn;
 exports.assertCanCheckOut = assertCanCheckOut;
@@ -21,6 +23,19 @@ exports.HOST_SIGNATURE_STATUS = {
     SIGNED_LATER: "signed_later",
     MISSING_EXCEPTION: "missing_exception"
 };
+exports.APP_MENU_KEYS = ["wache", "import", "admin", "sibe", "kaskdt", "texte"];
+const defaultMenuAccessByRole = {
+    admin: [...exports.APP_MENU_KEYS],
+    guard: ["wache", "import"],
+    sibe: ["sibe", "import"],
+    kaskdt: ["kaskdt", "import", "texte"]
+};
+function getDefaultMenuAccessForRole(role) {
+    return [...defaultMenuAccessByRole[role]];
+}
+function getAllowedMenuAccessForRole(role) {
+    return [...defaultMenuAccessByRole[role]];
+}
 function normalizeVisitStatus(status) {
     switch (status) {
         case "vorangemeldet":

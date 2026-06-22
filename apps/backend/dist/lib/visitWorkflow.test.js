@@ -6,6 +6,16 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const node_test_1 = __importDefault(require("node:test"));
 const strict_1 = __importDefault(require("node:assert/strict"));
 const visitWorkflow_1 = require("./visitWorkflow");
+function makeUser(role, gateId) {
+    return {
+        id: `${role}-id`,
+        username: role,
+        role,
+        gateId,
+        groups: [],
+        menuAccess: (0, visitWorkflow_1.getDefaultMenuAccessForRole)(role)
+    };
+}
 (0, node_test_1.default)("check-in only allows pre-registered visits", () => {
     strict_1.default.doesNotThrow(() => (0, visitWorkflow_1.assertCanCheckIn)(visitWorkflow_1.VISIT_STATUS.PRE_REGISTERED));
     strict_1.default.throws(() => (0, visitWorkflow_1.assertCanCheckIn)(visitWorkflow_1.VISIT_STATUS.CHECKED_IN));
@@ -42,30 +52,15 @@ const visitWorkflow_1 = require("./visitWorkflow");
     strict_1.default.doesNotThrow(() => (0, visitWorkflow_1.assertCanUpdateHostSignature)(visitWorkflow_1.VISIT_STATUS.CHECKED_OUT, { status: visitWorkflow_1.HOST_SIGNATURE_STATUS.MISSING_EXCEPTION, note: "Begruendung vorhanden" }));
 });
 (0, node_test_1.default)("admin can access any assigned gate", () => {
-    const admin = {
-        id: "admin-id",
-        username: "admin",
-        role: "admin",
-        gateId: null
-    };
+    const admin = makeUser("admin", null);
     strict_1.default.equal((0, visitWorkflow_1.canAccessGate)(admin, "gate-1"), true);
 });
 (0, node_test_1.default)("admin can update unassigned pre-registered visits in guard workflow", () => {
-    const admin = {
-        id: "admin-id",
-        username: "admin",
-        role: "admin",
-        gateId: null
-    };
+    const admin = makeUser("admin", null);
     strict_1.default.equal((0, visitWorkflow_1.canManageGuardScopedVisit)(admin, { gateId: null, status: visitWorkflow_1.VISIT_STATUS.PRE_REGISTERED }, { allowUnassignedPreRegistered: true }), true);
 });
 (0, node_test_1.default)("guard can update unassigned pre-registered visits only with own gate context", () => {
-    const guard = {
-        id: "guard-id",
-        username: "guard",
-        role: "guard",
-        gateId: "gate-1"
-    };
+    const guard = makeUser("guard", "gate-1");
     const guardWithoutGate = {
         ...guard,
         gateId: null
@@ -74,30 +69,15 @@ const visitWorkflow_1 = require("./visitWorkflow");
     strict_1.default.equal((0, visitWorkflow_1.canManageGuardScopedVisit)(guardWithoutGate, { gateId: null, status: visitWorkflow_1.VISIT_STATUS.PRE_REGISTERED }, { allowUnassignedPreRegistered: true }), false);
 });
 (0, node_test_1.default)("guard users are restricted to their own gate", () => {
-    const guard = {
-        id: "1",
-        username: "wache",
-        role: "guard",
-        gateId: "gate-1"
-    };
+    const guard = makeUser("guard", "gate-1");
     strict_1.default.equal((0, visitWorkflow_1.canAccessGate)(guard, "gate-1"), true);
     strict_1.default.equal((0, visitWorkflow_1.canAccessGate)(guard, "gate-2"), false);
 });
 (0, node_test_1.default)("sibe has no implicit guard scope access", () => {
-    const sibe = {
-        id: "3",
-        username: "sibe",
-        role: "sibe",
-        gateId: null
-    };
+    const sibe = makeUser("sibe", null);
     strict_1.default.equal((0, visitWorkflow_1.canAccessGate)(sibe, "gate-1"), false);
 });
 (0, node_test_1.default)("unassigned visits remain blocked when the workflow requires an assigned gate", () => {
-    const admin = {
-        id: "admin-id",
-        username: "admin",
-        role: "admin",
-        gateId: null
-    };
+    const admin = makeUser("admin", null);
     strict_1.default.equal((0, visitWorkflow_1.canManageGuardScopedVisit)(admin, { gateId: null, status: visitWorkflow_1.VISIT_STATUS.PRE_REGISTERED }), false);
 });

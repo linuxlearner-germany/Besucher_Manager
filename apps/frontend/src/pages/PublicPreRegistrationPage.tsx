@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { ImportReviewModal } from "../components/ImportReviewModal";
 import { Alert, FormField } from "../components/ui";
 import {
   AppLayout,
@@ -367,22 +368,11 @@ export function PublicPreRegistrationPage() {
         </section>
 
         {groupResult && groupResult.needsReview > 0 ? (
-          <div className="modal-backdrop" role="dialog" aria-modal="true">
-            <div className="modal-card panel">
-              <h3>Nachbearbeitung erforderlich</h3>
-              <p className="section-copy">{groupResult.needsReview} von {groupResult.imported} Voranmeldungen haben fehlende Angaben oder Warnungen.</p>
-              <ul className="text-list">
-                {groupResult.rows.filter((row) => row.needsReview).map((row) => (
-                  <li key={row.visitId}>
-                    <strong>{row.visitorName}</strong>: {[...row.missingFields, ...row.warnings].join(" ")}
-                  </li>
-                ))}
-              </ul>
-              <div className="row-actions">
-                <button type="button" onClick={() => setGroupResult(null)}>Schließen</button>
-              </div>
-            </div>
-          </div>
+          <ImportReviewModal
+            rows={groupResult.rows}
+            showLoginHint
+            onClose={() => setGroupResult(null)}
+          />
         ) : null}
       </main>
     </AppLayout>
