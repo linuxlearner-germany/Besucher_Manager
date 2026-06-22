@@ -52,6 +52,7 @@ export function SibeUsersPage() {
             <option value="admin">admin</option>
             <option value="guard">guard</option>
             <option value="sibe">sibe</option>
+            <option value="kaskdt">kaskdt</option>
           </select>
           <select value={active} onChange={(event) => setActive(event.target.value)}>
             <option value="all">Alle Stati</option>

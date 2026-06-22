@@ -23,19 +23,18 @@ export function SibeVisitorsPage() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [status, setStatus] = useState("all");
-  const [signatureStatus, setSignatureStatus] = useState("all");
   const [companyFilter, setCompanyFilter] = useState("");
   const [hostFilter, setHostFilter] = useState("");
   const [gateFilter, setGateFilter] = useState("");
   const [licensePlateFilter, setLicensePlateFilter] = useState("");
   const [badgeFilter, setBadgeFilter] = useState("");
+  const [exportDate, setExportDate] = useState(() => toDateInputValue(new Date()));
 
   function applyRangePreset(preset: "today" | "yesterday" | "week" | "last7" | "month") {
     const now = new Date();
     const end = new Date(now);
     let start = new Date(now);
     if (preset === "today") {
-      // keep start/end as today
     } else if (preset === "yesterday") {
       start.setDate(now.getDate() - 1);
       end.setDate(now.getDate() - 1);
@@ -57,7 +56,6 @@ export function SibeVisitorsPage() {
       const visitParams = new URLSearchParams();
       if (search) visitParams.set("search", search);
       if (status) visitParams.set("status", status);
-      if (signatureStatus) visitParams.set("signatureStatus", signatureStatus);
       if (dateFrom) visitParams.set("from", dateFrom);
       if (dateTo) visitParams.set("to", dateTo);
       if (companyFilter) visitParams.set("company", companyFilter);
@@ -76,11 +74,16 @@ export function SibeVisitorsPage() {
       const errorPayload = apiError as ApiError;
       setError(errorPayload.message || "Besucher konnten nicht geladen werden.");
     }
-  }, [badgeFilter, companyFilter, dateFrom, dateTo, gateFilter, hostFilter, licensePlateFilter, search, signatureStatus, status]);
+  }, [badgeFilter, companyFilter, dateFrom, dateTo, gateFilter, hostFilter, licensePlateFilter, search, status]);
 
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  function downloadExport(range: "day" | "week" | "month" | "all") {
+    const params = new URLSearchParams({ range, date: exportDate });
+    window.location.href = `/api/sibe/visits/export?${params.toString()}`;
+  }
 
   return (
     <AppLayout>
@@ -106,14 +109,6 @@ export function SibeVisitorsPage() {
             <option value="cancelled">Storniert</option>
             <option value="overdue">Ueberfaellig</option>
           </select>
-          <select value={signatureStatus} onChange={(event) => setSignatureStatus(event.target.value)}>
-            <option value="all">Alle Unterschriften</option>
-            <option value="pending">Offen</option>
-            <option value="signed_same_day">Vorhanden</option>
-            <option value="signed_later">Nachgereicht</option>
-            <option value="missing_exception">Fehlt mit Ausnahme</option>
-            <option value="not_required">Nicht erforderlich</option>
-          </select>
           <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
           <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
           <input placeholder="Firma" value={companyFilter} onChange={(event) => setCompanyFilter(event.target.value)} />
@@ -132,6 +127,19 @@ export function SibeVisitorsPage() {
         </div>
 
         {error ? <Alert type="error">{error}</Alert> : null}
+
+        <Card>
+          <h3>Export</h3>
+          <p className="section-copy">Import steht jetzt als eigener Menüpunkt bereit. Hier bleibt die Auswertung und der Export.</p>
+          <div className="toolbar filter-bar import-export-bar">
+            <Link className="button-link" to="/import">Import oeffnen</Link>
+            <input type="date" value={exportDate} onChange={(event) => setExportDate(event.target.value)} />
+            <button type="button" className="secondary-button" onClick={() => downloadExport("day")}>Tagesexport</button>
+            <button type="button" className="secondary-button" onClick={() => downloadExport("week")}>Wochenexport</button>
+            <button type="button" className="secondary-button" onClick={() => downloadExport("month")}>Monatsexport</button>
+            <button type="button" className="secondary-button" onClick={() => downloadExport("all")}>Gesamtübersicht</button>
+          </div>
+        </Card>
 
         <Card>
           <h3>Besuchsvorgaenge</h3>
@@ -206,6 +214,7 @@ export function SibeVisitorsPage() {
             </tbody>
           </DataTable>
         </Card>
+
       </main>
     </AppLayout>
   );

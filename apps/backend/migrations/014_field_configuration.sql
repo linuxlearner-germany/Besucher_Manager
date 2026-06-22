@@ -1,5 +1,3 @@
-/* Field configuration MVP: system/custom field definitions + visit custom values */
-
 IF OBJECT_ID('dbo.field_definitions', 'U') IS NULL
 BEGIN
   CREATE TABLE dbo.field_definitions (
@@ -98,24 +96,24 @@ BEGIN
     VALUES ('visit_purpose', 'Besuchszweck', 'textarea', 'Besuch', 1, 1, 1, 1, 1, 1, 1, 1, 1, 300);
   IF NOT EXISTS (SELECT 1 FROM dbo.field_definitions WHERE field_key = 'valid_from')
     INSERT INTO dbo.field_definitions (field_key, label, field_type, section, is_system, is_active, show_in_public, show_in_guard, show_in_sibe, show_on_badge, required_public, required_guard_checkin, required_before_print, sort_order)
-    VALUES ('valid_from', 'Gueltig von', 'date', 'Besuch', 1, 1, 1, 1, 1, 1, 1, 1, 1, 310);
+    VALUES ('valid_from', 'Gültig von', 'date', 'Besuch', 1, 1, 1, 1, 1, 1, 1, 1, 1, 310);
   IF NOT EXISTS (SELECT 1 FROM dbo.field_definitions WHERE field_key = 'valid_until')
     INSERT INTO dbo.field_definitions (field_key, label, field_type, section, is_system, is_active, show_in_public, show_in_guard, show_in_sibe, show_on_badge, required_public, required_guard_checkin, required_before_print, sort_order)
-    VALUES ('valid_until', 'Gueltig bis', 'date', 'Besuch', 1, 1, 1, 1, 1, 1, 1, 1, 1, 320);
+    VALUES ('valid_until', 'Gültig bis', 'date', 'Besuch', 1, 1, 1, 1, 1, 1, 1, 1, 1, 320);
   IF NOT EXISTS (SELECT 1 FROM dbo.field_definitions WHERE field_key = 'visit_note')
     INSERT INTO dbo.field_definitions (field_key, label, field_type, section, is_system, is_active, show_in_public, show_in_guard, show_in_sibe, show_on_badge, required_public, required_guard_checkin, required_before_print, sort_order)
     VALUES ('visit_note', 'Bemerkung', 'textarea', 'Besuch', 1, 1, 1, 1, 1, 0, 0, 0, 0, 330);
 
   IF NOT EXISTS (SELECT 1 FROM dbo.field_definitions WHERE field_key = 'id_document_type')
     INSERT INTO dbo.field_definitions (field_key, label, field_type, section, is_system, is_active, show_in_public, show_in_guard, show_in_sibe, show_on_badge, required_public, required_guard_checkin, required_before_print, sort_order, options_json)
-    VALUES ('id_document_type', 'Ausweisart', 'select', 'Ausweis', 1, 1, 0, 1, 1, 1, 0, 1, 1, 400, '[\"identity_card\",\"passport\",\"other\"]');
+    VALUES ('id_document_type', 'Ausweisart', 'select', 'Ausweis', 1, 1, 1, 1, 1, 1, 1, 1, 1, 400, '[\"identity_card\",\"passport\",\"other\"]');
   IF NOT EXISTS (SELECT 1 FROM dbo.field_definitions WHERE field_key = 'id_document_valid_until')
     INSERT INTO dbo.field_definitions (field_key, label, field_type, section, is_system, is_active, show_in_public, show_in_guard, show_in_sibe, show_on_badge, required_public, required_guard_checkin, required_before_print, sort_order)
-    VALUES ('id_document_valid_until', 'Ausweis gueltig bis', 'date', 'Ausweis', 1, 1, 0, 1, 1, 1, 0, 1, 1, 410);
+    VALUES ('id_document_valid_until', 'Ausweis gültig bis', 'date', 'Ausweis', 1, 1, 1, 1, 1, 1, 1, 1, 1, 410);
   IF NOT EXISTS (SELECT 1 FROM dbo.field_definitions WHERE field_key = 'id_document_number')
     INSERT INTO dbo.field_definitions (field_key, label, field_type, section, is_system, is_active, show_in_public, show_in_guard, show_in_sibe, show_on_badge, required_public, required_guard_checkin, required_before_print, sort_order)
-    VALUES ('id_document_number', 'Ausweisnummer', 'text', 'Ausweis', 1, 1, 0, 1, 1, 1, 0, 1, 1, 420);
+    VALUES ('id_document_number', 'Ausweisnummer', 'text', 'Ausweis', 1, 1, 1, 1, 1, 1, 1, 1, 1, 420);
   IF NOT EXISTS (SELECT 1 FROM dbo.field_definitions WHERE field_key = 'id_document_issuing_place')
     INSERT INTO dbo.field_definitions (field_key, label, field_type, section, is_system, is_active, show_in_public, show_in_guard, show_in_sibe, show_on_badge, required_public, required_guard_checkin, required_before_print, sort_order)
-    VALUES ('id_document_issuing_place', 'Ausstellungsort', 'text', 'Ausweis', 1, 1, 0, 1, 1, 1, 0, 1, 1, 430);
+    VALUES ('id_document_issuing_place', 'Ausstellungsort', 'text', 'Ausweis', 1, 0, 0, 0, 0, 0, 0, 0, 0, 430);
 END;

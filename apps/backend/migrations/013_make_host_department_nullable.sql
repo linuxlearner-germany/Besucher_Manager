@@ -1,12 +1,3 @@
-/*
-  Legacy-Fehlerbehebung:
-  In der öffentlichen Voranmeldung ist "Abteilung / Bereich" optional.
-  Daher muss dbo.visits.host_department NULL-Werte erlauben.
-
-  Diese Migration ist idempotent und ändert nur die Nullability,
-  ohne Daten zu löschen.
-*/
-
 IF OBJECT_ID(N'dbo.visits', N'U') IS NOT NULL
    AND COL_LENGTH(N'dbo.visits', N'host_department') IS NOT NULL
 BEGIN

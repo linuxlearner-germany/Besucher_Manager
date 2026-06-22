@@ -7,16 +7,21 @@ export const publicPreRegistrationSchema = z
     lastName: z.string().trim().min(1, "Nachname ist erforderlich."),
     company: z.string().trim().min(1, "Firma / Organisation ist erforderlich."),
     hostName: z.string().trim().min(1, "Ansprechpartner ist erforderlich."),
-    hostEmail: z.string().trim().email("Ungueltige Ansprechpartner-E-Mail.").optional().or(z.literal("")),
+    hostEmail: z.string().trim().email("Ungültige Ansprechpartner-E-Mail.").optional().or(z.literal("")),
     hostPhone: z.string().trim().min(1, "Ansprechpartner Telefon ist erforderlich."),
     hostDepartment: z.string().trim().optional(),
     purpose: z.string().trim().min(1, "Besuchszweck ist erforderlich."),
-    validFrom: z.string().trim().min(1, "Gueltig von ist erforderlich."),
-    validUntil: z.string().trim().min(1, "Gueltig bis ist erforderlich."),
+    validFrom: z.string().trim().min(1, "Gültig von ist erforderlich."),
+    validUntil: z.string().trim().min(1, "Gültig bis ist erforderlich."),
     birthDate: z.string().trim().optional().or(z.literal("")),
     phone: z.string().trim().optional(),
-    email: z.string().trim().email("Ungueltige E-Mail-Adresse.").optional().or(z.literal("")),
+    email: z.string().trim().email("Ungültige E-Mail-Adresse.").optional().or(z.literal("")),
     licensePlate: z.string().trim().optional(),
+    idDocumentType: z.enum(["identity_card", "passport", "other"], {
+      errorMap: () => ({ message: "Ausweisart ist erforderlich." })
+    }),
+    idDocumentValidUntil: z.string().trim().min(1, "Ausweis gültig bis ist erforderlich."),
+    idDocumentNumber: z.string().trim().min(1, "Ausweisnummer ist erforderlich.").max(120),
     notes: z.string().trim().optional()
   })
   .superRefine((value, context) => {
@@ -27,7 +32,7 @@ export const publicPreRegistrationSchema = z
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["validFrom"],
-        message: "Ungueltiger Startzeitpunkt."
+        message: "Ungültiger Startzeitpunkt."
       });
     }
 
@@ -35,7 +40,7 @@ export const publicPreRegistrationSchema = z
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["validUntil"],
-        message: "Ungueltiger Endzeitpunkt."
+        message: "Ungültiger Endzeitpunkt."
       });
     }
 
@@ -43,7 +48,7 @@ export const publicPreRegistrationSchema = z
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["validUntil"],
-        message: "Gueltig bis darf nicht vor Gueltig von liegen."
+        message: "Gültig bis darf nicht vor Gültig von liegen."
       });
     }
 
@@ -55,7 +60,7 @@ export const publicPreRegistrationSchema = z
         context.addIssue({
           code: z.ZodIssueCode.custom,
           path: ["birthDate"],
-          message: "Ungueltiges Geburtsdatum."
+          message: "Ungültiges Geburtsdatum."
         });
       } else if (birthDate > now) {
         context.addIssue({
@@ -64,6 +69,15 @@ export const publicPreRegistrationSchema = z
           message: "Geburtsdatum darf nicht in der Zukunft liegen."
         });
       }
+    }
+
+    const idDocumentValidUntil = new Date(value.idDocumentValidUntil);
+    if (Number.isNaN(idDocumentValidUntil.getTime())) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["idDocumentValidUntil"],
+        message: "Ungültiges Ablaufdatum."
+      });
     }
   });
 

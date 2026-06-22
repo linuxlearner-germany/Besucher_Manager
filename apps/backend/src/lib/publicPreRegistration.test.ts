@@ -2,6 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { publicPreRegistrationSchema } from "./publicPreRegistrationSchema";
 
+const idDocumentFields = {
+  idDocumentType: "identity_card",
+  idDocumentValidUntil: "2030-12-31",
+  idDocumentNumber: "A1234567"
+};
+
 test("public pre-registration requires validUntil after validFrom", () => {
   const result = publicPreRegistrationSchema.safeParse({
     firstName: "Max",
@@ -12,7 +18,8 @@ test("public pre-registration requires validUntil after validFrom", () => {
     hostPhone: "0123",
     purpose: "Besprechung",
     validFrom: "2026-05-21T10:00:00.000Z",
-    validUntil: "2026-05-21T09:00:00.000Z"
+    validUntil: "2026-05-21T09:00:00.000Z",
+    ...idDocumentFields
   });
 
   assert.equal(result.success, false);
@@ -32,7 +39,8 @@ test("public pre-registration accepts valid input", () => {
     validFrom: "2026-05-21T08:00:00.000Z",
     validUntil: "2026-05-21T10:00:00.000Z",
     birthDate: "1990-01-15",
-    email: "max@example.com"
+    email: "max@example.com",
+    ...idDocumentFields
   });
 
   assert.equal(result.success, true);
@@ -48,7 +56,8 @@ test("public pre-registration accepts optional gate id", () => {
     hostPhone: "0123",
     purpose: "Besprechung",
     validFrom: "2026-05-21T08:00:00.000Z",
-    validUntil: "2026-05-21T10:00:00.000Z"
+    validUntil: "2026-05-21T10:00:00.000Z",
+    ...idDocumentFields
   });
 
   assert.equal(result.success, true);
@@ -65,7 +74,8 @@ test("public pre-registration rejects invalid e-mail", () => {
     purpose: "Besprechung",
     validFrom: "2026-05-21T08:00:00.000Z",
     validUntil: "2026-05-21T10:00:00.000Z",
-    email: "not-an-email"
+    email: "not-an-email",
+    ...idDocumentFields
   });
 
   assert.equal(result.success, false);
@@ -81,7 +91,8 @@ test("public pre-registration validates required fields without requiring gate",
     hostDepartment: "",
     purpose: "",
     validFrom: "2026-05-21T08:00:00.000Z",
-    validUntil: "2026-05-21T10:00:00.000Z"
+    validUntil: "2026-05-21T10:00:00.000Z",
+    ...idDocumentFields
   });
 
   assert.equal(result.success, false);
@@ -98,7 +109,8 @@ test("public pre-registration rejects future birth dates", () => {
     purpose: "Besprechung",
     validFrom: "2026-05-21T08:00:00.000Z",
     validUntil: "2026-05-21T10:00:00.000Z",
-    birthDate: "2999-01-01"
+    birthDate: "2999-01-01",
+    ...idDocumentFields
   });
 
   assert.equal(result.success, false);
@@ -114,7 +126,8 @@ test("public pre-registration allows empty department but requires host phone", 
     hostDepartment: "",
     purpose: "Besprechung",
     validFrom: "2026-05-21T08:00:00.000Z",
-    validUntil: "2026-05-21T10:00:00.000Z"
+    validUntil: "2026-05-21T10:00:00.000Z",
+    ...idDocumentFields
   });
   assert.equal(withoutDepartment.success, true);
 
@@ -126,7 +139,8 @@ test("public pre-registration allows empty department but requires host phone", 
     hostPhone: "",
     purpose: "Besprechung",
     validFrom: "2026-05-21T08:00:00.000Z",
-    validUntil: "2026-05-21T10:00:00.000Z"
+    validUntil: "2026-05-21T10:00:00.000Z",
+    ...idDocumentFields
   });
   assert.equal(withoutHostPhone.success, false);
 });

@@ -8,7 +8,9 @@ import {
   type FormEvent
 } from "react";
 import { Alert, Card, DataTable, FormField } from "../components/ui";
+import { BadgeTextManager } from "../components/BadgeTextManager";
 import {
+  type AppMenuKey,
   AppLayout,
   type AdminAuditLog,
   type AdminBadgeText,
@@ -22,7 +24,7 @@ import {
   fetchJson,
   formatDateTime,
   formatFileSize,
-  formatTextType,
+  getAllowedMenuAccessForRole,
   formatUserAgent,
   type FieldConfigExportPayload,
   type NewFieldDefinitionForm,
@@ -32,6 +34,14 @@ import {
 
 export function AdminPage() {
   const { user: currentUser } = useAuth();
+  const menuOptions: Array<{ key: AppMenuKey; label: string }> = [
+    { key: "wache", label: "Wache" },
+    { key: "import", label: "Import" },
+    { key: "admin", label: "Admin" },
+    { key: "sibe", label: "SiBe" },
+    { key: "kaskdt", label: "KasKdt" },
+    { key: "texte", label: "Texte" }
+  ];
   const [activeSection, setActiveSection] = useState<"dashboard" | "wachen" | "benutzer" | "texte" | "karte" | "felder" | "audit" | "fehler" | "system">("dashboard");
   const [stats, setStats] = useState<{ users: number; gates: number; templates: number } | null>(null);
   const [gates, setGates] = useState<AdminGate[]>([]);
@@ -75,7 +85,23 @@ export function AdminPage() {
   });
 
   const [newGate, setNewGate] = useState({ name: "", description: "", location: "" });
-  const [newUser, setNewUser] = useState({ username: "", displayName: "", password: "", role: "guard", gateId: "" });
+  const [newUser, setNewUser] = useState<{
+    username: string;
+    displayName: string;
+    password: string;
+    role: AdminUser["role"];
+    gateId: string;
+    groupsText: string;
+    menuAccess: AppMenuKey[];
+  }>({
+    username: "",
+    displayName: "",
+    password: "",
+    role: "guard",
+    gateId: "",
+    groupsText: "",
+    menuAccess: getAllowedMenuAccessForRole("guard")
+  });
   const [newText, setNewText] = useState<{
     name: string;
     textType: AdminBadgeText["textType"];
@@ -169,7 +195,12 @@ export function AdminPage() {
       setSiteMaps(siteMapsPayload.siteMaps);
       setFieldDefinitions(fieldDefinitionsPayload.definitions);
       setEditableGates(Object.fromEntries(gatePayload.gates.map((gate) => [gate.id, { ...gate }])));
-      setEditableUsers(Object.fromEntries(userPayload.users.map((entry) => [entry.id, { ...entry, password: "" }])));
+      setEditableUsers(Object.fromEntries(userPayload.users.map((entry) => [entry.id, {
+        ...entry,
+        password: "",
+        menuAccess: entry.menuAccess?.length ? entry.menuAccess : getAllowedMenuAccessForRole(entry.role),
+        groups: entry.groups ?? []
+      }])));
       setEditableTexts(Object.fromEntries(textPayload.texts.map((text) => [text.id, { ...text }])));
       setEditableFieldDefinitions(Object.fromEntries(fieldDefinitionsPayload.definitions.map((field) => [field.id, { ...field }])));
       await Promise.all([
@@ -245,10 +276,20 @@ export function AdminPage() {
           displayName: newUser.displayName,
           password: newUser.password,
           role: newUser.role,
-          gateId: newUser.role === "guard" ? newUser.gateId || null : null
+          gateId: null,
+          groups: parseGroupText(newUser.groupsText),
+          menuAccess: newUser.menuAccess
         })
       });
-      setNewUser({ username: "", displayName: "", password: "", role: "guard", gateId: "" });
+      setNewUser({
+        username: "",
+        displayName: "",
+        password: "",
+        role: "guard",
+        gateId: "",
+        groupsText: "",
+        menuAccess: getAllowedMenuAccessForRole("guard")
+      });
       setMessage("Benutzer angelegt.");
       setError(null);
       await loadAll();
@@ -319,6 +360,101 @@ export function AdminPage() {
     event.preventDefault();
     setDragActive(false);
     applySelectedFiles(event.dataTransfer.files);
+  }
+
+  function parseGroupText(value: string): string[] {
+    return Array.from(
+      new Set(
+        value
+          .split(/[\n,;]+/)
+          .map((entry) => entry.trim())
+          .filter(Boolean)
+      )
+    );
+  }
+
+  function formatGroupText(groups: string[] | undefined): string {
+    return (groups ?? []).join(", ");
+  }
+
+  function toggleNewUserMenuAccess(menuKey: AppMenuKey, checked: boolean) {
+    setNewUser((current) => {
+      const allowed = new Set(getAllowedMenuAccessForRole(current.role));
+      if (!allowed.has(menuKey)) {
+        return current;
+      }
+
+      const next = checked
+        ? Array.from(new Set([...current.menuAccess, menuKey]))
+        : current.menuAccess.filter((entry) => entry !== menuKey);
+
+      return { ...current, menuAccess: next };
+    });
+  }
+
+  function updateEditableUserRole(userId: string, role: AdminUser["role"]) {
+    setEditableUsers((current) => {
+      const currentEntry = current[userId];
+      if (!currentEntry) {
+        return current;
+      }
+
+      const allowedAccess = getAllowedMenuAccessForRole(role);
+      const nextMenuAccess = currentEntry.menuAccess.filter((entry) => allowedAccess.includes(entry));
+
+      return {
+        ...current,
+        [userId]: {
+          ...currentEntry,
+          role,
+          gateId: null,
+          menuAccess: nextMenuAccess.length ? nextMenuAccess : allowedAccess
+        }
+      };
+    });
+  }
+
+  function updateEditableUserGroups(userId: string, value: string) {
+    setEditableUsers((current) => {
+      const currentEntry = current[userId];
+      if (!currentEntry) {
+        return current;
+      }
+
+      return {
+        ...current,
+        [userId]: {
+          ...currentEntry,
+          groups: parseGroupText(value)
+        }
+      };
+    });
+  }
+
+  function toggleEditableUserMenuAccess(userId: string, menuKey: AppMenuKey, checked: boolean) {
+    setEditableUsers((current) => {
+      const currentEntry = current[userId];
+      if (!currentEntry) {
+        return current;
+      }
+
+      const allowed = new Set(getAllowedMenuAccessForRole(currentEntry.role));
+      if (!allowed.has(menuKey)) {
+        return current;
+      }
+
+      const nextMenuAccess = checked
+        ? Array.from(new Set([...currentEntry.menuAccess, menuKey]))
+        : currentEntry.menuAccess.filter((entry) => entry !== menuKey);
+
+      return {
+        ...current,
+        [userId]: {
+          ...currentEntry,
+          menuAccess: nextMenuAccess
+        }
+      };
+    });
   }
 
   async function saveText(text: AdminBadgeText) {
@@ -429,8 +565,10 @@ export function AdminPage() {
           username: adminUser.username,
           displayName: adminUser.displayName,
           role: adminUser.role,
-          gateId: adminUser.role === "guard" ? adminUser.gateId : null,
+          gateId: null,
           isActive: adminUser.isActive,
+          groups: adminUser.groups,
+          menuAccess: adminUser.menuAccess,
           ...(adminUser.password ? { password: adminUser.password } : {})
         })
       });
@@ -722,14 +860,14 @@ export function AdminPage() {
   const selectedFieldDefinition = selectedFieldDefinitionId ? editableFieldDefinitions[selectedFieldDefinitionId] || null : null;
   const fieldSectionOrder = ["Besucher", "Adresse", "Ansprechpartner", "Besuch", "Ausweis", "Ziel/Raum", "Sonstiges"];
   const hiddenSections = new Set(["Geraete", "Mitgefuehrte Geraete"]);
-  const hiddenFieldKeys = new Set(["visitor_address"]);
+  const hiddenFieldKeys = new Set(["visitor_address", "id_document_issuing_place"]);
   const fieldSectionDescriptions: Record<string, string> = {
     Besucher: "Daten zur besuchenden Person.",
-    Adresse: "Strukturierte Adressdaten fuer Check-in und Druck.",
+    Adresse: "Strukturierte Adressdaten für Check-in und Druck.",
     Ansprechpartner: "Kontakt zur empfangenden Person im Unternehmen.",
-    Besuch: "Besuchszweck, Gueltigkeitszeitraum und Ablaufdaten.",
-    Ausweis: "Ausweisdaten fuer den Wache-Prozess.",
-    "Ziel/Raum": "Interne Ziel-, Gebaeude- und Raumangaben.",
+    Besuch: "Besuchszweck, Gültigkeitszeitraum und Ablaufdaten.",
+    Ausweis: "Ausweisdaten für Voranmeldung und Wache.",
+    "Ziel/Raum": "Interne Ziel-, Gebäude- und Raumangaben.",
     Sonstiges: "Zusatzfelder ohne feste Kategorie."
   };
   const groupedFieldDefinitions = useMemo(() => {
@@ -765,7 +903,6 @@ export function AdminPage() {
         <div className="section-header">
           <div>
             <h2>Admin</h2>
-            <p className="section-copy">Dashboard und getrennte Verwaltungsbereiche fuer den laufenden Betrieb.</p>
           </div>
         </div>
 
@@ -842,45 +979,79 @@ export function AdminPage() {
             <input placeholder="Benutzername" value={newUser.username} onChange={(event) => setNewUser((c) => ({ ...c, username: event.target.value }))} />
             <input placeholder="Anzeigename" value={newUser.displayName} onChange={(event) => setNewUser((c) => ({ ...c, displayName: event.target.value }))} />
             <input type="password" placeholder="Passwort (min. 8)" value={newUser.password} onChange={(event) => setNewUser((c) => ({ ...c, password: event.target.value }))} />
-            <select value={newUser.role} onChange={(event) => setNewUser((c) => ({ ...c, role: event.target.value, gateId: event.target.value === "guard" ? c.gateId : "" }))}>
+            <select value={newUser.role} onChange={(event) => {
+              const role = event.target.value as AdminUser["role"];
+              setNewUser((c) => ({ ...c, role, gateId: "", menuAccess: getAllowedMenuAccessForRole(role) }));
+            }}>
               <option value="guard">guard</option>
               <option value="admin">admin</option>
               <option value="sibe">sibe</option>
+              <option value="kaskdt">kaskdt</option>
             </select>
-            <select value={newUser.gateId} onChange={(event) => setNewUser((c) => ({ ...c, gateId: event.target.value }))} disabled={newUser.role !== "guard"}>
-              <option value="">Wache waehlen</option>
-              {gates.map((gate) => <option key={gate.id} value={gate.id}>{gate.name}</option>)}
-            </select>
+            <textarea
+              placeholder="Gruppen, z. B. Werkschutz, Schicht A"
+              value={newUser.groupsText}
+              onChange={(event) => setNewUser((c) => ({ ...c, groupsText: event.target.value }))}
+            />
+            <div className="menu-access-grid">
+              {menuOptions.map((option) => {
+                const allowed = getAllowedMenuAccessForRole(newUser.role).includes(option.key);
+                return (
+                  <label key={option.key} className={`checkbox-row compact-checkbox ${allowed ? "" : "muted-option"}`}>
+                    <input
+                      type="checkbox"
+                      checked={newUser.menuAccess.includes(option.key)}
+                      disabled={!allowed}
+                      onChange={(event) => toggleNewUserMenuAccess(option.key, event.target.checked)}
+                    />
+                    {option.label}
+                  </label>
+                );
+              })}
+            </div>
             <button type="submit">Benutzer speichern</button>
           </form>
           <div className="table-wrap">
             <table className="data-table">
-              <thead><tr><th>Username</th><th>Anzeigename</th><th>Rolle</th><th>Wache</th><th>Passwort</th><th>Status</th><th>Aktion</th></tr></thead>
+              <thead><tr><th>Username</th><th>Anzeigename</th><th>Rolle</th><th>Gruppen</th><th>Menü</th><th>Passwort</th><th>Status</th><th>Aktion</th></tr></thead>
               <tbody>
                 {users.map((entry) => (
                   <tr key={entry.id}>
                     <td><input value={editableUsers[entry.id]?.username || ""} onChange={(event) => setEditableUsers((current) => ({ ...current, [entry.id]: { ...(current[entry.id] || entry), username: event.target.value } }))} /></td>
                     <td><input value={editableUsers[entry.id]?.displayName || ""} onChange={(event) => setEditableUsers((current) => ({ ...current, [entry.id]: { ...(current[entry.id] || entry), displayName: event.target.value } }))} /></td>
                     <td>
-                      <select value={editableUsers[entry.id]?.role || entry.role} onChange={(event) => setEditableUsers((current) => {
-                        const role = event.target.value as AdminUser["role"];
-                        const currentEntry = current[entry.id] || entry;
-                        return { ...current, [entry.id]: { ...currentEntry, role, gateId: role === "guard" ? currentEntry.gateId : null } };
-                      })}>
+                      <select value={editableUsers[entry.id]?.role || entry.role} onChange={(event) => updateEditableUserRole(entry.id, event.target.value as AdminUser["role"])}>
                         <option value="guard">guard</option>
                         <option value="admin">admin</option>
                         <option value="sibe">sibe</option>
+                        <option value="kaskdt">kaskdt</option>
                       </select>
                     </td>
                     <td>
-                      <select
-                        value={editableUsers[entry.id]?.gateId || ""}
-                        onChange={(event) => setEditableUsers((current) => ({ ...current, [entry.id]: { ...(current[entry.id] || entry), gateId: event.target.value || null } }))}
-                        disabled={(editableUsers[entry.id]?.role || entry.role) !== "guard"}
-                      >
-                        <option value="">-</option>
-                        {gates.map((gate) => <option key={gate.id} value={gate.id}>{gate.name}</option>)}
-                      </select>
+                      <textarea
+                        rows={2}
+                        value={formatGroupText(editableUsers[entry.id]?.groups)}
+                        onChange={(event) => updateEditableUserGroups(entry.id, event.target.value)}
+                      />
+                    </td>
+                    <td>
+                      <div className="menu-access-grid menu-access-grid-compact">
+                        {menuOptions.map((option) => {
+                          const currentEntry = editableUsers[entry.id] || entry;
+                          const allowed = getAllowedMenuAccessForRole(currentEntry.role).includes(option.key);
+                          return (
+                            <label key={option.key} className={`checkbox-row compact-checkbox ${allowed ? "" : "muted-option"}`}>
+                              <input
+                                type="checkbox"
+                                checked={currentEntry.menuAccess.includes(option.key)}
+                                disabled={!allowed}
+                                onChange={(event) => toggleEditableUserMenuAccess(entry.id, option.key, event.target.checked)}
+                              />
+                              {option.label}
+                            </label>
+                          );
+                        })}
+                      </div>
                     </td>
                     <td>
                       <input
@@ -1041,62 +1212,7 @@ export function AdminPage() {
 
         {activeSection === "texte" ? (
           <Card>
-            <h3>Hinweistexte</h3>
-            <form className="form-grid two-columns" onSubmit={createText}>
-              <FormField label="Name" required>
-                <input value={newText.name} onChange={(event) => setNewText((current) => ({ ...current, name: event.target.value }))} />
-              </FormField>
-              <FormField label="Typ" required>
-                <select value={newText.textType} onChange={(event) => setNewText((current) => ({ ...current, textType: event.target.value as AdminBadgeText["textType"] }))}>
-                  <option value="security_notice">security_notice</option>
-                  <option value="photo_ban">photo_ban</option>
-                  <option value="signature_notice">signature_notice</option>
-                  <option value="footer">footer</option>
-                </select>
-              </FormField>
-              <label className="checkbox-row">
-                <input type="checkbox" checked={newText.isActive} onChange={(event) => setNewText((current) => ({ ...current, isActive: event.target.checked }))} />
-                Aktiv
-              </label>
-              <div />
-              <FormField label="Inhalt" required>
-                <textarea rows={3} value={newText.content} onChange={(event) => setNewText((current) => ({ ...current, content: event.target.value }))} />
-              </FormField>
-              <div className="row-actions">
-                <button type="submit">Hinweistext anlegen</button>
-              </div>
-            </form>
-            <DataTable>
-              <thead><tr><th>Name</th><th>Typ</th><th>Aktiv</th><th>Inhalt</th><th>Aktion</th></tr></thead>
-              <tbody>
-                {texts.map((text) => (
-                  <tr key={text.id}>
-                    <td><input value={editableTexts[text.id]?.name || ""} onChange={(event) => setEditableTexts((current) => ({ ...current, [text.id]: { ...(current[text.id] || text), name: event.target.value } }))} /></td>
-                    <td>
-                      <select value={editableTexts[text.id]?.textType || text.textType} onChange={(event) => setEditableTexts((current) => ({ ...current, [text.id]: { ...(current[text.id] || text), textType: event.target.value as AdminBadgeText["textType"] } }))}>
-                        <option value="security_notice">{formatTextType("security_notice")}</option>
-                        <option value="photo_ban">{formatTextType("photo_ban")}</option>
-                        <option value="signature_notice">{formatTextType("signature_notice")}</option>
-                        <option value="footer">{formatTextType("footer")}</option>
-                      </select>
-                    </td>
-                    <td>
-                      <label className="checkbox-row">
-                        <input type="checkbox" checked={editableTexts[text.id]?.isActive ?? text.isActive} onChange={(event) => setEditableTexts((current) => ({ ...current, [text.id]: { ...(current[text.id] || text), isActive: event.target.checked } }))} />
-                        {editableTexts[text.id]?.isActive ?? text.isActive ? "Aktiv" : "Inaktiv"}
-                      </label>
-                    </td>
-                    <td><textarea value={editableTexts[text.id]?.content || ""} onChange={(event) => setEditableTexts((current) => ({ ...current, [text.id]: { ...(current[text.id] || text), content: event.target.value } }))} /></td>
-                    <td>
-                      <div className="row-actions">
-                        <button type="button" onClick={() => void saveText(editableTexts[text.id] || text)}>Speichern</button>
-                        <button className="danger-button" type="button" onClick={() => void toggleTextActive(text.id, text.isActive)}>{text.isActive ? "Deaktivieren" : "Reaktivieren"}</button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </DataTable>
+            <BadgeTextManager description="" />
           </Card>
         ) : null}
 

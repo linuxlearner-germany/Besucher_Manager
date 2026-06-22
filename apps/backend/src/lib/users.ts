@@ -1,7 +1,14 @@
 import sql from "mssql";
 import bcrypt from "bcryptjs";
 import { getPool } from "./db";
-import type { AuthenticatedUser } from "./visitWorkflow";
+import {
+  APP_MENU_KEYS,
+  getAllowedMenuAccessForRole,
+  getDefaultMenuAccessForRole,
+  type AppMenuKey,
+  type AppRole,
+  type AuthenticatedUser
+} from "./visitWorkflow";
 
 type DbUserRow = {
   id: string;
@@ -16,6 +23,125 @@ type CreateAdminInput = {
   username: string;
   password: string;
 };
+
+export function normalizeGroups(groups: string[] | null | undefined): string[] {
+  return Array.from(
+    new Set(
+      (groups ?? [])
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+    )
+  ).sort((left, right) => left.localeCompare(right, "de"));
+}
+
+export function normalizeMenuAccess(role: AppRole, menuAccess: string[] | null | undefined): AppMenuKey[] {
+  const allowed = new Set(getAllowedMenuAccessForRole(role));
+  const requested = (menuAccess ?? [])
+    .map((entry) => entry.trim())
+    .filter((entry): entry is AppMenuKey => APP_MENU_KEYS.includes(entry as AppMenuKey) && allowed.has(entry as AppMenuKey));
+
+  if (requested.length === 0) {
+    return getDefaultMenuAccessForRole(role);
+  }
+
+  return Array.from(new Set(requested)).sort((left, right) => left.localeCompare(right, "de")) as AppMenuKey[];
+}
+
+type GroupRow = {
+  userId: string;
+  groupName: string;
+};
+
+type MenuAccessRow = {
+  userId: string;
+  menuKey: AppMenuKey;
+};
+
+export async function loadUserGroupsAndMenuAccess(userIds: string[], transaction?: sql.Transaction): Promise<{
+  groupsByUserId: Record<string, string[]>;
+  menuAccessByUserId: Record<string, AppMenuKey[]>;
+}> {
+  const uniqueUserIds = Array.from(new Set(userIds.filter(Boolean)));
+  const groupsByUserId = Object.fromEntries(uniqueUserIds.map((userId) => [userId, [] as string[]]));
+  const menuAccessByUserId = Object.fromEntries(uniqueUserIds.map((userId) => [userId, [] as AppMenuKey[]]));
+
+  if (uniqueUserIds.length === 0) {
+    return { groupsByUserId, menuAccessByUserId };
+  }
+
+  const idsSql = uniqueUserIds.map((userId) => `'${userId.replace(/'/g, "''")}'`).join(",");
+  const pool = transaction ? null : await getPool();
+  const groupsRequest = transaction ? new sql.Request(transaction) : pool!.request();
+  const groupsResult = await groupsRequest.query<GroupRow>(`
+    SELECT
+      user_id AS userId,
+      group_name AS groupName
+    FROM dbo.user_groups
+    WHERE user_id IN (${idsSql})
+    ORDER BY group_name ASC
+  `);
+
+  const menuAccessRequest = transaction ? new sql.Request(transaction) : pool!.request();
+  const menuAccessResult = await menuAccessRequest.query<MenuAccessRow>(`
+    SELECT
+      user_id AS userId,
+      menu_key AS menuKey
+    FROM dbo.user_menu_access
+    WHERE user_id IN (${idsSql})
+    ORDER BY menu_key ASC
+  `);
+
+  for (const row of groupsResult.recordset) {
+    groupsByUserId[row.userId] = [...(groupsByUserId[row.userId] ?? []), row.groupName];
+  }
+
+  for (const row of menuAccessResult.recordset) {
+    menuAccessByUserId[row.userId] = [...(menuAccessByUserId[row.userId] ?? []), row.menuKey];
+  }
+
+  return {
+    groupsByUserId,
+    menuAccessByUserId
+  };
+}
+
+export async function replaceUserGroupsAndMenuAccess(
+  userId: string,
+  role: AppRole,
+  groups: string[] | null | undefined,
+  menuAccess: string[] | null | undefined,
+  transaction: sql.Transaction
+): Promise<void> {
+  const normalizedGroups = normalizeGroups(groups);
+  const normalizedMenuAccess = normalizeMenuAccess(role, menuAccess);
+
+  await new sql.Request(transaction)
+    .input("userId", sql.UniqueIdentifier, userId)
+    .query(`
+      DELETE FROM dbo.user_groups WHERE user_id = @userId;
+      DELETE FROM dbo.user_menu_access WHERE user_id = @userId;
+    `);
+
+  for (const groupName of normalizedGroups) {
+    await new sql.Request(transaction)
+      .input("userId", sql.UniqueIdentifier, userId)
+      .input("groupName", sql.NVarChar(120), groupName)
+      .query(`
+        INSERT INTO dbo.user_groups(user_id, group_name)
+        VALUES(@userId, @groupName)
+      `);
+  }
+
+  for (const menuKey of normalizedMenuAccess) {
+    await new sql.Request(transaction)
+      .input("userId", sql.UniqueIdentifier, userId)
+      .input("menuKey", sql.NVarChar(80), menuKey)
+      .query(`
+        INSERT INTO dbo.user_menu_access(user_id, menu_key)
+        VALUES(@userId, @menuKey)
+      `);
+  }
+}
 
 export async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, 12);
@@ -61,11 +187,15 @@ export async function findUserById(id: string): Promise<AuthenticatedUser | null
     return null;
   }
 
+  const { groupsByUserId, menuAccessByUserId } = await loadUserGroupsAndMenuAccess([user.id]);
+
   return {
     id: user.id,
     username: user.username,
     role: user.role,
-    gateId: user.gateId
+    gateId: user.gateId,
+    groups: groupsByUserId[user.id] ?? [],
+    menuAccess: (menuAccessByUserId[user.id]?.length ? menuAccessByUserId[user.id] : getDefaultMenuAccessForRole(user.role))
   };
 }
 
@@ -136,7 +266,7 @@ export async function createOrUpdateUser(input: {
       .input("id", sql.UniqueIdentifier, existing.id)
       .input("passwordHash", sql.NVarChar(255), passwordHash)
       .input("role", sql.NVarChar(32), input.role)
-      .input("gateId", sql.UniqueIdentifier, input.role === "guard" ? (input.gateId ?? null) : null)
+      .input("gateId", sql.UniqueIdentifier, null)
       .query(`
         UPDATE dbo.users
         SET
@@ -158,7 +288,7 @@ export async function createOrUpdateUser(input: {
     .input("username", sql.NVarChar(120), input.username)
     .input("passwordHash", sql.NVarChar(255), passwordHash)
     .input("role", sql.NVarChar(32), input.role)
-    .input("gateId", sql.UniqueIdentifier, input.role === "guard" ? (input.gateId ?? null) : null)
+    .input("gateId", sql.UniqueIdentifier, null)
     .query<{ id: string }>(`
       INSERT INTO dbo.users (
         username,

@@ -1,14 +1,81 @@
 import sql from "mssql";
 import { Router } from "express";
+import multer, { MulterError } from "multer";
+import { z } from "zod";
 import { writeAuditLog } from "../lib/auditLog";
 import { getPool } from "../lib/db";
+import { buildImportTemplateCsv, buildImportTemplateWorkbookBuffer } from "../lib/importTemplateFiles";
+import {
+  createImportedPreRegistrations,
+  parseCsvBuffer,
+  parseExcelBuffer
+} from "../lib/visitImport";
 import { HOST_SIGNATURE_STATUS, VISIT_STATUS } from "../lib/visitWorkflow";
-import { getRequestIp, handleUnexpectedError, requireRole, sendError } from "./shared";
+import { getRequestIp, getRequestUserAgent, handleUnexpectedError, requireRole, sendError, sendValidationError } from "./shared";
 
 export const sibeRouter = Router();
+const visitorImportUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024,
+    files: 1
+  }
+});
+
+const sibeRoles = ["admin", "sibe", "kaskdt"] as const;
+const importRoles = ["admin", "guard", "sibe", "kaskdt"] as const;
+const sibeVisitNotesSchema = z.object({
+  notes: z.string().trim().max(4000, "Die Anmerkung darf maximal 4000 Zeichen enthalten.").optional().or(z.literal(""))
+});
+
+function csvEscape(value: unknown): string {
+  const text = String(value ?? "");
+  if (/[;"\r\n]/.test(text)) {
+    return `"${text.replace(/"/g, "\"\"")}"`;
+  }
+  return text;
+}
+
+function buildCsv(rows: Array<Record<string, unknown>>): string {
+  const headers = [
+    "Besucher",
+    "Firma",
+    "Kennzeichen",
+    "Besuchsnummer",
+    "Status",
+    "Wache",
+    "Ansprechpartner",
+    "Abteilung",
+    "Gültig von",
+    "Gültig bis",
+    "Check-in",
+    "Check-out",
+    "Unterschrift"
+  ];
+  const keys = [
+    "visitorName",
+    "company",
+    "licensePlate",
+    "badgeNumber",
+    "status",
+    "gateName",
+    "hostName",
+    "hostDepartment",
+    "validFrom",
+    "validUntil",
+    "checkInAt",
+    "checkOutAt",
+    "hostSignatureStatus"
+  ];
+
+  return [
+    headers.map(csvEscape).join(";"),
+    ...rows.map((row) => keys.map((key) => csvEscape(row[key])).join(";"))
+  ].join("\r\n");
+}
 
 sibeRouter.get("/api/sibe/summary", async (request, response) => {
-  const user = await requireRole(request, response, ["admin", "sibe"]);
+  const user = await requireRole(request, response, [...sibeRoles]);
   if (!user) return;
 
   try {
@@ -42,7 +109,7 @@ sibeRouter.get("/api/sibe/summary", async (request, response) => {
 });
 
 sibeRouter.get("/api/sibe/statistics/visits", async (request, response) => {
-  const user = await requireRole(request, response, ["admin", "sibe"]);
+  const user = await requireRole(request, response, [...sibeRoles]);
   if (!user) return;
 
   const from = typeof request.query.from === "string" ? request.query.from.trim() : "";
@@ -115,7 +182,7 @@ sibeRouter.get("/api/sibe/statistics/visits", async (request, response) => {
 });
 
 sibeRouter.get("/api/sibe/visitors", async (request, response) => {
-  const user = await requireRole(request, response, ["admin", "sibe"]);
+  const user = await requireRole(request, response, [...sibeRoles]);
   if (!user) return;
 
   try {
@@ -193,7 +260,7 @@ sibeRouter.get("/api/sibe/visitors", async (request, response) => {
 });
 
 sibeRouter.get("/api/sibe/visits", async (request, response) => {
-  const user = await requireRole(request, response, ["admin", "sibe"]);
+  const user = await requireRole(request, response, [...sibeRoles]);
   if (!user) return;
 
   try {
@@ -341,8 +408,162 @@ sibeRouter.get("/api/sibe/visits", async (request, response) => {
   }
 });
 
+sibeRouter.get("/api/sibe/visits/export", async (request, response) => {
+  const user = await requireRole(request, response, [...sibeRoles]);
+  if (!user) return;
+
+  const range = typeof request.query.range === "string" ? request.query.range.trim() : "day";
+  const dateText = typeof request.query.date === "string" && request.query.date.trim()
+    ? request.query.date.trim()
+    : new Date().toISOString().slice(0, 10);
+  const baseDate = new Date(`${dateText}T00:00:00.000Z`);
+  if (Number.isNaN(baseDate.getTime())) {
+    return sendError(response, 400, "VALIDATION_ERROR", "Ungültiges Exportdatum.");
+  }
+
+  let fromDate: Date | null = new Date(baseDate);
+  let toDateExclusive: Date | null = new Date(baseDate);
+  toDateExclusive.setUTCDate(toDateExclusive.getUTCDate() + 1);
+
+  if (range === "week") {
+    const day = (baseDate.getUTCDay() + 6) % 7;
+    fromDate = new Date(baseDate);
+    fromDate.setUTCDate(baseDate.getUTCDate() - day);
+    toDateExclusive = new Date(fromDate);
+    toDateExclusive.setUTCDate(fromDate.getUTCDate() + 7);
+  } else if (range === "month") {
+    fromDate = new Date(Date.UTC(baseDate.getUTCFullYear(), baseDate.getUTCMonth(), 1));
+    toDateExclusive = new Date(Date.UTC(baseDate.getUTCFullYear(), baseDate.getUTCMonth() + 1, 1));
+  } else if (range === "all") {
+    fromDate = null;
+    toDateExclusive = null;
+  } else if (range !== "day") {
+    return sendError(response, 400, "VALIDATION_ERROR", "Exportzeitraum muss day, week, month oder all sein.");
+  }
+
+  try {
+    const pool = await getPool();
+    const requestBuilder = pool.request();
+    const conditions = ["1 = 1"];
+    if (fromDate && toDateExclusive) {
+      requestBuilder.input("fromDate", sql.DateTime2, fromDate);
+      requestBuilder.input("toDateExclusive", sql.DateTime2, toDateExclusive);
+      conditions.push("vt.valid_from >= @fromDate");
+      conditions.push("vt.valid_from < @toDateExclusive");
+    }
+
+    const result = await requestBuilder.query<Record<string, unknown>>(`
+      SELECT
+        CONCAT(vis.first_name, ' ', vis.last_name) AS visitorName,
+        vis.company,
+        vt.license_plate AS licensePlate,
+        vt.badge_number AS badgeNumber,
+        vt.status,
+        ISNULL(g.name, 'Noch nicht zugeordnet') AS gateName,
+        vt.host_name AS hostName,
+        vt.host_department AS hostDepartment,
+        CONVERT(NVARCHAR(30), vt.valid_from, 127) AS validFrom,
+        CONVERT(NVARCHAR(30), vt.valid_until, 127) AS validUntil,
+        CONVERT(NVARCHAR(30), vt.check_in_at, 127) AS checkInAt,
+        CONVERT(NVARCHAR(30), vt.check_out_at, 127) AS checkOutAt,
+        ISNULL(vt.host_signature_status, '${HOST_SIGNATURE_STATUS.PENDING}') AS hostSignatureStatus
+      FROM dbo.visits vt
+      INNER JOIN dbo.visitors vis ON vis.id = vt.visitor_id
+      LEFT JOIN dbo.gates g ON g.id = vt.gate_id
+      WHERE ${conditions.join(" AND ")}
+      ORDER BY vt.valid_from ASC, vis.last_name ASC, vis.first_name ASC
+    `);
+
+    await writeAuditLog({
+      user: user.username,
+      userId: user.id,
+      action: "SIBE_VISIT_EXPORT",
+      objectType: "visit",
+      objectId: range,
+      ipAddress: getRequestIp(request),
+      metadata: { range, date: dateText, count: result.recordset.length }
+    });
+
+    response.setHeader("Content-Type", "text/csv; charset=utf-8");
+    response.setHeader("Content-Disposition", `attachment; filename=\"besucher-export-${range}-${dateText}.csv\"`);
+    return response.send(`\uFEFF${buildCsv(result.recordset)}`);
+  } catch (error) {
+    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der Besucherexport konnte nicht erstellt werden.");
+  }
+});
+
+sibeRouter.post("/api/sibe/visits/import", async (request, response) => {
+  const user = await requireRole(request, response, [...importRoles]);
+  if (!user) return;
+
+  visitorImportUpload.single("file")(request, response, async (error) => {
+    if (error) {
+      if (error instanceof MulterError && error.code === "LIMIT_FILE_SIZE") {
+        return sendError(response, 400, "FILE_TOO_LARGE", "Die Importdatei ist größer als 5 MB.");
+      }
+      return sendError(response, 400, "UPLOAD_ERROR", "Die Importdatei konnte nicht gelesen werden.");
+    }
+
+    const file = request.file;
+    if (!file) {
+      return sendValidationError(response, { fieldErrors: { file: ["Bitte CSV- oder Excel-Datei auswählen."] } });
+    }
+
+    try {
+      const extension = file.originalname.toLowerCase().split(".").pop() || "";
+      const rows = extension === "xlsx" || extension === "xls"
+        ? parseExcelBuffer(file.buffer)
+        : parseCsvBuffer(file.buffer);
+
+      if (rows.length === 0) {
+        return sendValidationError(response, { fieldErrors: { file: ["Keine importierbaren Zeilen gefunden."] } });
+      }
+      if (rows.length > 250) {
+        return sendError(response, 400, "VALIDATION_ERROR", "Bitte maximal 250 Besucher pro Datei importieren.");
+      }
+
+      const imported = await createImportedPreRegistrations(rows, {
+        source: "file_import",
+        createdBy: user,
+        submittedIpAddress: getRequestIp(request),
+        userAgent: getRequestUserAgent(request),
+        fallbackGateId: user.role === "guard" ? user.gateId : null
+      });
+
+      return response.status(201).json({
+        message: `${imported.imported} Besucher importiert.`,
+        ...imported
+      });
+    } catch (importError) {
+      return handleUnexpectedError(response, importError, "IMPORT_ERROR", "Der Besucherimport konnte nicht verarbeitet werden.");
+    }
+  });
+});
+
+sibeRouter.get("/api/sibe/visits/import-template.csv", async (request, response) => {
+  const user = await requireRole(request, response, [...importRoles]);
+  if (!user) return;
+
+  const csv = `\uFEFF${buildImportTemplateCsv()}`;
+
+  response.setHeader("Content-Type", "text/csv; charset=utf-8");
+  response.setHeader("Content-Disposition", 'attachment; filename="besucher-import-vorlage.csv"');
+  return response.status(200).send(csv);
+});
+
+sibeRouter.get("/api/sibe/visits/import-template.xlsx", async (request, response) => {
+  const user = await requireRole(request, response, [...importRoles]);
+  if (!user) return;
+
+  const workbookBuffer = await buildImportTemplateWorkbookBuffer();
+
+  response.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  response.setHeader("Content-Disposition", 'attachment; filename="besucher-import-vorlage.xlsx"');
+  return response.status(200).send(workbookBuffer);
+});
+
 sibeRouter.get("/api/sibe/visits/:id", async (request, response) => {
-  const user = await requireRole(request, response, ["admin", "sibe"]);
+  const user = await requireRole(request, response, [...sibeRoles]);
   if (!user) return;
 
   try {
@@ -430,8 +651,65 @@ sibeRouter.get("/api/sibe/visits/:id", async (request, response) => {
   }
 });
 
+sibeRouter.put("/api/sibe/visits/:id/notes", async (request, response) => {
+  const user = await requireRole(request, response, [...sibeRoles]);
+  if (!user) return;
+
+  const parsed = sibeVisitNotesSchema.safeParse(request.body ?? {});
+  if (!parsed.success) {
+    return sendValidationError(response, parsed.error.flatten());
+  }
+
+  try {
+    const pool = await getPool();
+    const notes = parsed.data.notes?.trim() || null;
+    const visitResult = await pool.request()
+      .input("id", sql.UniqueIdentifier, request.params.id)
+      .query<{ id: string }>(`
+        SELECT TOP 1 id
+        FROM dbo.visits
+        WHERE id = @id
+      `);
+
+    if (!visitResult.recordset[0]) {
+      return sendError(response, 404, "NOT_FOUND", "Der Besuch wurde nicht gefunden.");
+    }
+
+    await pool.request()
+      .input("id", sql.UniqueIdentifier, request.params.id)
+      .input("notes", sql.NVarChar(sql.MAX), notes)
+      .query(`
+        UPDATE dbo.visits
+        SET
+          notes = @notes,
+          updated_at = SYSUTCDATETIME()
+        WHERE id = @id
+      `);
+
+    await writeAuditLog({
+      user: user.username,
+      userId: user.id,
+      action: "SIBE_VISIT_NOTES_UPDATED",
+      objectType: "visit",
+      objectId: request.params.id,
+      ipAddress: getRequestIp(request),
+      userAgent: getRequestUserAgent(request),
+      metadata: {
+        changed_fields: ["notes"]
+      }
+    });
+
+    return response.json({
+      message: "Anmerkung gespeichert.",
+      notes
+    });
+  } catch (error) {
+    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Anmerkung konnte nicht gespeichert werden.");
+  }
+});
+
 sibeRouter.get("/api/sibe/users", async (request, response) => {
-  const user = await requireRole(request, response, ["admin", "sibe"]);
+  const user = await requireRole(request, response, [...sibeRoles]);
   if (!user) return;
 
   try {
@@ -484,7 +762,7 @@ sibeRouter.get("/api/sibe/users", async (request, response) => {
     const result = await requestBuilder.query<{
       id: string;
       username: string;
-      role: "admin" | "guard" | "sibe";
+      role: "admin" | "guard" | "sibe" | "kaskdt";
       gateName: string | null;
       isActive: boolean;
       createdAt: string;
@@ -520,7 +798,7 @@ sibeRouter.get("/api/sibe/users", async (request, response) => {
 });
 
 sibeRouter.get("/api/sibe/audit-logs", async (request, response) => {
-  const user = await requireRole(request, response, ["admin", "sibe"]);
+  const user = await requireRole(request, response, [...sibeRoles]);
   if (!user) return;
 
   try {

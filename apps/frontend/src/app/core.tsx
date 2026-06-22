@@ -12,9 +12,14 @@ import { Navigate, NavLink, useLocation, useNavigate } from "react-router-dom";
 export type User = {
   id: string;
   username: string;
-  role: "admin" | "guard" | "sibe";
+  role: "admin" | "guard" | "sibe" | "kaskdt";
   gateId: string | null;
+  gateName?: string | null;
+  groups: string[];
+  menuAccess: AppMenuKey[];
 };
+
+export type AppMenuKey = "wache" | "import" | "admin" | "sibe" | "kaskdt" | "texte";
 
 export type Gate = {
   id: string;
@@ -28,17 +33,19 @@ export type AdminUser = {
   id: string;
   username: string;
   displayName: string;
-  role: "admin" | "guard" | "sibe";
+  role: "admin" | "guard" | "sibe" | "kaskdt";
   gateId: string | null;
   isActive: boolean;
   lastLoginAt?: string | null;
+  groups: string[];
+  menuAccess: AppMenuKey[];
 };
 export type EditableAdminUser = AdminUser & { password?: string };
 
 export type AdminBadgeText = {
   id: string;
   name: string;
-  textType: "security_notice" | "photo_ban" | "signature_notice" | "footer";
+  textType: string;
   content: string;
   isActive: boolean;
 };
@@ -226,6 +233,9 @@ export type FormState = {
   phone: string;
   email: string;
   licensePlate: string;
+  idDocumentType: "identity_card" | "passport" | "other" | "";
+  idDocumentValidUntil: string;
+  idDocumentNumber: string;
   notes: string;
 };
 
@@ -242,6 +252,13 @@ export type AuthContextValue = {
   refresh: () => Promise<void>;
   setUser: (user: User | null) => void;
   logout: () => Promise<void>;
+};
+
+const defaultMenuAccessByRole: Record<User["role"], AppMenuKey[]> = {
+  admin: ["wache", "import", "admin", "sibe", "kaskdt", "texte"],
+  guard: ["wache", "import"],
+  sibe: ["sibe", "import"],
+  kaskdt: ["kaskdt", "import", "texte"]
 };
 
 export type SubmitState =
@@ -371,7 +388,7 @@ export type SibeVisitorRow = {
 export type SibeUserRow = {
   id: string;
   username: string;
-  role: "admin" | "guard" | "sibe";
+  role: "admin" | "guard" | "sibe" | "kaskdt";
   gateName: string | null;
   isActive: boolean;
   createdAt: string;
@@ -516,8 +533,51 @@ export function formatTextType(textType: AdminBadgeText["textType"]): string {
     case "footer":
       return "Footer";
     default:
-      return textType;
+      return textType
+        .replace(/[_-]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .replace(/\b\w/g, (char) => char.toUpperCase());
   }
+}
+
+export function getAllowedMenuAccessForRole(role: User["role"]): AppMenuKey[] {
+  return [...defaultMenuAccessByRole[role]];
+}
+
+export function getEffectiveMenuAccess(user: User | AdminUser | null | undefined): AppMenuKey[] {
+  if (!user) {
+    return [];
+  }
+
+  if (user.menuAccess?.length) {
+    return user.menuAccess;
+  }
+
+  return getAllowedMenuAccessForRole(user.role);
+}
+
+export function hasMenuAccess(user: User | AdminUser | null | undefined, menuKey: AppMenuKey): boolean {
+  return getEffectiveMenuAccess(user).includes(menuKey);
+}
+
+export function getDefaultRouteForUser(user: User): string {
+  if (hasMenuAccess(user, "admin")) {
+    return "/admin";
+  }
+  if (hasMenuAccess(user, "wache")) {
+    return "/wache";
+  }
+  if (hasMenuAccess(user, "sibe")) {
+    return "/sibe";
+  }
+  if (hasMenuAccess(user, "kaskdt")) {
+    return "/kaskdt";
+  }
+  if (hasMenuAccess(user, "texte")) {
+    return "/kaskdt/texte";
+  }
+  return "/import";
 }
 
 export function extractFieldErrors(error: ApiError): Record<string, string> {
@@ -568,6 +628,9 @@ export function buildInitialFormState(): FormState {
     phone: "",
     email: "",
     licensePlate: "",
+    idDocumentType: "",
+    idDocumentValidUntil: "",
+    idDocumentNumber: "",
     notes: ""
   };
 }
@@ -787,16 +850,19 @@ export function AppLayout({ children }: PropsWithChildren) {
           </div>
 
           <div className="title-wrap">
-            <p className="eyebrow">Interne Besucherverwaltung</p>
             <h1>Besucher Manager</h1>
+            {user?.role === "guard" && user.gateName ? <p className="topbar-subtitle">Aktive Wache: {user.gateName}</p> : null}
           </div>
 
           <div className="topbar-actions">
             <nav className="nav-links">
               <NavLink to="/" className={({ isActive }) => (isActive ? "active-link" : "")}>Voranmeldung</NavLink>
-              {user && (user.role === "guard" || user.role === "admin") ? <NavLink to="/wache" className={({ isActive }) => (isActive ? "active-link" : "")}>Wache</NavLink> : null}
-              {user?.role === "admin" ? <NavLink to="/admin" className={({ isActive }) => (isActive ? "active-link" : "")}>Admin</NavLink> : null}
-              {user && (user.role === "sibe" || user.role === "admin") ? <NavLink to="/sibe" className={({ isActive }) => (isActive ? "active-link" : "")}>SiBe</NavLink> : null}
+              {user && hasMenuAccess(user, "wache") ? <NavLink to="/wache" className={({ isActive }) => (isActive ? "active-link" : "")}>Wache</NavLink> : null}
+              <NavLink to="/import" className={({ isActive }) => (isActive ? "active-link" : "")}>Import</NavLink>
+              {user && hasMenuAccess(user, "admin") ? <NavLink to="/admin" className={({ isActive }) => (isActive ? "active-link" : "")}>Admin</NavLink> : null}
+              {user && hasMenuAccess(user, "sibe") ? <NavLink to="/sibe" className={({ isActive }) => (isActive ? "active-link" : "")}>SiBe</NavLink> : null}
+              {user && hasMenuAccess(user, "kaskdt") ? <NavLink to="/kaskdt" className={({ isActive }) => (isActive ? "active-link" : "")}>KasKdt</NavLink> : null}
+              {user && hasMenuAccess(user, "texte") ? <NavLink to="/kaskdt/texte" className={({ isActive }) => (isActive ? "active-link" : "")}>Texte</NavLink> : null}
               {!user ? <NavLink to="/login" className={({ isActive }) => (isActive ? "active-link" : "")}>Login</NavLink> : null}
             </nav>
             <button className="secondary-button" type="button" onClick={toggle}>
@@ -818,8 +884,9 @@ export function AppLayout({ children }: PropsWithChildren) {
 export function RequireRoles({
   children,
   allowedRoles,
-  redirectTo = "/login"
-}: PropsWithChildren<{ allowedRoles: User["role"][]; redirectTo?: string }>) {
+  redirectTo = "/login",
+  requiredMenuKey
+}: PropsWithChildren<{ allowedRoles: User["role"][]; redirectTo?: string; requiredMenuKey?: AppMenuKey }>) {
   const { loading, user } = useAuth();
   const location = useLocation();
 
@@ -832,6 +899,10 @@ export function RequireRoles({
   }
 
   if (!allowedRoles.includes(user.role)) {
+    return <Navigate to={redirectTo} replace />;
+  }
+
+  if (requiredMenuKey && !hasMenuAccess(user, requiredMenuKey)) {
     return <Navigate to={redirectTo} replace />;
   }
 

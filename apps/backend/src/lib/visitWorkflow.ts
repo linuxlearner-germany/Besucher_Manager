@@ -16,13 +16,32 @@ export const HOST_SIGNATURE_STATUS = {
 export type VisitStatus = (typeof VISIT_STATUS)[keyof typeof VISIT_STATUS] | "vorangemeldet" | "eingecheckt" | "ausgecheckt";
 export type HostSignatureStatus = (typeof HOST_SIGNATURE_STATUS)[keyof typeof HOST_SIGNATURE_STATUS];
 
-export type AppRole = "admin" | "guard" | "sibe";
+export type AppRole = "admin" | "guard" | "sibe" | "kaskdt";
+export const APP_MENU_KEYS = ["wache", "import", "admin", "sibe", "kaskdt", "texte"] as const;
+export type AppMenuKey = (typeof APP_MENU_KEYS)[number];
+const defaultMenuAccessByRole: Record<AppRole, AppMenuKey[]> = {
+  admin: [...APP_MENU_KEYS],
+  guard: ["wache", "import"],
+  sibe: ["sibe", "import"],
+  kaskdt: ["kaskdt", "import", "texte"]
+};
+
+export function getDefaultMenuAccessForRole(role: AppRole): AppMenuKey[] {
+  return [...defaultMenuAccessByRole[role]];
+}
+
+export function getAllowedMenuAccessForRole(role: AppRole): AppMenuKey[] {
+  return [...defaultMenuAccessByRole[role]];
+}
 
 export type AuthenticatedUser = {
   id: string;
   username: string;
   role: AppRole;
   gateId: string | null;
+  gateName?: string | null;
+  groups: string[];
+  menuAccess: AppMenuKey[];
 };
 
 export type GuardScopedVisitTarget = {

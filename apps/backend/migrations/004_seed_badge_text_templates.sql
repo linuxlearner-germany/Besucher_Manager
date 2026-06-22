@@ -10,7 +10,7 @@ BEGIN
     VALUES (
       'Sicherheitshinweis',
       'security_notice',
-      'Den Anweisungen des Personals ist Folge zu leisten. Der Besucherschein ist sichtbar zu tragen.',
+      'Den Anweisungen des Personals ist Folge zu leisten.',
       1
     );
   END;
@@ -25,7 +25,7 @@ BEGIN
     VALUES (
       'Fotografierverbot',
       'photo_ban',
-      'Fotografieren und Filmen auf dem Gelaende ist verboten.',
+      'Fotografieren und Filmen auf dem Gelände ist verboten.',
       1
     );
   END;
@@ -40,7 +40,7 @@ BEGIN
     VALUES (
       'Unterschriftshinweis',
       'signature_notice',
-      'Vor Ausfahrt / Verlassen des Gelaendes durch den Ansprechpartner zu unterschreiben.',
+      'Vor Ausfahrt / Verlassen des Geländes durch den Ansprechpartner zu unterschreiben.',
       1
     );
   END;

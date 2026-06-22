@@ -17,10 +17,22 @@ import {
   isAllowedSiteMapExtension,
   isAllowedSiteMapMimeType
 } from "../lib/siteMaps";
-import { hashPassword } from "../lib/users";
+import {
+  hashPassword,
+  loadUserGroupsAndMenuAccess,
+  replaceUserGroupsAndMenuAccess
+} from "../lib/users";
 import { writeAuditLog } from "../lib/auditLog";
 import { env } from "../config/env";
-import { HOST_SIGNATURE_STATUS, VISIT_STATUS, type AuthenticatedUser } from "../lib/visitWorkflow";
+import {
+  APP_MENU_KEYS,
+  getAllowedMenuAccessForRole,
+  getDefaultMenuAccessForRole,
+  HOST_SIGNATURE_STATUS,
+  VISIT_STATUS,
+  type AppMenuKey,
+  type AuthenticatedUser
+} from "../lib/visitWorkflow";
 import {
   buildFieldKeyFromLabel,
   countUserReferences,
@@ -47,15 +59,20 @@ const userCreateSchema = z.object({
   username: z.string().trim().min(1).max(120),
   displayName: z.string().trim().max(255).optional().or(z.literal("")),
   password: z.string().min(8).max(128),
-  role: z.enum(["admin", "guard", "sibe"]),
+  role: z.enum(["admin", "guard", "sibe", "kaskdt"]),
   gateId: z.string().uuid().nullable().optional(),
-  isActive: z.boolean().optional()
+  isActive: z.boolean().optional(),
+  groups: z.array(z.string().trim().min(1).max(120)).optional(),
+  menuAccess: z.array(z.enum(APP_MENU_KEYS)).optional()
 }).superRefine((value, context) => {
-  if (value.role === "guard" && !value.gateId) {
+  const allowed = new Set(getAllowedMenuAccessForRole(value.role));
+  const invalid = (value.menuAccess ?? []).filter((entry) => !allowed.has(entry));
+
+  if (invalid.length > 0) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
-      path: ["gateId"],
-      message: "Fuer Guard-Benutzer ist eine Wache erforderlich."
+      path: ["menuAccess"],
+      message: `Ungueltige Menuezugriffe fuer Rolle ${value.role}: ${invalid.join(", ")}`
     });
   }
 });
@@ -63,9 +80,11 @@ const userUpdateSchema = z.object({
   username: z.string().trim().min(1).max(120).optional(),
   displayName: z.string().trim().max(255).optional().or(z.literal("")),
   password: z.string().min(8).max(128).optional(),
-  role: z.enum(["admin", "guard", "sibe"]).optional(),
+  role: z.enum(["admin", "guard", "sibe", "kaskdt"]).optional(),
   gateId: z.string().uuid().nullable().optional(),
-  isActive: z.boolean().optional()
+  isActive: z.boolean().optional(),
+  groups: z.array(z.string().trim().min(1).max(120)).optional(),
+  menuAccess: z.array(z.enum(APP_MENU_KEYS)).optional()
 });
 const adminFieldDefinitionUpdateSchema = z.object({
   label: z.string().trim().min(1).max(200),
@@ -151,7 +170,7 @@ const fieldConfigImportSchema = z.object({
 });
 const badgeTextUpdateSchema = z.object({
   name: z.string().trim().min(1).max(120),
-  textType: z.enum(["security_notice", "photo_ban", "signature_notice", "footer"]),
+  textType: z.string().trim().min(1).max(80),
   content: z.string().trim().min(1),
   isActive: z.boolean().optional()
 });
@@ -386,7 +405,7 @@ async function getRetentionSettings() {
 export const adminRouter = Router();
 
 adminRouter.get("/api/admin/badge-texts", async (request, response) => {
-  const user = await requireRole(request, response, ["admin"]);
+  const user = await requireRole(request, response, ["admin", "kaskdt"]);
 
   if (!user) {
     return;
@@ -410,7 +429,7 @@ adminRouter.get("/api/admin/badge-texts", async (request, response) => {
 });
 
 adminRouter.post("/api/admin/badge-texts", async (request, response) => {
-  const user = await requireRole(request, response, ["admin"]);
+  const user = await requireRole(request, response, ["admin", "kaskdt"]);
   if (!user) return;
 
   const parsed = badgeTextCreateSchema.safeParse(request.body);
@@ -1050,7 +1069,7 @@ adminRouter.get("/api/admin/users", async (request, response) => {
       id: string;
       username: string;
       displayName: string;
-      role: "admin" | "guard" | "sibe";
+      role: "admin" | "guard" | "sibe" | "kaskdt";
       gateId: string | null;
       isActive: boolean;
       lastLoginAt: string | null;
@@ -1066,7 +1085,14 @@ adminRouter.get("/api/admin/users", async (request, response) => {
       FROM dbo.users
       ORDER BY username ASC
     `);
-    response.json({ users: result.recordset });
+    const { groupsByUserId, menuAccessByUserId } = await loadUserGroupsAndMenuAccess(result.recordset.map((entry) => entry.id));
+    response.json({
+      users: result.recordset.map((entry) => ({
+        ...entry,
+        groups: groupsByUserId[entry.id] ?? [],
+        menuAccess: menuAccessByUserId[entry.id]?.length ? menuAccessByUserId[entry.id] : getDefaultMenuAccessForRole(entry.role)
+      }))
+    });
   } catch (error) {
     return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Benutzer konnten nicht geladen werden.");
   }
@@ -1089,18 +1115,31 @@ adminRouter.post("/api/admin/users", async (request, response) => {
       return sendError(response, 409, "CONFLICT", "Ein Benutzer mit diesem Namen existiert bereits.");
     }
 
-    const created = await pool.request()
+    const transaction = new sql.Transaction(pool);
+    await transaction.begin();
+
+    const created = await new sql.Request(transaction)
       .input("username", sql.NVarChar(120), data.username)
       .input("displayName", sql.NVarChar(255), data.displayName?.trim() || data.username)
       .input("passwordHash", passwordHash)
       .input("role", data.role)
-      .input("gateId", data.role === "admin" ? null : data.gateId ?? null)
+      .input("gateId", sql.UniqueIdentifier, null)
       .input("isActive", data.isActive ?? true)
       .query<{ id: string }>(`
         INSERT INTO dbo.users(username, password_hash, display_name, role, gate_id, is_active)
         OUTPUT inserted.id
         VALUES(@username, @passwordHash, @displayName, @role, @gateId, @isActive)
       `);
+
+    await replaceUserGroupsAndMenuAccess(
+      created.recordset[0].id,
+      data.role,
+      data.groups,
+      data.menuAccess,
+      transaction
+    );
+
+    await transaction.commit();
 
     await writeAuditLog({ user: admin.username, action: "ADMIN_USER_CREATED", objectType: "user", objectId: created.recordset[0].id, ipAddress: getRequestIp(request) });
     response.status(201).json({ id: created.recordset[0].id });
@@ -1119,7 +1158,7 @@ adminRouter.put("/api/admin/users/:id", async (request, response) => {
     const pool = await getPool();
     const existing = await pool.request()
       .input("id", sql.UniqueIdentifier, request.params.id)
-      .query<{ username: string; role: "admin" | "guard" | "sibe"; isActive: boolean; gateId: string | null }>("SELECT username, role, is_active AS isActive, gate_id AS gateId FROM dbo.users WHERE id = @id");
+      .query<{ username: string; role: "admin" | "guard" | "sibe" | "kaskdt"; isActive: boolean; gateId: string | null }>("SELECT username, role, is_active AS isActive, gate_id AS gateId FROM dbo.users WHERE id = @id");
 
     const currentUser = existing.recordset[0];
     if (!currentUser) {
@@ -1128,12 +1167,14 @@ adminRouter.put("/api/admin/users/:id", async (request, response) => {
 
     const nextRole = data.role ?? currentUser.role;
     const nextActive = data.isActive ?? currentUser.isActive;
-    const nextGateId = nextRole === "guard" ? (data.gateId ?? currentUser.gateId) : null;
+    const nextGateId = null;
     const nextUsername = data.username ?? currentUser.username;
     const nextDisplayName = data.displayName?.trim() || nextUsername;
+    const allowedMenuAccess = new Set(getAllowedMenuAccessForRole(nextRole));
+    const requestedMenuAccess = (data.menuAccess ?? []).filter((entry) => allowedMenuAccess.has(entry));
 
-    if (nextRole === "guard" && !nextGateId) {
-      return sendError(response, 400, "VALIDATION_ERROR", "Fuer Guard-Benutzer ist eine Wache erforderlich.");
+    if (data.menuAccess && requestedMenuAccess.length !== data.menuAccess.length) {
+      return sendError(response, 400, "VALIDATION_ERROR", "Mindestens ein Menuepunkt passt nicht zur ausgewaehlten Rolle.");
     }
 
     if (admin.id === request.params.id && (!nextActive || nextRole !== "admin")) {
@@ -1163,13 +1204,16 @@ adminRouter.put("/api/admin/users/:id", async (request, response) => {
       passwordHash = await hashPassword(data.password);
     }
 
-    await pool.request()
+    const transaction = new sql.Transaction(pool);
+    await transaction.begin();
+
+    await new sql.Request(transaction)
       .input("id", sql.UniqueIdentifier, request.params.id)
       .input("username", sql.NVarChar(120), nextUsername)
       .input("displayName", sql.NVarChar(255), nextDisplayName)
       .input("passwordHash", passwordHash)
       .input("role", nextRole)
-      .input("gateId", nextGateId)
+      .input("gateId", sql.UniqueIdentifier, nextGateId)
       .input("isActive", nextActive)
       .input("deactivatedBy", sql.UniqueIdentifier, admin.id)
       .query(`
@@ -1195,6 +1239,16 @@ adminRouter.put("/api/admin/users/:id", async (request, response) => {
         WHERE id = @id
       `);
 
+    await replaceUserGroupsAndMenuAccess(
+      request.params.id,
+      nextRole,
+      data.groups,
+      data.menuAccess,
+      transaction
+    );
+
+    await transaction.commit();
+
     await writeAuditLog({ user: admin.username, action: "ADMIN_USER_UPDATED", objectType: "user", objectId: request.params.id, ipAddress: getRequestIp(request) });
     response.json({ success: true });
   } catch (error) {
@@ -1214,7 +1268,7 @@ adminRouter.post("/api/admin/users/:id/deactivate", async (request, response) =>
     const pool = await getPool();
     const userToDelete = await pool.request()
       .input("id", sql.UniqueIdentifier, request.params.id)
-      .query<{ role: "admin" | "guard" | "sibe"; isActive: boolean }>("SELECT role, is_active AS isActive FROM dbo.users WHERE id = @id");
+      .query<{ role: "admin" | "guard" | "sibe" | "kaskdt"; isActive: boolean }>("SELECT role, is_active AS isActive FROM dbo.users WHERE id = @id");
 
     const candidate = userToDelete.recordset[0];
     if (!candidate) {
@@ -1285,7 +1339,7 @@ adminRouter.delete("/api/admin/users/:id", async (request, response) => {
     const pool = await getPool();
     const userResult = await pool.request()
       .input("id", sql.UniqueIdentifier, request.params.id)
-      .query<{ username: string; role: "admin" | "guard" | "sibe"; isActive: boolean }>("SELECT username, role, is_active AS isActive FROM dbo.users WHERE id = @id");
+      .query<{ username: string; role: "admin" | "guard" | "sibe" | "kaskdt"; isActive: boolean }>("SELECT username, role, is_active AS isActive FROM dbo.users WHERE id = @id");
     const target = userResult.recordset[0];
 
     if (!target) {
@@ -1360,7 +1414,7 @@ adminRouter.delete("/api/admin/users/:id", async (request, response) => {
 });
 
 adminRouter.put("/api/admin/badge-texts/:id", async (request, response) => {
-  const user = await requireRole(request, response, ["admin"]);
+  const user = await requireRole(request, response, ["admin", "kaskdt"]);
   if (!user) return;
   const parsed = badgeTextUpdateSchema.safeParse(request.body);
   if (!parsed.success) return sendValidationError(response, parsed.error.flatten());
@@ -1396,7 +1450,7 @@ adminRouter.put("/api/admin/badge-texts/:id", async (request, response) => {
 });
 
 adminRouter.post("/api/admin/badge-texts/:id/deactivate", async (request, response) => {
-  const user = await requireRole(request, response, ["admin"]);
+  const user = await requireRole(request, response, ["admin", "kaskdt"]);
   if (!user) return;
 
   try {
@@ -1430,7 +1484,7 @@ adminRouter.post("/api/admin/badge-texts/:id/deactivate", async (request, respon
 });
 
 adminRouter.post("/api/admin/badge-texts/:id/reactivate", async (request, response) => {
-  const user = await requireRole(request, response, ["admin"]);
+  const user = await requireRole(request, response, ["admin", "kaskdt"]);
   if (!user) return;
 
   try {

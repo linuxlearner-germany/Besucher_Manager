@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Alert } from "../components/ui";
-import { AppLayout, type ApiError, fetchJson, type SibeSummary } from "../app/core";
+import { AppLayout, type ApiError, fetchJson, type SibeSummary, useAuth } from "../app/core";
 
 export function SibeDashboardPage() {
+  const { user } = useAuth();
   const [summary, setSummary] = useState<SibeSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,8 +27,7 @@ export function SibeDashboardPage() {
       <main className="panel page-panel page-shell-full admin-page-shell">
         <div className="section-header">
           <div>
-            <h2>SiBe Dashboard</h2>
-            <p className="section-copy">Recherche und Auswertung fuer Sicherheitsbeauftragte.</p>
+            <h2>{user?.role === "kaskdt" ? "KasKdt Dashboard" : "SiBe Dashboard"}</h2>
           </div>
         </div>
 
@@ -48,6 +48,9 @@ export function SibeDashboardPage() {
         <div className="row-actions">
           <Link className="button-link" to="/sibe/besucher">Besucher suchen</Link>
           <Link className="button-link" to="/sibe/benutzer">Benutzer suchen</Link>
+          {user && (user.role === "kaskdt" || user.role === "admin") ? (
+            <Link className="button-link" to="/kaskdt/texte">Texte verwalten</Link>
+          ) : null}
         </div>
       </main>
     </AppLayout>

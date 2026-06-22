@@ -208,7 +208,6 @@ export function GuardDashboardPage() {
         <div className="section-header">
           <div>
             <h2>Wache</h2>
-            <p className="section-copy">Tagesliste und Kalender fuer den operativen Ueberblick.</p>
           </div>
           <div className="section-tabs">
             <button type="button" className={`tab-button ${activeView === "list" ? "tab-active" : ""}`} onClick={() => setActiveView("list")}>
@@ -229,7 +228,7 @@ export function GuardDashboardPage() {
             }}
           >
             <input
-              placeholder="Besucher, Firma, Ansprechpartner oder Kennzeichen"
+              placeholder="Besucher, Firma, Ansprechpartner, Kennzeichen"
               value={searchInput}
               onChange={(event) => setSearchInput(event.target.value)}
             />
@@ -266,18 +265,10 @@ export function GuardDashboardPage() {
         </div>
 
         {activeView === "list" ? (
-          <div className="guard-toolbar-meta">
-            <span>{visits.length} Eintraege</span>
-            {search ? <span>Suche: {search}</span> : null}
-            {statusFilter !== "all" ? <span>Status: {formatStatus(statusFilter)}</span> : null}
-          </div>
-        ) : null}
-
-        {activeView === "list" ? (
-          <div className="card-grid stat-grid">
-            <article className="panel mini-card"><h3>Vorangemeldet heute</h3><p>{stats.preRegistered}</p></article>
-            <article className="panel mini-card"><h3>Aktuell eingecheckt</h3><p>{stats.checkedIn}</p></article>
-            <article className="panel mini-card"><h3>Ausgecheckt heute</h3><p>{stats.checkedOut}</p></article>
+          <div className="card-grid stat-grid guard-stat-grid">
+            <article className="panel mini-card guard-mini-card"><h3>Vorangemeldet heute</h3><p>{stats.preRegistered}</p></article>
+            <article className="panel mini-card guard-mini-card"><h3>Aktuell eingecheckt</h3><p>{stats.checkedIn}</p></article>
+            <article className="panel mini-card guard-mini-card"><h3>Ausgecheckt heute</h3><p>{stats.checkedOut}</p></article>
           </div>
         ) : null}
 

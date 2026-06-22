@@ -7,12 +7,16 @@ export function SibeVisitDetailPage() {
   const { id } = useParams();
   const [visit, setVisit] = useState<SibeVisitDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [notesDraft, setNotesDraft] = useState("");
+  const [savingNotes, setSavingNotes] = useState(false);
 
   useEffect(() => {
     async function loadVisit() {
       try {
         const payload = await fetchJson<{ visit: SibeVisitDetail }>(`/api/sibe/visits/${id}`, { method: "GET", headers: {} });
         setVisit(payload.visit);
+        setNotesDraft(payload.visit.notes || "");
       } catch (apiError) {
         const errorPayload = apiError as ApiError;
         setError(errorPayload.message || "Besuch konnte nicht geladen werden.");
@@ -22,18 +26,72 @@ export function SibeVisitDetailPage() {
     void loadVisit();
   }, [id]);
 
+  async function handleSaveNotes() {
+    if (!id) return;
+
+    setSavingNotes(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const payload = await fetchJson<{ message: string; notes: string | null }>(`/api/sibe/visits/${id}/notes`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          notes: notesDraft
+        })
+      });
+
+      setVisit((current) => current ? { ...current, notes: payload.notes } : current);
+      setNotesDraft(payload.notes || "");
+      setMessage(payload.message);
+    } catch (apiError) {
+      const errorPayload = apiError as ApiError;
+      setError(errorPayload.message || "Anmerkung konnte nicht gespeichert werden.");
+    } finally {
+      setSavingNotes(false);
+    }
+  }
+
   return (
     <AppLayout>
       <main className="panel page-panel page-shell-wide">
         <div className="section-header">
           <div>
             <h2>SiBe Besuchsdetails</h2>
-            <p className="section-copy">Reine Leseansicht fuer Recherche und Nachvollziehbarkeit.</p>
+            <p className="section-copy">Recherche, Nachvollziehbarkeit und Druckanmerkung fuer den Besuch.</p>
           </div>
         </div>
+        {message ? <Alert type="success">{message}</Alert> : null}
         {error ? <Alert type="error">{error}</Alert> : null}
         {visit ? (
           <>
+            <section className="form-section">
+              <h3>Anmerkung fuer Druck und Besuch</h3>
+              <label>
+                <span className="visually-hidden">Anmerkung</span>
+                <textarea
+                  value={notesDraft}
+                  onChange={(event) => setNotesDraft(event.target.value)}
+                  placeholder="Anmerkung fuer Besucherschein und Nachverfolgung"
+                />
+              </label>
+              <div className="row-actions">
+                <button type="button" onClick={() => void handleSaveNotes()} disabled={savingNotes}>
+                  {savingNotes ? "Speichert..." : "Anmerkung speichern"}
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => setNotesDraft(visit.notes || "")}
+                  disabled={savingNotes}
+                >
+                  Zuruecksetzen
+                </button>
+              </div>
+            </section>
             <dl className="details-list">
               <div><dt>Besuchsnummer</dt><dd>{visit.badgeNumber || visit.id.slice(0, 8).toUpperCase()}</dd></div>
               <div><dt>Status</dt><dd>{formatStatus(visit.status)}</dd></div>
@@ -50,7 +108,6 @@ export function SibeVisitDetailPage() {
               <div><dt>Ausweisart</dt><dd>{visit.idDocumentType || "-"}</dd></div>
               <div><dt>Ausweis gueltig bis</dt><dd>{formatDateOnly(visit.idDocumentValidUntil)}</dd></div>
               <div><dt>Ausweisnummer</dt><dd>{visit.idDocumentNumber || "-"}</dd></div>
-              <div><dt>Ausstellungsort</dt><dd>{visit.idDocumentIssuingPlace || "-"}</dd></div>
               <div><dt>Ansprechpartner</dt><dd>{visit.hostName}</dd></div>
               <div><dt>Ansprechpartner E-Mail</dt><dd>{visit.hostEmail || "-"}</dd></div>
               <div><dt>Ansprechpartner Telefon</dt><dd>{visit.hostPhone || "-"}</dd></div>

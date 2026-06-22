@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  getDefaultMenuAccessForRole,
   assertCanCheckIn,
   assertCanCheckOut,
   assertReturnedBadgeNumberMatches,
@@ -11,6 +12,17 @@ import {
   VISIT_STATUS,
   type AuthenticatedUser
 } from "./visitWorkflow";
+
+function makeUser(role: AuthenticatedUser["role"], gateId: string | null): AuthenticatedUser {
+  return {
+    id: `${role}-id`,
+    username: role,
+    role,
+    gateId,
+    groups: [],
+    menuAccess: getDefaultMenuAccessForRole(role)
+  };
+}
 
 test("check-in only allows pre-registered visits", () => {
   assert.doesNotThrow(() => assertCanCheckIn(VISIT_STATUS.PRE_REGISTERED));
@@ -55,23 +67,13 @@ test("signature follow-up keeps signed_later and missing_exception strict", () =
 });
 
 test("admin can access any assigned gate", () => {
-  const admin: AuthenticatedUser = {
-    id: "admin-id",
-    username: "admin",
-    role: "admin",
-    gateId: null
-  };
+  const admin = makeUser("admin", null);
 
   assert.equal(canAccessGate(admin, "gate-1"), true);
 });
 
 test("admin can update unassigned pre-registered visits in guard workflow", () => {
-  const admin: AuthenticatedUser = {
-    id: "admin-id",
-    username: "admin",
-    role: "admin",
-    gateId: null
-  };
+  const admin = makeUser("admin", null);
 
   assert.equal(
     canManageGuardScopedVisit(admin, { gateId: null, status: VISIT_STATUS.PRE_REGISTERED }, { allowUnassignedPreRegistered: true }),
@@ -80,12 +82,7 @@ test("admin can update unassigned pre-registered visits in guard workflow", () =
 });
 
 test("guard can update unassigned pre-registered visits only with own gate context", () => {
-  const guard: AuthenticatedUser = {
-    id: "guard-id",
-    username: "guard",
-    role: "guard",
-    gateId: "gate-1"
-  };
+  const guard = makeUser("guard", "gate-1");
   const guardWithoutGate: AuthenticatedUser = {
     ...guard,
     gateId: null
@@ -102,35 +99,20 @@ test("guard can update unassigned pre-registered visits only with own gate conte
 });
 
 test("guard users are restricted to their own gate", () => {
-  const guard: AuthenticatedUser = {
-    id: "1",
-    username: "wache",
-    role: "guard",
-    gateId: "gate-1"
-  };
+  const guard = makeUser("guard", "gate-1");
 
   assert.equal(canAccessGate(guard, "gate-1"), true);
   assert.equal(canAccessGate(guard, "gate-2"), false);
 });
 
 test("sibe has no implicit guard scope access", () => {
-  const sibe: AuthenticatedUser = {
-    id: "3",
-    username: "sibe",
-    role: "sibe",
-    gateId: null
-  };
+  const sibe = makeUser("sibe", null);
 
   assert.equal(canAccessGate(sibe, "gate-1"), false);
 });
 
 test("unassigned visits remain blocked when the workflow requires an assigned gate", () => {
-  const admin: AuthenticatedUser = {
-    id: "admin-id",
-    username: "admin",
-    role: "admin",
-    gateId: null
-  };
+  const admin = makeUser("admin", null);
 
   assert.equal(
     canManageGuardScopedVisit(admin, { gateId: null, status: VISIT_STATUS.PRE_REGISTERED }),

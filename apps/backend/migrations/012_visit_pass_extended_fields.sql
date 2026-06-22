@@ -1,5 +1,3 @@
-/* Extended visit pass fields (paper form alignment), all optional */
-
 IF OBJECT_ID('dbo.visitors', 'U') IS NOT NULL
 BEGIN
   IF COL_LENGTH('dbo.visitors', 'visitor_street') IS NULL

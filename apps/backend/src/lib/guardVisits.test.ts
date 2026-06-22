@@ -64,6 +64,15 @@ test("completeness detects invalid range", () => {
   assert.equal(completeness.errors.some((issue: { field: string }) => issue.field === "valid_until"), true);
 });
 
+test("completeness accepts same-day date-only ranges", () => {
+  const { getVisitCompleteness } = require("./guardVisits");
+  const visit = createBaseVisit();
+  visit.validFrom = "2026-05-26";
+  visit.validUntil = "2026-05-26";
+  const completeness = getVisitCompleteness(visit);
+  assert.equal(completeness.errors.some((issue: { field: string }) => issue.field === "valid_until"), false);
+});
+
 test("completeness allows check-in when required fields are present", () => {
   const { getVisitCompleteness } = require("./guardVisits");
   const visit = createBaseVisit();
@@ -95,7 +104,7 @@ test("completeness blocks check-in without address", () => {
   visit.visitorAddress = "";
   const completeness = getVisitCompleteness(visit);
   assert.equal(completeness.canCheckIn, false);
-  assert.equal(completeness.errors.some((issue: { field: string }) => issue.field === "Strasse"), true);
+  assert.equal(completeness.errors.some((issue: { field: string }) => issue.field === "Straße"), true);
 });
 
 test("completeness blocks check-in without id document fields", () => {

@@ -123,6 +123,11 @@ a {
   min-width: 0;
 }
 
+.topbar-subtitle {
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .eyebrow {
   margin: 0 0 4px;
   font-size: 12px;
@@ -295,10 +300,118 @@ button:disabled {
   color: var(--muted);
 }
 
+.muted-text {
+  color: var(--muted);
+}
+
 .section-tabs {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.menu-access-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px 12px;
+  align-content: start;
+}
+
+.menu-access-grid-compact {
+  min-width: 260px;
+}
+
+.compact-checkbox {
+  font-size: 12px;
+}
+
+.muted-option {
+  opacity: 0.55;
+}
+
+.badge-text-type-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0 16px;
+}
+
+.text-type-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  grid-column: 1 / -1;
+}
+
+.active-chip {
+  box-shadow: inset 0 0 0 1px #1f5ea8;
+}
+
+.text-entry-stack {
+  display: grid;
+  gap: 16px;
+}
+
+.text-entry-card,
+.text-editor-card {
+  display: grid;
+  gap: 16px;
+}
+
+.text-entry-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.text-entry-header h4,
+.text-editor-card h4 {
+  margin: 0;
+}
+
+.text-editor-area {
+  min-height: 180px;
+  width: 100%;
+}
+
+.text-editor-actions {
+  align-self: end;
+}
+
+.text-active-toggle {
+  align-self: center;
+}
+
+.stacked-actions {
+  align-items: stretch;
+}
+
+.text-preview-modal {
+  width: min(760px, 96vw);
+}
+
+.text-preview-sheet {
+  display: grid;
+  gap: 18px;
+}
+
+.text-preview-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.text-preview-content {
+  white-space: pre-wrap;
+  line-height: 1.6;
+  padding: 18px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: var(--surface-subtle);
 }
 
 .audit-toolbar {
@@ -475,6 +588,52 @@ textarea {
 
 .public-form-panel {
   min-width: 0;
+  width: 100%;
+}
+
+.public-pre-registration-shell {
+  width: 100%;
+  max-width: none;
+}
+
+.group-import-table {
+  min-width: 980px;
+  table-layout: fixed;
+}
+
+.group-import-table th:nth-child(1),
+.group-import-table th:nth-child(2),
+.group-import-table th:nth-child(3),
+.group-import-table td:nth-child(1),
+.group-import-table td:nth-child(2),
+.group-import-table td:nth-child(3) {
+  min-width: 140px;
+}
+
+.group-import-table th:nth-child(4),
+.group-import-table td:nth-child(4) {
+  min-width: 150px;
+}
+
+.group-import-table th:nth-child(5),
+.group-import-table td:nth-child(5),
+.group-import-table th:nth-child(6),
+.group-import-table td:nth-child(6),
+.group-import-table th:nth-child(7),
+.group-import-table td:nth-child(7) {
+  min-width: 130px;
+}
+
+.group-import-table th:nth-child(8),
+.group-import-table td:nth-child(8) {
+  min-width: 140px;
+  width: 140px;
+}
+
+.group-import-table input,
+.group-import-table select,
+.group-import-table button {
+  width: 100%;
 }
 
 .public-success-block {
@@ -519,33 +678,10 @@ textarea {
 
 .login-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+  grid-template-columns: minmax(320px, 460px);
   gap: 20px;
+  justify-content: center;
   align-items: stretch;
-}
-
-.login-side-card {
-  display: grid;
-  gap: 16px;
-}
-
-.login-role-grid {
-  display: grid;
-  gap: 12px;
-}
-
-.login-role-card {
-  display: grid;
-  gap: 6px;
-  padding: 14px;
-  border: 1px solid var(--panel-border);
-  border-radius: 10px;
-  background: var(--surface-subtle);
-}
-
-.login-role-card span {
-  color: var(--muted);
-  font-size: 14px;
 }
 
 .loading-shell {
@@ -601,14 +737,19 @@ textarea {
 
 .guard-toolbar {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
+  width: 100%;
+  justify-items: stretch;
 }
 
 .toolbar-search {
-  display: flex;
-  flex: 1 1 520px;
-  min-width: 300px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  flex: 1 1 100%;
+  min-width: 0;
   gap: 10px;
+  width: 100%;
 }
 
 .toolbar-search input {
@@ -633,24 +774,15 @@ textarea {
 }
 
 .guard-filter-group {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
+  width: 100%;
 }
 
-.guard-toolbar-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 12px;
-  margin-top: -2px;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.guard-toolbar-meta span {
-  display: inline-flex;
-  align-items: center;
-  min-height: 24px;
+.guard-filter-group .tab-button {
+  flex: 1 1 0;
+  justify-content: center;
 }
 
 .table-wrap,
@@ -1279,6 +1411,27 @@ input[type="checkbox"] {
   font-weight: 700;
 }
 
+.guard-stat-grid {
+  gap: 12px;
+  margin-top: -4px;
+  margin-bottom: -2px;
+}
+
+.guard-mini-card {
+  min-height: 112px;
+  padding: 14px 18px;
+}
+
+.guard-mini-card h3 {
+  font-size: 15px;
+  line-height: 1.2;
+}
+
+.guard-mini-card p {
+  margin-top: 8px;
+  font-size: 18px;
+}
+
 .admin-dashboard-grid .mini-card {
   display: grid;
   gap: 12px;
@@ -1320,6 +1473,20 @@ input[type="checkbox"] {
   display: flex;
   justify-content: space-between;
   gap: 16px;
+}
+
+.badge-header-right {
+  display: grid;
+  gap: 8px;
+  justify-items: end;
+}
+
+.badge-print-logo {
+  display: block;
+  width: 132px;
+  max-width: 100%;
+  height: auto;
+  object-fit: contain;
 }
 
 .badge-number {
@@ -1830,10 +1997,12 @@ input[type="checkbox"] {
 
   .toolbar-search {
     min-width: 0;
+    grid-template-columns: 1fr;
   }
 
   .guard-filter-group {
     width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .guard-filter-group .tab-button {
@@ -1955,6 +2124,11 @@ input[type="checkbox"] {
   .toolbar-search {
     min-width: 220px;
     flex: 1 1 100%;
+    grid-template-columns: 1fr;
+  }
+
+  .guard-filter-group {
+    grid-template-columns: 1fr;
   }
 
   .toolbar select {
@@ -2013,14 +2187,34 @@ input[type="checkbox"] {
 
 @media print {
   @page {
-    size: A4 portrait;
-    margin: 10mm;
+    size: A5 portrait;
+    margin: 6mm;
+  }
+
+  :root {
+    background: #ffffff;
+  }
+
+  html,
+  body,
+  #root {
+    width: 136mm !important;
+    min-width: 0 !important;
+    max-width: 136mm !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+
+  body {
+    height: auto;
   }
 
   body {
     background: #ffffff;
-    font-size: 10.5pt;
-    line-height: 1.22;
+    background-image: none !important;
+    font-size: 8pt;
+    line-height: 1.12;
   }
 
   .topbar,
@@ -2042,13 +2236,21 @@ input[type="checkbox"] {
   .content-container,
   .app-shell,
   .app-header,
+  .print-panel,
   .print-layout {
-    margin: 0;
+    width: 136mm !important;
+    min-width: 0 !important;
+    max-width: 136mm !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    min-height: 0 !important;
+    overflow: visible !important;
   }
 
   .print-layout {
     display: block;
     gap: 0;
+    height: auto !important;
   }
 
   .content-container {
@@ -2061,12 +2263,17 @@ input[type="checkbox"] {
   }
 
   .badge-sheet {
-    width: 100%;
-    max-width: none;
-    min-height: auto;
-    gap: 4mm;
+    width: 136mm !important;
+    max-width: 136mm !important;
+    min-height: 0 !important;
+    height: 170mm;
+    max-height: 170mm;
+    gap: 2mm;
     margin: 0;
-    overflow: visible;
+    overflow: hidden;
+    align-content: start;
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 
   .print-page {
@@ -2080,8 +2287,9 @@ input[type="checkbox"] {
   }
 
   .page-2 {
-    break-after: auto;
+    break-after: avoid-page;
     page-break-after: auto;
+    margin-bottom: 0 !important;
   }
 
   .avoid-break {
@@ -2090,7 +2298,7 @@ input[type="checkbox"] {
   }
 
   .site-map-print {
-    max-height: 95mm;
+    max-height: 90mm;
     object-fit: contain;
   }
 
@@ -2101,27 +2309,36 @@ input[type="checkbox"] {
 
   .badge-header {
     align-items: start;
-    gap: 6mm;
-    margin-bottom: 1mm;
+    gap: 3mm;
+    margin-bottom: 0.5mm;
+  }
+
+  .badge-header-right {
+    gap: 0.8mm;
+  }
+
+  .badge-print-logo {
+    width: 30mm;
+    max-height: 10mm;
   }
 
   .badge-header h2 {
-    font-size: 18pt;
+    font-size: 13pt;
     line-height: 1;
   }
 
   .eyebrow {
-    margin-bottom: 2mm;
-    font-size: 8pt;
+    margin-bottom: 1mm;
+    font-size: 7pt;
   }
 
   .badge-number {
-    font-size: 8.5pt;
-    gap: 1mm;
+    font-size: 7pt;
+    gap: 0.5mm;
   }
 
   .badge-number strong {
-    font-size: 15pt;
+    font-size: 11pt;
     line-height: 1;
   }
 
@@ -2148,95 +2365,113 @@ input[type="checkbox"] {
   }
 
   .signature-section {
-    margin-top: 2mm;
-    gap: 2mm;
+    margin-top: 0.5mm;
+    gap: 0.8mm;
   }
 
   .signature-section h3 {
-    font-size: 10.5pt;
+    font-size: 8pt;
   }
 
   .signature-box {
-    min-height: 14mm;
+    min-height: 6mm;
     padding: 0;
   }
 
   .signature-line {
-    min-height: 12mm;
+    min-height: 4mm;
   }
 
   .signature-section p {
-    font-size: 8.5pt;
-    line-height: 1.18;
+    font-size: 6.8pt;
+    line-height: 1.08;
   }
 
   .print-back-stack {
-    gap: 4mm;
+    gap: 1.2mm;
   }
 
   .print-front-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 3mm;
+    gap: 1.8mm;
   }
 
   .print-info-card {
-    gap: 2mm;
-    padding: 2.5mm;
+    gap: 1mm;
+    padding: 1.5mm;
     border-radius: 0;
   }
 
   .print-info-card h3 {
-    font-size: 10pt;
+    font-size: 7.8pt;
+  }
+
+  .print-map-card {
+    gap: 0.6mm;
+    padding: 1mm;
+  }
+
+  .print-map-card h3 {
+    font-size: 7.2pt;
   }
 
   .print-info-list {
-    gap: 1.6mm;
+    gap: 0.8mm;
   }
 
   .print-info-list dt,
   .print-validity-card span {
-    font-size: 7.5pt;
+    font-size: 6.2pt;
     line-height: 1.1;
   }
 
   .print-info-list dd,
   .print-validity-card strong {
-    font-size: 9pt;
-    line-height: 1.18;
+    font-size: 7.1pt;
+    line-height: 1.08;
   }
 
   .print-front-footer {
-    gap: 3mm;
+    gap: 1mm;
   }
 
   .print-validity-card {
-    gap: 3mm;
-    padding: 2.5mm;
+    gap: 1.5mm;
+    padding: 1.5mm;
     border-radius: 0;
   }
 
   .print-signature-compact {
-    gap: 1.5mm;
+    gap: 0.6mm;
+  }
+
+  .print-front-footer .print-info-card {
+    gap: 0.8mm;
+    padding: 1.2mm;
+  }
+
+  .print-front-footer .print-info-card h3 {
+    font-size: 7.2pt;
   }
 
   .print-block h3,
   .print-callout strong {
-    font-size: 10.5pt;
+    font-size: 7.8pt;
   }
 
   .text-list {
-    padding-left: 5mm;
+    padding-left: 3.2mm;
   }
 
   .text-list li,
   .print-callout p {
-    font-size: 9pt;
-    line-height: 1.22;
+    font-size: 6.8pt;
+    line-height: 1.06;
   }
 
   .print-callout {
-    gap: 1.5mm;
-    padding: 3mm 3.5mm;
+    gap: 0.6mm;
+    padding: 1.2mm 1.5mm;
     border-radius: 0;
   }
 
@@ -2246,5 +2481,11 @@ input[type="checkbox"] {
   .signature-section {
     break-inside: avoid;
     page-break-inside: avoid;
+  }
+
+  .print-layout > *:last-child,
+  .badge-sheet:last-child {
+    break-after: avoid-page !important;
+    page-break-after: auto !important;
   }
 }

@@ -86,6 +86,24 @@ export async function listActiveGates(): Promise<GateSummary[]> {
   return result.recordset;
 }
 
+export async function findActiveGateById(id: string): Promise<GateSummary | null> {
+  const pool = await getPool();
+  const result = await pool.request()
+    .input("id", sql.UniqueIdentifier, id)
+    .query<GateSummary>(`
+      SELECT
+        id,
+        name,
+        description,
+        location
+      FROM dbo.gates
+      WHERE id = @id
+        AND is_active = 1
+    `);
+
+  return result.recordset[0] ?? null;
+}
+
 export async function createPreRegistration(input: CreatePreRegistrationInput): Promise<CreatedPreRegistration> {
   const pool = await getPool();
   const transaction = new sql.Transaction(pool);
@@ -101,6 +119,9 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
       .input("birthDate", sql.Date, cleanOptional(input.birthDate))
       .input("phone", sql.NVarChar(80), cleanOptional(input.phone))
       .input("email", sql.NVarChar(255), cleanOptional(input.email))
+      .input("idDocumentType", sql.NVarChar(40), cleanOptional(input.idDocumentType))
+      .input("idDocumentValidUntil", sql.Date, cleanOptional(input.idDocumentValidUntil))
+      .input("idDocumentNumber", sql.NVarChar(120), cleanOptional(input.idDocumentNumber))
       .query<{ id: string }>(`
         INSERT INTO dbo.visitors (
           first_name,
@@ -108,7 +129,10 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
           company,
           birth_date,
           phone_optional,
-          email_optional
+          email_optional,
+          id_document_type,
+          id_document_valid_until,
+          id_document_number
         )
         OUTPUT inserted.id
         VALUES (
@@ -117,7 +141,10 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
           @company,
           @birthDate,
           @phone,
-          @email
+          @email,
+          @idDocumentType,
+          @idDocumentValidUntil,
+          @idDocumentNumber
         )
       `);
 

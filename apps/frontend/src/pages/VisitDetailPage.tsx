@@ -172,7 +172,7 @@ export function VisitDetailPage() {
                   <div className="detail-hero-purpose">Zweck: {visit.purpose}</div>
                 </div>
                 <div className="detail-hero-right">
-                  <div className="detail-hero-item"><span>Gueltig</span><strong>{formatDateOnly(visit.validFrom)} - {formatDateOnly(visit.validUntil)}</strong></div>
+                  <div className="detail-hero-item"><span>Gültig</span><strong>{formatDateOnly(visit.validFrom)} - {formatDateOnly(visit.validUntil)}</strong></div>
                   <div className="detail-hero-item"><span>Check-in</span><strong>{visit.checkInAt ? `${formatDateTime(visit.checkInAt)}${visit.checkInBy ? ` durch ${visit.checkInBy}` : ""}` : "-"}</strong></div>
                   <div className="detail-hero-item"><span>Check-out</span><strong>{visit.checkOutAt ? `${formatDateTime(visit.checkOutAt)}${visit.checkOutBy ? ` durch ${visit.checkOutBy}` : ""}` : "offen"}</strong></div>
                 </div>
@@ -246,7 +246,7 @@ export function VisitDetailPage() {
                 </div>
 
                 <Card className="edit-required-card">
-                  <h3>Pflichtdaten fuer Check-in und Druck</h3>
+                  <h3>Pflichtdaten für Check-in und Druck</h3>
                   <div className="form-grid two-columns">
                     {currentUser?.role === "admin" ? (
                       <FormField label="Wache" error={fieldErrors.gateId}>
@@ -264,8 +264,8 @@ export function VisitDetailPage() {
                     <FormField label="Ansprechpartner" required error={fieldErrors.hostName}><input className={missingRequired.has("Ansprechpartner") ? "required-missing" : ""} value={editForm.hostName} onChange={(event) => setEditForm((current) => current ? { ...current, hostName: event.target.value } : current)} /></FormField>
                     <FormField label="Ansprechpartner Telefon" required error={fieldErrors.hostPhone}><input className={missingRequired.has("Ansprechpartner Telefon") ? "required-missing" : ""} value={editForm.hostPhone} onChange={(event) => setEditForm((current) => current ? { ...current, hostPhone: event.target.value } : current)} /></FormField>
                     <FormField label="Besuchszweck" required error={fieldErrors.purpose}><input className={missingRequired.has("Besuchszweck") ? "required-missing" : ""} value={editForm.purpose} onChange={(event) => setEditForm((current) => current ? { ...current, purpose: event.target.value } : current)} /></FormField>
-                    <FormField label="Gueltig von" required error={fieldErrors.validFrom}><input className={missingRequired.has("Gueltig von") ? "required-missing" : ""} type="date" value={editForm.validFrom} onChange={(event) => setEditForm((current) => current ? { ...current, validFrom: event.target.value } : current)} /></FormField>
-                    <FormField label="Gueltig bis" required error={fieldErrors.validUntil}><input className={missingRequired.has("Gueltig bis") ? "required-missing" : ""} type="date" value={editForm.validUntil} onChange={(event) => setEditForm((current) => current ? { ...current, validUntil: event.target.value } : current)} /></FormField>
+                    <FormField label="Gültig von" required error={fieldErrors.validFrom}><input className={missingRequired.has("Gültig von") ? "required-missing" : ""} type="date" value={editForm.validFrom} onChange={(event) => setEditForm((current) => current ? { ...current, validFrom: event.target.value } : current)} /></FormField>
+                    <FormField label="Gültig bis" required error={fieldErrors.validUntil}><input className={missingRequired.has("Gültig bis") ? "required-missing" : ""} type="date" value={editForm.validUntil} onChange={(event) => setEditForm((current) => current ? { ...current, validUntil: event.target.value } : current)} /></FormField>
                   </div>
                 </Card>
 
@@ -294,12 +294,11 @@ export function VisitDetailPage() {
 
                 <Card>
                   <h3>Ausweisdaten</h3>
-                  <p className="section-copy">Ausweisdaten werden fuer den Wache-Prozess erfasst und nicht in Uebersichten angezeigt.</p>
+                  <p className="section-copy">Ausweisdaten werden für den Wache-Prozess erfasst und nicht in Übersichten angezeigt.</p>
                   <div className="form-grid two-columns">
                     <FormField label="Ausweisart" required error={fieldErrors.idDocumentType}><select className={missingRequired.has("Ausweisart") ? "required-missing" : ""} value={editForm.idDocumentType} onChange={(event) => setEditForm((current) => current ? { ...current, idDocumentType: event.target.value as GuardVisitEditState["idDocumentType"] } : current)}><option value="">-</option><option value="identity_card">Personalausweis</option><option value="passport">Reisepass</option><option value="other">Sonstiges</option></select></FormField>
-                    <FormField label="Ausweis gueltig bis" required error={fieldErrors.idDocumentValidUntil}><input className={missingRequired.has("Ausweis gueltig bis") ? "required-missing" : ""} type="date" value={editForm.idDocumentValidUntil} onChange={(event) => setEditForm((current) => current ? { ...current, idDocumentValidUntil: event.target.value } : current)} /></FormField>
+                    <FormField label="Ausweis gültig bis" required error={fieldErrors.idDocumentValidUntil}><input className={missingRequired.has("Ausweis gültig bis") ? "required-missing" : ""} type="date" value={editForm.idDocumentValidUntil} onChange={(event) => setEditForm((current) => current ? { ...current, idDocumentValidUntil: event.target.value } : current)} /></FormField>
                     <FormField label="Ausweisnummer" required error={fieldErrors.idDocumentNumber}><input className={missingRequired.has("Ausweisnummer") ? "required-missing" : ""} value={editForm.idDocumentNumber} onChange={(event) => setEditForm((current) => current ? { ...current, idDocumentNumber: event.target.value } : current)} /></FormField>
-                    <FormField label="Ausstellungsort" required error={fieldErrors.idDocumentIssuingPlace}><input className={missingRequired.has("Ausstellungsort") ? "required-missing" : ""} value={editForm.idDocumentIssuingPlace} onChange={(event) => setEditForm((current) => current ? { ...current, idDocumentIssuingPlace: event.target.value } : current)} /></FormField>
                   </div>
                 </Card>
 
@@ -374,8 +373,8 @@ export function VisitDetailPage() {
                   <div className="detail-grid">
                     <div><span className="detail-label">Besuchszweck</span><strong>{visit.purpose}</strong></div>
                     <div><span className="detail-label">Wache</span><strong>{visit.gateName || "-"}</strong></div>
-                    <div><span className="detail-label">Gueltig von</span><strong>{formatDateOnly(visit.validFrom)}</strong></div>
-                    <div><span className="detail-label">Gueltig bis</span><strong>{formatDateOnly(visit.validUntil)}</strong></div>
+                    <div><span className="detail-label">Gültig von</span><strong>{formatDateOnly(visit.validFrom)}</strong></div>
+                    <div><span className="detail-label">Gültig bis</span><strong>{formatDateOnly(visit.validUntil)}</strong></div>
                     {visit.notes ? <div className="detail-span-2"><span className="detail-label">Bemerkung</span><strong>{visit.notes}</strong></div> : null}
                     {visit.visitPurposeType ? <div><span className="detail-label">Besuchszweck-Art</span><strong>{visit.visitPurposeType}</strong></div> : null}
                     {visit.visitCompanyOrder ? <div><span className="detail-label">Auftrag Firma / Dienststelle</span><strong>{visit.visitCompanyOrder}</strong></div> : null}
@@ -392,14 +391,13 @@ export function VisitDetailPage() {
                   </div>
                 </Card>
 
-                {(visit.idDocumentType || visit.idDocumentValidUntil || visit.idDocumentNumber || visit.idDocumentIssuingPlace) ? (
+                {(visit.idDocumentType || visit.idDocumentValidUntil || visit.idDocumentNumber) ? (
                   <details className="panel">
                     <summary>Ausweis / Zusatzdaten</summary>
                     <div className="detail-grid">
                       {visit.idDocumentType ? <div><span className="detail-label">Ausweisart</span><strong>{visit.idDocumentType}</strong></div> : null}
-                      {visit.idDocumentValidUntil ? <div><span className="detail-label">Gueltig bis</span><strong>{formatDateOnly(visit.idDocumentValidUntil)}</strong></div> : null}
+                      {visit.idDocumentValidUntil ? <div><span className="detail-label">Gültig bis</span><strong>{formatDateOnly(visit.idDocumentValidUntil)}</strong></div> : null}
                       {visit.idDocumentNumber ? <div><span className="detail-label">Ausweisnummer</span><strong>{visit.idDocumentNumber}</strong></div> : null}
-                      {visit.idDocumentIssuingPlace ? <div><span className="detail-label">Ausstellungsort</span><strong>{visit.idDocumentIssuingPlace}</strong></div> : null}
                     </div>
                   </details>
                 ) : null}

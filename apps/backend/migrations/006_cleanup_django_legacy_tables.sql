@@ -1,17 +1,3 @@
-/*
-  Legacy-Django-Cleanup
-  ---------------------
-  Diese Migration entfernt ausschliesslich eindeutig alte Django-/Prototyp-Tabellen,
-  die von der aktuellen Node.js/TypeScript-Anwendung nicht mehr verwendet werden.
-
-  Vor der Ausfuehrung:
-  1. Datenbankbackup erstellen
-  2. Optional das begleitende Script docs/sql/backup_legacy_django_tables.sql verwenden
-  3. Sicherstellen, dass die neuen Zieltabellen erhalten bleiben:
-     users, visitors, visits, gates, site_maps, badge_text_templates,
-     system_settings, audit_logs, schema_migrations
-*/
-
 IF OBJECT_ID(N'dbo.auth_user_user_permissions', N'U') IS NOT NULL
 BEGIN
     DROP TABLE dbo.auth_user_user_permissions;

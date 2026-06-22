@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "vite",
-    "build": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json && node ../../node_modules/vite/bin/vite.js build",
+    "build": "bash ../../scripts/ops/fix_node_permissions.sh && node ../../node_modules/typescript/bin/tsc -p tsconfig.json && node ../../node_modules/vite/bin/vite.js build",
     "preview": "vite preview",
     "typecheck": "node ../../node_modules/typescript/bin/tsc --noEmit -p tsconfig.json"
   },

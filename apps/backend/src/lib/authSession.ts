@@ -14,6 +14,8 @@ type SessionPayload = {
   exp: number;
 };
 
+type SessionUser = Pick<AuthenticatedUser, "id" | "username" | "role" | "gateId">;
+
 function toBase64Url(value: string): string {
   return Buffer.from(value, "utf8").toString("base64url");
 }
@@ -26,7 +28,7 @@ function createSignature(payloadSegment: string): string {
   return crypto.createHmac("sha256", env.APP_SECRET).update(payloadSegment).digest("base64url");
 }
 
-export function createSessionToken(user: AuthenticatedUser): string {
+export function createSessionToken(user: SessionUser): string {
   const payload: SessionPayload = {
     userId: user.id,
     username: user.username,
@@ -40,7 +42,7 @@ export function createSessionToken(user: AuthenticatedUser): string {
   return `${payloadSegment}.${signature}`;
 }
 
-export function readSessionToken(token: string | undefined): AuthenticatedUser | null {
+export function readSessionToken(token: string | undefined): SessionUser | null {
   if (!token) {
     return null;
   }
@@ -71,7 +73,7 @@ export function readSessionToken(token: string | undefined): AuthenticatedUser |
   };
 }
 
-export function setSessionCookie(response: Response, user: AuthenticatedUser): void {
+export function setSessionCookie(response: Response, user: SessionUser): void {
   response.cookie(sessionCookieName, createSessionToken(user), {
     sameSite: "strict",
     secure: env.APP_SECURE_COOKIES,

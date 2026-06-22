@@ -4,6 +4,7 @@ import type { Request, Response } from "express";
 import { env } from "../config/env";
 import { clearSessionCookie, getSessionCookieName, readSessionToken } from "../lib/authSession";
 import { writeErrorLog } from "../lib/errorLogs";
+import { findActiveGateById } from "../lib/publicPreRegistrations";
 import { findUserById } from "../lib/users";
 import type { AuthenticatedUser } from "../lib/visitWorkflow";
 
@@ -135,8 +136,21 @@ export async function resolveAuthenticatedUser(request: Request): Promise<Authen
   }
 
   const currentUser = await findUserById(sessionUser.id);
-  request.auth = currentUser;
-  return currentUser;
+  if (!currentUser) {
+    request.auth = null;
+    return null;
+  }
+
+  const activeGateId = currentUser.role === "guard" ? sessionUser.gateId : currentUser.gateId;
+  const activeGate = activeGateId ? await findActiveGateById(activeGateId) : null;
+  const resolvedUser: AuthenticatedUser = {
+    ...currentUser,
+    gateId: activeGate?.id ?? null,
+    gateName: activeGate?.name ?? null
+  };
+
+  request.auth = resolvedUser;
+  return resolvedUser;
 }
 
 export async function requireAuthenticatedUser(request: Request, response: Response): Promise<AuthenticatedUser | null> {
