@@ -1,26 +1,18 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Navigate } from "react-router-dom";
 import { ImportReviewModal } from "../components/ImportReviewModal";
-import { Alert, Card } from "../components/ui";
+import { ImportResultCard } from "../components/import/ImportResultCard";
+import { ImportTemplateCard } from "../components/import/ImportTemplateCard";
+import type { ImportResult } from "../components/import/importTypes";
+import { Alert } from "../components/ui";
 import { AppLayout, type ApiError, fetchJson, useAuth } from "../app/core";
-
-type ImportResult = {
-  imported: number;
-  needsReview: number;
-  message: string;
-  rows: Array<{
-    rowNumber: number;
-    visitId: string;
-    visitorName: string;
-    company: string;
-    missingFields: string[];
-    warnings: string[];
-    needsReview: boolean;
-  }>;
-};
 
 export function ImportPage() {
   const { user } = useAuth();
+  if (user?.role === "kaskdt") {
+    return <Navigate to="/kaskdt" replace />;
+  }
+
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -30,7 +22,7 @@ export function ImportPage() {
 
   async function handleImport() {
     if (!importFile) {
-      setError("Bitte CSV- oder Excel-Datei auswaehlen.");
+      setError("Bitte eine Excel-Datei auswählen.");
       return;
     }
 
@@ -58,10 +50,6 @@ export function ImportPage() {
     }
   }
 
-  function downloadImportTemplateCsv() {
-    window.location.href = user ? "/api/sibe/visits/import-template.csv" : "/api/public/visits/import-template.csv";
-  }
-
   function downloadImportTemplateExcel() {
     window.location.href = user ? "/api/sibe/visits/import-template.xlsx" : "/api/public/visits/import-template.xlsx";
   }
@@ -70,75 +58,34 @@ export function ImportPage() {
 
   return (
     <AppLayout>
-      <main className="panel page-panel page-shell">
-        <div className="section-header">
-          <div>
-            <h2>Besucher-Import</h2>
+      <main className="page-panel page-shell-wide">
+        <section className="page-hero import-page-hero">
+          <div className="page-hero-grid">
+            <div className="page-hero-content">
+              <h2>Besucherimport</h2>
+            </div>
           </div>
-        </div>
+        </section>
 
         {message ? <Alert type="success">{message}</Alert> : null}
         {error ? <Alert type="error">{error}</Alert> : null}
 
-        <Card>
-          <h3>Vorlagen</h3>
-          <div className="row-actions">
-            <button type="button" onClick={downloadImportTemplateExcel}>Excel-Vorlage herunterladen (Empfohlen)</button>
-            <button type="button" className="secondary-button" onClick={downloadImportTemplateCsv}>CSV-Vorlage herunterladen</button>
-          </div>
-        </Card>
-
-        <Card>
-          <h3>Datei importieren</h3>
-          <div className="toolbar filter-bar import-export-bar">
-            <input
-              type="file"
-              accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
-              onChange={(event) => setImportFile(event.target.files?.[0] ?? null)}
-            />
-            <button type="button" onClick={() => void handleImport()} disabled={importing || !importFile}>
-              {importing ? "Importiert..." : "Besucher importieren"}
-            </button>
-          </div>
-        </Card>
-
-        {importResult && importResult.rows.length > 0 ? (
-          <Card>
-            <h3>Import-Ergebnis</h3>
-            <p className="section-copy">{importResult.imported} Einträge verarbeitet, {importResult.needsReview} davon mit Nachbearbeitung.</p>
-            <div className="table-wrap">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Zeile</th>
-                    <th>Besucher</th>
-                    <th>Firma</th>
-                    <th>Status</th>
-                    <th>Aktion</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {importResult.rows.map((row) => (
-                    <tr key={row.visitId}>
-                      <td>{row.rowNumber}</td>
-                      <td>{row.visitorName}</td>
-                      <td>{row.company}</td>
-                      <td>{row.needsReview ? [...row.missingFields, ...row.warnings].join(" ") || "Nachbearbeitung" : "Importiert"}</td>
-                      <td>
-                        {user ? (
-                          <Link className="button-link" to={`${detailBasePath}/${row.visitId}`}>
-                            Oeffnen
-                          </Link>
-                        ) : (
-                          <span className="muted-text">Login fuer Details</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
+        <section className="import-upload-layout">
+          <ImportTemplateCard
+            onDownloadExcel={downloadImportTemplateExcel}
+            importFile={importFile}
+            importing={importing}
+            onFileChange={setImportFile}
+            onImport={() => void handleImport()}
+            importDisabledHint="Bitte zuerst eine Excel-Datei auswählen."
+          />
+        </section>
+        {importResult ? (
+          <ImportResultCard
+            result={importResult}
+            detailBasePath={detailBasePath}
+            canOpenDetails={Boolean(user)}
+          />
         ) : null}
 
         {reviewModalOpen && importResult ? (

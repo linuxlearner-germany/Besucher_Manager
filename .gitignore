@@ -6,3 +6,4 @@ apps/*/dist/
 __pycache__/
 *.py[cod]
 uploads/
+config/mail-relay.yml

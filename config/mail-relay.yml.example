@@ -1,0 +1,11 @@
+mailRelay:
+  enabled: true
+  host: smtp-relay.intern.example
+  port: 587
+  secure: false
+  username: relay-user
+  password: relay-pass
+  fromAddress: "Besucher Manager <noreply@example.org>"
+  approvalRecipients:
+    - sibe1@example.org
+    - sibe2@example.org

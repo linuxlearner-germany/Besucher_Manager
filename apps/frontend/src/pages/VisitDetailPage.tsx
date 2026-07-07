@@ -149,7 +149,6 @@ export function VisitDetailPage() {
         <div className="section-header">
           <div>
             <h2>Besucherdetails</h2>
-            <p className="section-copy">Detailansicht mit allen relevanten Besuchsdaten und Aktionen.</p>
           </div>
         </div>
 
@@ -283,9 +282,9 @@ export function VisitDetailPage() {
 
                 <Card>
                   <h3>Adresse</h3>
-                  <p className="section-copy">Adresse ist vollstaendig, wenn Strasse, Hausnummer, PLZ und Wohnort gesetzt sind.</p>
+                  <p className="section-copy">Adresse ist vollständig, wenn Straße, Hausnummer, PLZ und Wohnort gesetzt sind.</p>
                   <div className="form-grid two-columns">
-                    <FormField label="Strasse" required error={fieldErrors.visitorStreet}><input className={missingRequired.has("Strasse") || missingRequired.has("Adresse") ? "required-missing" : ""} value={editForm.visitorStreet} onChange={(event) => setEditForm((current) => current ? { ...current, visitorStreet: event.target.value } : current)} /></FormField>
+                    <FormField label="Straße" required error={fieldErrors.visitorStreet}><input className={missingRequired.has("Strasse") || missingRequired.has("Straße") || missingRequired.has("Adresse") ? "required-missing" : ""} value={editForm.visitorStreet} onChange={(event) => setEditForm((current) => current ? { ...current, visitorStreet: event.target.value } : current)} /></FormField>
                     <FormField label="Hausnummer" required error={fieldErrors.visitorHouseNumber}><input className={missingRequired.has("Hausnummer") || missingRequired.has("Adresse") ? "required-missing" : ""} value={editForm.visitorHouseNumber} onChange={(event) => setEditForm((current) => current ? { ...current, visitorHouseNumber: event.target.value } : current)} /></FormField>
                     <FormField label="PLZ" required error={fieldErrors.visitorPostalCode}><input className={missingRequired.has("PLZ") || missingRequired.has("Adresse") ? "required-missing" : ""} value={editForm.visitorPostalCode} onChange={(event) => setEditForm((current) => current ? { ...current, visitorPostalCode: event.target.value } : current)} /></FormField>
                     <FormField label="Wohnort" required error={fieldErrors.visitorCity}><input className={missingRequired.has("Wohnort") || missingRequired.has("Adresse") ? "required-missing" : ""} value={editForm.visitorCity} onChange={(event) => setEditForm((current) => current ? { ...current, visitorCity: event.target.value } : current)} /></FormField>
@@ -306,7 +305,7 @@ export function VisitDetailPage() {
                   <summary>Ziel / Raum optional</summary>
                   <div className="form-grid two-columns">
                     <FormField label="Dienststelle / Einheit"><input value={editForm.hostUnit} onChange={(event) => setEditForm((current) => current ? { ...current, hostUnit: event.target.value } : current)} /></FormField>
-                    <FormField label="Gebaeude / Hausnummer"><input value={editForm.hostBuilding} onChange={(event) => setEditForm((current) => current ? { ...current, hostBuilding: event.target.value } : current)} /></FormField>
+                    <FormField label="Gebäude / Hausnummer"><input value={editForm.hostBuilding} onChange={(event) => setEditForm((current) => current ? { ...current, hostBuilding: event.target.value } : current)} /></FormField>
                     <FormField label="Zimmernummer"><input value={editForm.hostRoom} onChange={(event) => setEditForm((current) => current ? { ...current, hostRoom: event.target.value } : current)} /></FormField>
                     <FormField label="Apparat / Durchwahl"><input value={editForm.hostExtension} onChange={(event) => setEditForm((current) => current ? { ...current, hostExtension: event.target.value } : current)} /></FormField>
                   </div>
@@ -363,7 +362,7 @@ export function VisitDetailPage() {
                     {visit.hostEmail ? <div><span className="detail-label">E-Mail</span><strong>{visit.hostEmail}</strong></div> : null}
                     {visit.hostDepartment ? <div><span className="detail-label">Abteilung / Bereich</span><strong>{visit.hostDepartment}</strong></div> : null}
                     {visit.hostUnit ? <div><span className="detail-label">Dienststelle / Einheit</span><strong>{visit.hostUnit}</strong></div> : null}
-                    {visit.hostBuilding ? <div><span className="detail-label">Gebaeude / Haus</span><strong>{visit.hostBuilding}</strong></div> : null}
+                    {visit.hostBuilding ? <div><span className="detail-label">Gebäude / Haus</span><strong>{visit.hostBuilding}</strong></div> : null}
                     {visit.hostRoom ? <div><span className="detail-label">Zimmer</span><strong>{visit.hostRoom}</strong></div> : null}
                     {visit.hostExtension ? <div><span className="detail-label">Apparat</span><strong>{visit.hostExtension}</strong></div> : null}
                   </div>

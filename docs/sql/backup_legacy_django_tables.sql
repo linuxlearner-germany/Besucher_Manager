@@ -1,10 +1,3 @@
-/*
-  Vor der Bereinigung alter Django-Tabellen:
-  - Datenbankbackup auf SQL-Server-Ebene erstellen
-  - Dieses Script kann als Export-/Pruefhilfe verwendet werden
-  - Keine Secrets in dieses Script eintragen
-*/
-
 SELECT TABLE_NAME
 FROM INFORMATION_SCHEMA.TABLES
 WHERE TABLE_SCHEMA = 'dbo'
@@ -23,8 +16,3 @@ SELECT TOP 100 * FROM dbo.core_gate;
 SELECT TOP 100 * FROM dbo.core_systemsetting;
 SELECT TOP 100 * FROM dbo.visits_visit;
 SELECT TOP 100 * FROM dbo.visits_visitor;
-
-/*
-  Danach die Daten nach Bedarf per SSMS/DataGrip exportieren
-  und erst im Anschluss die Cleanup-Migration ausfuehren.
-*/

@@ -1,50 +1,16 @@
 "use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.apiRouter = void 0;
 const express_1 = require("express");
-const multer_1 = __importStar(require("multer"));
 const zod_1 = require("zod");
 const authSession_1 = require("../lib/authSession");
-const importTemplateFiles_1 = require("../lib/importTemplateFiles");
 const publicPreRegistrations_1 = require("../lib/publicPreRegistrations");
 const publicPreRegistrationSchema_1 = require("../lib/publicPreRegistrationSchema");
 const rateLimit_1 = require("../lib/rateLimit");
 const users_1 = require("../lib/users");
 const visitImport_1 = require("../lib/visitImport");
 const shared_1 = require("./shared");
+const visitorImport_1 = require("./visitorImport");
 const admin_1 = require("./admin");
 const guard_1 = require("./guard");
 const sibe_1 = require("./sibe");
@@ -77,13 +43,6 @@ const publicGroupPreRegistrationSchema = zod_1.z.object({
     })).min(1).max(50)
 });
 exports.apiRouter = (0, express_1.Router)();
-const publicVisitorImportUpload = (0, multer_1.default)({
-    storage: multer_1.default.memoryStorage(),
-    limits: {
-        fileSize: 5 * 1024 * 1024,
-        files: 1
-    }
-});
 exports.apiRouter.get("/api/meta", (_request, response) => {
     response.json({
         modules: ["public-pre-registration", "guard-dashboard", "admin-panel"],
@@ -165,13 +124,13 @@ exports.apiRouter.post("/api/auth/login", async (request, response) => {
             ? "/admin"
             : menuAccess.includes("wache")
                 ? "/wache"
-                : menuAccess.includes("sibe")
-                    ? "/sibe"
-                    : menuAccess.includes("kaskdt")
-                        ? "/kaskdt"
-                        : menuAccess.includes("texte")
-                            ? "/kaskdt/texte"
-                            : "/import";
+                : menuAccess.includes("genehmigung")
+                    ? "/genehmigungen"
+                    : menuAccess.includes("sibe")
+                        ? "/sibe"
+                        : menuAccess.includes("kaskdt")
+                            ? "/kaskdt"
+                            : "/";
         return response.json({
             user: {
                 id: candidate.id,
@@ -223,7 +182,7 @@ exports.apiRouter.post("/api/public/pre-registrations/group", async (request, re
             fallbackGateId: parsed.data.gateId || null
         });
         return response.status(201).json({
-            message: `${created.imported} Besucher wurden als Voranmeldung gespeichert.`,
+            message: `${created.imported} Besucher wurden als Voranmeldung gespeichert und zur SiBe-Freigabe eingereicht.`,
             ...created
         });
     }
@@ -241,56 +200,13 @@ exports.apiRouter.post("/api/public/visits/import", async (request, response) =>
             message: "Zu viele Importversuche. Bitte spaeter erneut versuchen."
         });
     }
-    return publicVisitorImportUpload.single("file")(request, response, async (error) => {
-        if (error) {
-            if (error instanceof multer_1.MulterError && error.code === "LIMIT_FILE_SIZE") {
-                return (0, shared_1.sendError)(response, 400, "FILE_TOO_LARGE", "Die Importdatei ist groesser als 5 MB.");
-            }
-            return (0, shared_1.sendError)(response, 400, "UPLOAD_ERROR", "Die Importdatei konnte nicht gelesen werden.");
-        }
-        const file = request.file;
-        if (!file) {
-            return (0, shared_1.sendValidationError)(response, { fieldErrors: { file: ["Bitte CSV- oder Excel-Datei auswaehlen."] } });
-        }
-        try {
-            const extension = file.originalname.toLowerCase().split(".").pop() || "";
-            const rows = extension === "xlsx" || extension === "xls"
-                ? (0, visitImport_1.parseExcelBuffer)(file.buffer)
-                : (0, visitImport_1.parseCsvBuffer)(file.buffer);
-            if (rows.length === 0) {
-                return (0, shared_1.sendValidationError)(response, { fieldErrors: { file: ["Keine importierbaren Zeilen gefunden."] } });
-            }
-            if (rows.length > 250) {
-                return (0, shared_1.sendError)(response, 400, "VALIDATION_ERROR", "Bitte maximal 250 Besucher pro Datei importieren.");
-            }
-            const imported = await (0, visitImport_1.createImportedPreRegistrations)(rows, {
-                source: "file_import",
-                createdBy: null,
-                submittedIpAddress: request.ip || request.socket.remoteAddress || null,
-                userAgent: typeof request.headers["user-agent"] === "string" ? request.headers["user-agent"] : null,
-                fallbackGateId: null
-            });
-            return response.status(201).json({
-                message: `${imported.imported} Besucher importiert.`,
-                ...imported
-            });
-        }
-        catch (importError) {
-            return (0, shared_1.handleUnexpectedError)(response, importError, "IMPORT_ERROR", "Der Besucherimport konnte nicht verarbeitet werden.");
-        }
+    return (0, visitorImport_1.handleVisitorImportUpload)(request, response, {
+        createdBy: null,
+        fallbackGateId: null
     });
 });
-exports.apiRouter.get("/api/public/visits/import-template.csv", (_request, response) => {
-    const csv = `\uFEFF${(0, importTemplateFiles_1.buildImportTemplateCsv)()}`;
-    response.setHeader("Content-Type", "text/csv; charset=utf-8");
-    response.setHeader("Content-Disposition", 'attachment; filename="besucher-import-vorlage.csv"');
-    return response.status(200).send(csv);
-});
 exports.apiRouter.get("/api/public/visits/import-template.xlsx", async (_request, response) => {
-    const workbookBuffer = await (0, importTemplateFiles_1.buildImportTemplateWorkbookBuffer)();
-    response.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    response.setHeader("Content-Disposition", 'attachment; filename="besucher-import-vorlage.xlsx"');
-    return response.status(200).send(workbookBuffer);
+    return (0, visitorImport_1.sendVisitorImportTemplateWorkbook)(response);
 });
 exports.apiRouter.post("/api/auth/logout", async (_request, response) => {
     (0, authSession_1.clearSessionCookie)(response);
@@ -332,10 +248,13 @@ exports.apiRouter.post("/api/public/pre-registrations", async (request, response
             userAgent: typeof request.headers["user-agent"] === "string" ? request.headers["user-agent"] : null
         });
         return response.status(201).json({
-            message: "Voranmeldung erfolgreich gespeichert.",
+            message: created.approvalStatus === "pending"
+                ? "Voranmeldung gespeichert und zur SiBe-Freigabe eingereicht."
+                : "Voranmeldung erfolgreich gespeichert.",
             visitId: created.visitId,
             visitorId: created.visitorId,
-            status: created.status
+            status: created.status,
+            approvalStatus: created.approvalStatus
         });
     }
     catch (error) {

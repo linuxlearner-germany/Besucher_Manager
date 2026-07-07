@@ -1,31 +1,32 @@
 import sql from "mssql";
 import { Router } from "express";
-import multer, { MulterError } from "multer";
 import { z } from "zod";
 import { writeAuditLog } from "../lib/auditLog";
 import { getPool } from "../lib/db";
-import { buildImportTemplateCsv, buildImportTemplateWorkbookBuffer } from "../lib/importTemplateFiles";
-import {
-  createImportedPreRegistrations,
-  parseCsvBuffer,
-  parseExcelBuffer
-} from "../lib/visitImport";
-import { HOST_SIGNATURE_STATUS, VISIT_STATUS } from "../lib/visitWorkflow";
-import { getRequestIp, getRequestUserAgent, handleUnexpectedError, requireRole, sendError, sendValidationError } from "./shared";
+import { notifyApprovalDecision } from "../lib/mailRelay";
+import { APPROVAL_STATUS, HOST_SIGNATURE_STATUS, VISIT_STATUS, hasPermission } from "../lib/visitWorkflow";
+import { getRequestIp, getRequestUserAgent, handleUnexpectedError, requireAnyPermission, requirePermission, requireRole, sendError, sendValidationError } from "./shared";
+import { handleVisitorImportUpload, sendVisitorImportTemplateWorkbook } from "./visitorImport";
 
 export const sibeRouter = Router();
-const visitorImportUpload = multer({
-  storage: multer.memoryStorage(),
-  limits: {
-    fileSize: 5 * 1024 * 1024,
-    files: 1
-  }
-});
 
-const sibeRoles = ["admin", "sibe", "kaskdt"] as const;
-const importRoles = ["admin", "guard", "sibe", "kaskdt"] as const;
+const sibeReadRoles = ["admin", "sibe", "kaskdt"] as const;
+const sibeWriteRoles = ["admin", "sibe"] as const;
+const importRoles = ["admin", "guard", "sibe"] as const;
 const sibeVisitNotesSchema = z.object({
   notes: z.string().trim().max(4000, "Die Anmerkung darf maximal 4000 Zeichen enthalten.").optional().or(z.literal(""))
+});
+const sibeApprovalDecisionSchema = z.object({
+  status: z.enum([APPROVAL_STATUS.APPROVED, APPROVAL_STATUS.REJECTED]),
+  note: z.string().trim().max(1000, "Der Hinweis darf maximal 1000 Zeichen enthalten.").optional().or(z.literal(""))
+}).superRefine((value, context) => {
+  if (value.status === APPROVAL_STATUS.REJECTED && !value.note?.trim()) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["note"],
+      message: "Bitte begruenden Sie die Ablehnung."
+    });
+  }
 });
 
 function csvEscape(value: unknown): string {
@@ -75,12 +76,12 @@ function buildCsv(rows: Array<Record<string, unknown>>): string {
 }
 
 sibeRouter.get("/api/sibe/summary", async (request, response) => {
-  const user = await requireRole(request, response, [...sibeRoles]);
+  const user = await requireAnyPermission(request, response, ["dashboards.sibe", "dashboards.commander"]);
   if (!user) return;
 
   try {
     const pool = await getPool();
-    const [visitorsTotal, activeVisitors, todaysVisits, checkedInVisitors, usersTotal, activeUsers, signaturesPending, signaturesFollowUp, signaturesExceptions] = await Promise.all([
+    const [visitorsTotal, activeVisitors, todaysVisits, checkedInVisitors, usersTotal, activeUsers, signaturesPending, signaturesFollowUp, signaturesExceptions, approvalsPending] = await Promise.all([
       pool.request().query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.visitors WHERE is_deleted = 0"),
       pool.request().query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.visitors WHERE is_deleted = 0 AND is_active = 1"),
       pool.request().query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.visits WHERE CAST(valid_from AS date) = CAST(SYSUTCDATETIME() AS date)"),
@@ -89,7 +90,8 @@ sibeRouter.get("/api/sibe/summary", async (request, response) => {
       pool.request().query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.users WHERE is_active = 1"),
       pool.request().query<{ count: number }>(`SELECT COUNT(*) AS count FROM dbo.visits WHERE ISNULL(host_signature_status, '${HOST_SIGNATURE_STATUS.PENDING}') = '${HOST_SIGNATURE_STATUS.PENDING}'`),
       pool.request().query<{ count: number }>(`SELECT COUNT(*) AS count FROM dbo.visits WHERE host_signature_status = '${HOST_SIGNATURE_STATUS.SIGNED_LATER}'`),
-      pool.request().query<{ count: number }>(`SELECT COUNT(*) AS count FROM dbo.visits WHERE host_signature_status = '${HOST_SIGNATURE_STATUS.MISSING_EXCEPTION}'`)
+      pool.request().query<{ count: number }>(`SELECT COUNT(*) AS count FROM dbo.visits WHERE host_signature_status = '${HOST_SIGNATURE_STATUS.MISSING_EXCEPTION}'`),
+      pool.request().query<{ count: number }>(`SELECT COUNT(*) AS count FROM dbo.visits WHERE ISNULL(approval_status, '${APPROVAL_STATUS.NOT_REQUIRED}') = '${APPROVAL_STATUS.PENDING}'`)
     ]);
 
     return response.json({
@@ -101,7 +103,8 @@ sibeRouter.get("/api/sibe/summary", async (request, response) => {
       activeUsers: activeUsers.recordset[0]?.count ?? 0,
       signaturesPending: signaturesPending.recordset[0]?.count ?? 0,
       signaturesFollowUp: signaturesFollowUp.recordset[0]?.count ?? 0,
-      signaturesExceptions: signaturesExceptions.recordset[0]?.count ?? 0
+      signaturesExceptions: signaturesExceptions.recordset[0]?.count ?? 0,
+      approvalsPending: approvalsPending.recordset[0]?.count ?? 0
     });
   } catch (error) {
     return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die SiBe-Uebersicht konnte nicht geladen werden.");
@@ -109,7 +112,7 @@ sibeRouter.get("/api/sibe/summary", async (request, response) => {
 });
 
 sibeRouter.get("/api/sibe/statistics/visits", async (request, response) => {
-  const user = await requireRole(request, response, [...sibeRoles]);
+  const user = await requireAnyPermission(request, response, ["dashboards.sibe", "dashboards.commander"]);
   if (!user) return;
 
   const from = typeof request.query.from === "string" ? request.query.from.trim() : "";
@@ -182,7 +185,7 @@ sibeRouter.get("/api/sibe/statistics/visits", async (request, response) => {
 });
 
 sibeRouter.get("/api/sibe/visitors", async (request, response) => {
-  const user = await requireRole(request, response, [...sibeRoles]);
+  const user = await requirePermission(request, response, "visits.read");
   if (!user) return;
 
   try {
@@ -260,7 +263,7 @@ sibeRouter.get("/api/sibe/visitors", async (request, response) => {
 });
 
 sibeRouter.get("/api/sibe/visits", async (request, response) => {
-  const user = await requireRole(request, response, [...sibeRoles]);
+  const user = await requirePermission(request, response, "visits.read");
   if (!user) return;
 
   try {
@@ -270,6 +273,7 @@ sibeRouter.get("/api/sibe/visits", async (request, response) => {
     const search = typeof request.query.search === "string" ? request.query.search.trim() : "";
     const status = typeof request.query.status === "string" ? request.query.status.trim() : "";
     const signatureStatus = typeof request.query.signatureStatus === "string" ? request.query.signatureStatus.trim() : "";
+    const approvalStatus = typeof request.query.approvalStatus === "string" ? request.query.approvalStatus.trim() : "";
     const gateId = typeof request.query.gateId === "string" ? request.query.gateId.trim() : "";
     const gate = typeof request.query.gate === "string" ? request.query.gate.trim() : "";
     const from = typeof request.query.from === "string"
@@ -320,6 +324,11 @@ sibeRouter.get("/api/sibe/visits", async (request, response) => {
     if (signatureStatus && signatureStatus !== "all") {
       requestBuilder.input("signatureStatus", sql.NVarChar(40), signatureStatus);
       conditions.push(`ISNULL(vt.host_signature_status, '${HOST_SIGNATURE_STATUS.PENDING}') = @signatureStatus`);
+    }
+
+    if (approvalStatus && approvalStatus !== "all") {
+      requestBuilder.input("approvalStatus", sql.NVarChar(32), approvalStatus);
+      conditions.push(`ISNULL(vt.approval_status, '${APPROVAL_STATUS.NOT_REQUIRED}') = @approvalStatus`);
     }
 
     if (gateId) {
@@ -378,6 +387,7 @@ sibeRouter.get("/api/sibe/visits", async (request, response) => {
       checkInAt: string | null;
       checkOutAt: string | null;
       hostSignatureStatus: string;
+      approvalStatus: string;
     }>(`
       SELECT
         vt.id,
@@ -394,7 +404,8 @@ sibeRouter.get("/api/sibe/visits", async (request, response) => {
         CONVERT(NVARCHAR(30), vt.valid_until, 127) AS validUntil,
         CONVERT(NVARCHAR(30), vt.check_in_at, 127) AS checkInAt,
         CONVERT(NVARCHAR(30), vt.check_out_at, 127) AS checkOutAt,
-        ISNULL(vt.host_signature_status, '${HOST_SIGNATURE_STATUS.PENDING}') AS hostSignatureStatus
+        ISNULL(vt.host_signature_status, '${HOST_SIGNATURE_STATUS.PENDING}') AS hostSignatureStatus,
+        ISNULL(vt.approval_status, '${APPROVAL_STATUS.NOT_REQUIRED}') AS approvalStatus
       FROM dbo.visits vt
       INNER JOIN dbo.visitors vis ON vis.id = vt.visitor_id
       LEFT JOIN dbo.gates g ON g.id = vt.gate_id
@@ -409,7 +420,7 @@ sibeRouter.get("/api/sibe/visits", async (request, response) => {
 });
 
 sibeRouter.get("/api/sibe/visits/export", async (request, response) => {
-  const user = await requireRole(request, response, [...sibeRoles]);
+  const user = await requirePermission(request, response, "visits.read");
   if (!user) return;
 
   const range = typeof request.query.range === "string" ? request.query.range.trim() : "day";
@@ -493,77 +504,24 @@ sibeRouter.get("/api/sibe/visits/export", async (request, response) => {
 });
 
 sibeRouter.post("/api/sibe/visits/import", async (request, response) => {
-  const user = await requireRole(request, response, [...importRoles]);
+  const user = await requirePermission(request, response, "imports.execute");
   if (!user) return;
 
-  visitorImportUpload.single("file")(request, response, async (error) => {
-    if (error) {
-      if (error instanceof MulterError && error.code === "LIMIT_FILE_SIZE") {
-        return sendError(response, 400, "FILE_TOO_LARGE", "Die Importdatei ist größer als 5 MB.");
-      }
-      return sendError(response, 400, "UPLOAD_ERROR", "Die Importdatei konnte nicht gelesen werden.");
-    }
-
-    const file = request.file;
-    if (!file) {
-      return sendValidationError(response, { fieldErrors: { file: ["Bitte CSV- oder Excel-Datei auswählen."] } });
-    }
-
-    try {
-      const extension = file.originalname.toLowerCase().split(".").pop() || "";
-      const rows = extension === "xlsx" || extension === "xls"
-        ? parseExcelBuffer(file.buffer)
-        : parseCsvBuffer(file.buffer);
-
-      if (rows.length === 0) {
-        return sendValidationError(response, { fieldErrors: { file: ["Keine importierbaren Zeilen gefunden."] } });
-      }
-      if (rows.length > 250) {
-        return sendError(response, 400, "VALIDATION_ERROR", "Bitte maximal 250 Besucher pro Datei importieren.");
-      }
-
-      const imported = await createImportedPreRegistrations(rows, {
-        source: "file_import",
-        createdBy: user,
-        submittedIpAddress: getRequestIp(request),
-        userAgent: getRequestUserAgent(request),
-        fallbackGateId: user.role === "guard" ? user.gateId : null
-      });
-
-      return response.status(201).json({
-        message: `${imported.imported} Besucher importiert.`,
-        ...imported
-      });
-    } catch (importError) {
-      return handleUnexpectedError(response, importError, "IMPORT_ERROR", "Der Besucherimport konnte nicht verarbeitet werden.");
-    }
+  return handleVisitorImportUpload(request, response, {
+    createdBy: user,
+    fallbackGateId: user.role === "guard" ? user.gateId : null
   });
-});
-
-sibeRouter.get("/api/sibe/visits/import-template.csv", async (request, response) => {
-  const user = await requireRole(request, response, [...importRoles]);
-  if (!user) return;
-
-  const csv = `\uFEFF${buildImportTemplateCsv()}`;
-
-  response.setHeader("Content-Type", "text/csv; charset=utf-8");
-  response.setHeader("Content-Disposition", 'attachment; filename="besucher-import-vorlage.csv"');
-  return response.status(200).send(csv);
 });
 
 sibeRouter.get("/api/sibe/visits/import-template.xlsx", async (request, response) => {
   const user = await requireRole(request, response, [...importRoles]);
   if (!user) return;
 
-  const workbookBuffer = await buildImportTemplateWorkbookBuffer();
-
-  response.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-  response.setHeader("Content-Disposition", 'attachment; filename="besucher-import-vorlage.xlsx"');
-  return response.status(200).send(workbookBuffer);
+  return sendVisitorImportTemplateWorkbook(response);
 });
 
 sibeRouter.get("/api/sibe/visits/:id", async (request, response) => {
-  const user = await requireRole(request, response, [...sibeRoles]);
+  const user = await requirePermission(request, response, "visits.read");
   if (!user) return;
 
   try {
@@ -574,6 +532,10 @@ sibeRouter.get("/api/sibe/visits/:id", async (request, response) => {
         SELECT
           vt.id,
           vt.status,
+          ISNULL(vt.approval_status, '${APPROVAL_STATUS.NOT_REQUIRED}') AS approvalStatus,
+          vt.approval_note AS approvalNote,
+          approver.username AS approvalDecidedBy,
+          CONVERT(NVARCHAR(30), vt.approval_decided_at, 127) AS approvalDecidedAt,
           CONVERT(NVARCHAR(30), vt.valid_from, 127) AS validFrom,
           CONVERT(NVARCHAR(30), vt.valid_until, 127) AS validUntil,
           CONVERT(NVARCHAR(30), vt.check_in_at, 127) AS checkInAt,
@@ -633,6 +595,7 @@ sibeRouter.get("/api/sibe/visits/:id", async (request, response) => {
         FROM dbo.visits vt
         INNER JOIN dbo.visitors vis ON vis.id = vt.visitor_id
         LEFT JOIN dbo.gates g ON g.id = vt.gate_id
+        LEFT JOIN dbo.users approver ON approver.id = vt.approval_decided_by
         LEFT JOIN dbo.users confirmer ON confirmer.id = vt.host_signature_confirmed_by
         LEFT JOIN dbo.users confirmerIn ON confirmerIn.id = vt.check_in_by
         LEFT JOIN dbo.users confirmerOut ON confirmerOut.id = vt.check_out_by
@@ -652,7 +615,7 @@ sibeRouter.get("/api/sibe/visits/:id", async (request, response) => {
 });
 
 sibeRouter.put("/api/sibe/visits/:id/notes", async (request, response) => {
-  const user = await requireRole(request, response, [...sibeRoles]);
+  const user = await requirePermission(request, response, "approvals.review");
   if (!user) return;
 
   const parsed = sibeVisitNotesSchema.safeParse(request.body ?? {});
@@ -708,8 +671,123 @@ sibeRouter.put("/api/sibe/visits/:id/notes", async (request, response) => {
   }
 });
 
+sibeRouter.put("/api/sibe/visits/:id/approval", async (request, response) => {
+  const user = await requireAnyPermission(request, response, ["approvals.approve", "approvals.reject"]);
+  if (!user) return;
+
+  const parsed = sibeApprovalDecisionSchema.safeParse(request.body ?? {});
+  if (!parsed.success) {
+    return sendValidationError(response, parsed.error.flatten());
+  }
+
+  if (parsed.data.status === APPROVAL_STATUS.APPROVED && !hasPermission(user, "approvals.approve")) {
+    return sendError(response, 403, "FORBIDDEN", "Freigeben ist fuer diesen Benutzer nicht erlaubt.");
+  }
+
+  if (parsed.data.status === APPROVAL_STATUS.REJECTED && !hasPermission(user, "approvals.reject")) {
+    return sendError(response, 403, "FORBIDDEN", "Ablehnen ist fuer diesen Benutzer nicht erlaubt.");
+  }
+
+  try {
+    const pool = await getPool();
+    const visitResult = await pool.request()
+      .input("id", sql.UniqueIdentifier, request.params.id)
+      .query<{
+        id: string;
+        status: string;
+        approvalStatus: string | null;
+        approvalNote: string | null;
+        firstName: string;
+        lastName: string;
+        company: string;
+        hostName: string;
+        hostEmail: string | null;
+        visitorEmail: string | null;
+        createdByEmail: string | null;
+      }>(`
+        SELECT TOP 1
+          vt.id,
+          vt.status,
+          vt.approval_status AS approvalStatus,
+          vt.approval_note AS approvalNote,
+          vis.first_name AS firstName,
+          vis.last_name AS lastName,
+          vis.company,
+          vt.host_name AS hostName,
+          vt.host_email AS hostEmail,
+          vis.email_optional AS visitorEmail,
+          creator.user_email AS createdByEmail
+        FROM dbo.visits vt
+        INNER JOIN dbo.visitors vis ON vis.id = vt.visitor_id
+        LEFT JOIN dbo.users creator ON creator.id = vt.created_by
+        WHERE vt.id = @id
+      `);
+
+    const visit = visitResult.recordset[0];
+    if (!visit) {
+      return sendError(response, 404, "NOT_FOUND", "Der Besuch wurde nicht gefunden.");
+    }
+
+    if (visit.status !== VISIT_STATUS.PRE_REGISTERED) {
+      return sendError(response, 409, "INVALID_STATUS_TRANSITION", "Nur vorangemeldete Besuche koennen freigegeben oder abgelehnt werden.");
+    }
+
+    const note = parsed.data.note?.trim() || null;
+    await pool.request()
+      .input("id", sql.UniqueIdentifier, request.params.id)
+      .input("approvalStatus", sql.NVarChar(32), parsed.data.status)
+      .input("approvalNote", sql.NVarChar(1000), note)
+      .input("approvalDecidedBy", sql.UniqueIdentifier, user.id)
+      .query(`
+        UPDATE dbo.visits
+        SET
+          approval_status = @approvalStatus,
+          approval_note = @approvalNote,
+          approval_decided_by = @approvalDecidedBy,
+          approval_decided_at = SYSUTCDATETIME(),
+          updated_at = SYSUTCDATETIME()
+        WHERE id = @id
+      `);
+
+    await writeAuditLog({
+      user: user.username,
+      userId: user.id,
+      action: parsed.data.status === APPROVAL_STATUS.APPROVED ? "VISIT_APPROVED" : "VISIT_REJECTED",
+      objectType: "visit",
+      objectId: request.params.id,
+      ipAddress: getRequestIp(request),
+      userAgent: getRequestUserAgent(request),
+      metadata: {
+        approval_status: parsed.data.status,
+        approval_note_present: Boolean(note)
+      }
+    });
+
+    const recipientEmails = Array.from(
+      new Set([visit.hostEmail?.trim(), visit.visitorEmail?.trim(), visit.createdByEmail?.trim()].filter((entry): entry is string => Boolean(entry)))
+    );
+    void notifyApprovalDecision({
+      visitId: visit.id,
+      visitorName: `${visit.firstName} ${visit.lastName}`,
+      company: visit.company,
+      hostName: visit.hostName,
+      decision: parsed.data.status,
+      note,
+      recipientEmails
+    });
+
+    return response.json({
+      success: true,
+      approvalStatus: parsed.data.status,
+      approvalNote: note
+    });
+  } catch (error) {
+    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Freigabe konnte nicht gespeichert werden.");
+  }
+});
+
 sibeRouter.get("/api/sibe/users", async (request, response) => {
-  const user = await requireRole(request, response, [...sibeRoles]);
+  const user = await requireRole(request, response, [...sibeWriteRoles]);
   if (!user) return;
 
   try {
@@ -798,7 +876,7 @@ sibeRouter.get("/api/sibe/users", async (request, response) => {
 });
 
 sibeRouter.get("/api/sibe/audit-logs", async (request, response) => {
-  const user = await requireRole(request, response, [...sibeRoles]);
+  const user = await requirePermission(request, response, "logs.audit");
   if (!user) return;
 
   try {

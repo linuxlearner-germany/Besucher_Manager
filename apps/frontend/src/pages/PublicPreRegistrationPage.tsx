@@ -70,6 +70,7 @@ function isPastDate(value: string): boolean {
 export function PublicPreRegistrationPage() {
   const [form, setForm] = useState<FormState>(() => buildInitialFormState());
   const [submitState, setSubmitState] = useState<PublicSubmitState>({ kind: "idle" });
+  const [groupSubmitState, setGroupSubmitState] = useState<PublicSubmitState>({ kind: "idle" });
   const [fieldErrors, setFieldErrors] = useState<FieldErrorState>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmittingGroup, setIsSubmittingGroup] = useState(false);
@@ -154,12 +155,12 @@ export function PublicPreRegistrationPage() {
     event.preventDefault();
     const visitors = groupVisitors.filter(hasGroupVisitorData);
     if (visitors.length === 0) {
-      setSubmitState({ kind: "error", message: "Bitte mindestens eine Besucherzeile ausfüllen." });
+      setGroupSubmitState({ kind: "error", message: "Bitte mindestens eine Besucherzeile ausfüllen." });
       return;
     }
 
     setIsSubmittingGroup(true);
-    setSubmitState({ kind: "idle" });
+    setGroupSubmitState({ kind: "idle" });
     setGroupResult(null);
 
     try {
@@ -183,10 +184,10 @@ export function PublicPreRegistrationPage() {
       });
       setGroupResult(payload);
       setGroupVisitors([emptyGroupVisitor(), emptyGroupVisitor(), emptyGroupVisitor()]);
-      setSubmitState({ kind: "success", message: payload.message, visitId: "-", visitorId: "-", status: "pre_registered" });
+      setGroupSubmitState({ kind: "success", message: payload.message, visitId: "-", visitorId: "-", status: "pre_registered" });
     } catch (error) {
       const apiError = error as ApiError;
-      setSubmitState({ kind: "error", message: apiError.message || "Der Gruppenimport konnte nicht gespeichert werden." });
+      setGroupSubmitState({ kind: "error", message: apiError.message || "Der Gruppenimport konnte nicht gespeichert werden." });
     } finally {
       setIsSubmittingGroup(false);
     }
@@ -200,171 +201,180 @@ export function PublicPreRegistrationPage() {
         <section className="panel public-form-panel">
           <div className="section-header">
             <div>
-              <h2>Voranmeldung Besucher</h2>
+              <h3>Gemeinsame Besuchsdaten</h3>
             </div>
           </div>
+          <div className="form-grid two-columns">
+            <FormField label="Ansprechpartner" required error={fieldErrors.hostName}>
+              <input required value={form.hostName} onChange={(event) => updateField("hostName", event.target.value)} />
+            </FormField>
+            <FormField label="Ansprechpartner E-Mail">
+              <input type="email" value={form.hostEmail} onChange={(event) => updateField("hostEmail", event.target.value)} />
+            </FormField>
+            <FormField label="Ansprechpartner Telefon" required error={fieldErrors.hostPhone}>
+              <input required value={form.hostPhone} onChange={(event) => updateField("hostPhone", event.target.value)} />
+            </FormField>
+            <FormField label="Abteilung / Bereich" error={fieldErrors.hostDepartment}>
+              <input value={form.hostDepartment} onChange={(event) => updateField("hostDepartment", event.target.value)} />
+            </FormField>
+            <FormField label="Besuchszweck" required error={fieldErrors.purpose}>
+              <input required value={form.purpose} onChange={(event) => updateField("purpose", event.target.value)} />
+            </FormField>
+            <FormField label="Gültig von" required error={fieldErrors.validFrom}>
+              <input required type="date" value={form.validFrom} onChange={(event) => updateField("validFrom", event.target.value)} />
+            </FormField>
+            <FormField label="Gültig bis" required error={fieldErrors.validUntil}>
+              <input required type="date" value={form.validUntil} onChange={(event) => updateField("validUntil", event.target.value)} />
+            </FormField>
+          </div>
+          <FormField label="Bemerkung">
+            <textarea rows={3} value={form.notes} onChange={(event) => updateField("notes", event.target.value)} />
+          </FormField>
+        </section>
 
-          <form className="pre-registration-form" onSubmit={handleSubmit}>
-            <div className="form-section">
-              <h3>Besucher</h3>
-              <div className="form-grid two-columns">
-                <FormField label="Vorname" required error={fieldErrors.firstName}>
-                  <input required value={form.firstName} onChange={(event) => updateField("firstName", event.target.value)} />
-                </FormField>
-                <FormField label="Nachname" required error={fieldErrors.lastName}>
-                  <input required value={form.lastName} onChange={(event) => updateField("lastName", event.target.value)} />
-                </FormField>
-                <FormField label="Firma / Organisation" required error={fieldErrors.company}>
-                  <input required value={form.company} onChange={(event) => updateField("company", event.target.value)} />
-                </FormField>
-                <FormField label="Geburtsdatum" error={fieldErrors.birthDate}>
-                  <input type="date" max={toDateInputValue(new Date())} value={form.birthDate} onChange={(event) => updateField("birthDate", event.target.value)} />
-                </FormField>
-                <FormField label="Telefonnummer">
-                  <input value={form.phone} onChange={(event) => updateField("phone", event.target.value)} />
-                </FormField>
-                <FormField label="E-Mail-Adresse">
-                  <input type="email" value={form.email} onChange={(event) => updateField("email", event.target.value)} />
-                </FormField>
-                <FormField label="Kennzeichen">
-                  <input value={form.licensePlate} onChange={(event) => updateField("licensePlate", event.target.value)} />
-                </FormField>
-                <FormField label="Besuchszweck" required error={fieldErrors.purpose}>
-                  <input required value={form.purpose} onChange={(event) => updateField("purpose", event.target.value)} />
-                </FormField>
-                <FormField label="Ausweisart" required error={fieldErrors.idDocumentType}>
-                  <select required value={form.idDocumentType} onChange={(event) => updateField("idDocumentType", event.target.value as FormState["idDocumentType"])}>
-                    <option value="">Bitte wählen</option>
-                    <option value="identity_card">Personalausweis</option>
-                    <option value="passport">Reisepass</option>
-                    <option value="other">Sonstiges</option>
-                  </select>
-                </FormField>
-                <FormField label="Ausweis gültig bis" required error={fieldErrors.idDocumentValidUntil}>
-                  <input required type="date" value={form.idDocumentValidUntil} onChange={(event) => updateField("idDocumentValidUntil", event.target.value)} />
-                </FormField>
-                <FormField label="Ausweisnummer" required error={fieldErrors.idDocumentNumber}>
-                  <input required value={form.idDocumentNumber} onChange={(event) => updateField("idDocumentNumber", event.target.value)} />
-                </FormField>
+        <section className="public-entry-grid">
+          <section className="panel public-form-panel">
+            <div className="section-header">
+              <div>
+                <h3>Einzelanmeldung</h3>
               </div>
-              {documentExpired ? <Alert type="error">Das angegebene Ausweisdokument ist bereits abgelaufen.</Alert> : null}
             </div>
 
-            <div className="form-section">
-              <h3>Ansprechpartner</h3>
-              <div className="form-grid two-columns">
-                <FormField label="Ansprechpartner" required error={fieldErrors.hostName}>
-                  <input required value={form.hostName} onChange={(event) => updateField("hostName", event.target.value)} />
-                </FormField>
-                <FormField label="Ansprechpartner E-Mail">
-                  <input type="email" value={form.hostEmail} onChange={(event) => updateField("hostEmail", event.target.value)} />
-                </FormField>
-                <FormField label="Ansprechpartner Telefon" required error={fieldErrors.hostPhone}>
-                  <input required value={form.hostPhone} onChange={(event) => updateField("hostPhone", event.target.value)} />
-                </FormField>
-                <FormField label="Abteilung / Bereich" error={fieldErrors.hostDepartment}>
-                  <input value={form.hostDepartment} onChange={(event) => updateField("hostDepartment", event.target.value)} />
-                </FormField>
-                <FormField label="Gültig von" required error={fieldErrors.validFrom}>
-                  <input required type="date" value={form.validFrom} onChange={(event) => updateField("validFrom", event.target.value)} />
-                </FormField>
-                <FormField label="Gültig bis" required error={fieldErrors.validUntil}>
-                  <input required type="date" value={form.validUntil} onChange={(event) => updateField("validUntil", event.target.value)} />
-                </FormField>
-              </div>
-
-              <FormField label="Bemerkung">
-                <textarea rows={4} value={form.notes} onChange={(event) => updateField("notes", event.target.value)} />
-              </FormField>
-            </div>
-
-            <div className="form-actions">
-              <button type="submit" disabled={isSubmitting || !csrfToken}>
-                {isSubmitting ? "Speichert..." : "Voranmeldung senden"}
-              </button>
-            </div>
-
-            {submitState.kind === "success" ? (
-              <div className="public-success-block">
-                <Alert type="success">{submitState.message}</Alert>
-                <div className="public-reference-grid">
-                  <div className="public-reference-card">
-                    <span className="public-reference-label">Besuchs-ID</span>
-                    <code>{submitState.visitId}</code>
-                  </div>
-                  <div className="public-reference-card">
-                    <span className="public-reference-label">Besucher-ID</span>
-                    <code>{submitState.visitorId}</code>
-                  </div>
-                  <div className="public-reference-card">
-                    <span className="public-reference-label">Status</span>
-                    <strong>{submitState.status}</strong>
-                  </div>
+            <form className="pre-registration-form" onSubmit={handleSubmit}>
+              <div className="form-section">
+                <div className="form-grid two-columns">
+                  <FormField label="Vorname" required error={fieldErrors.firstName}>
+                    <input required value={form.firstName} onChange={(event) => updateField("firstName", event.target.value)} />
+                  </FormField>
+                  <FormField label="Nachname" required error={fieldErrors.lastName}>
+                    <input required value={form.lastName} onChange={(event) => updateField("lastName", event.target.value)} />
+                  </FormField>
+                  <FormField label="Firma / Organisation" required error={fieldErrors.company}>
+                    <input required value={form.company} onChange={(event) => updateField("company", event.target.value)} />
+                  </FormField>
+                  <FormField label="Geburtsdatum" error={fieldErrors.birthDate}>
+                    <input type="date" max={toDateInputValue(new Date())} value={form.birthDate} onChange={(event) => updateField("birthDate", event.target.value)} />
+                  </FormField>
+                  <FormField label="Telefonnummer">
+                    <input value={form.phone} onChange={(event) => updateField("phone", event.target.value)} />
+                  </FormField>
+                  <FormField label="E-Mail-Adresse">
+                    <input type="email" value={form.email} onChange={(event) => updateField("email", event.target.value)} />
+                  </FormField>
+                  <FormField label="Kennzeichen">
+                    <input value={form.licensePlate} onChange={(event) => updateField("licensePlate", event.target.value)} />
+                  </FormField>
+                  <FormField label="Ausweisart" required error={fieldErrors.idDocumentType}>
+                    <select required value={form.idDocumentType} onChange={(event) => updateField("idDocumentType", event.target.value as FormState["idDocumentType"])}>
+                      <option value="">Bitte wählen</option>
+                      <option value="identity_card">Personalausweis</option>
+                      <option value="passport">Reisepass</option>
+                      <option value="other">Sonstiges</option>
+                    </select>
+                  </FormField>
+                  <FormField label="Ausweis gültig bis" required error={fieldErrors.idDocumentValidUntil}>
+                    <input required type="date" value={form.idDocumentValidUntil} onChange={(event) => updateField("idDocumentValidUntil", event.target.value)} />
+                  </FormField>
+                  <FormField label="Ausweisnummer" required error={fieldErrors.idDocumentNumber}>
+                    <input required value={form.idDocumentNumber} onChange={(event) => updateField("idDocumentNumber", event.target.value)} />
+                  </FormField>
                 </div>
+                {documentExpired ? <Alert type="error">Das angegebene Ausweisdokument ist bereits abgelaufen.</Alert> : null}
               </div>
-            ) : null}
 
-            {submitState.kind === "error" ? <Alert type="error">{submitState.message}</Alert> : null}
-          </form>
-
-          <form className="pre-registration-form group-pre-registration-form" onSubmit={handleGroupSubmit}>
-            <div className="form-section">
-              <div className="section-header">
-                <div>
-                  <h3>Gruppenimport</h3>
-                </div>
-                <button type="button" className="secondary-button" onClick={() => setGroupVisitors((current) => [...current, emptyGroupVisitor()])}>
-                  Besucherzeile hinzufügen
+              <div className="form-actions">
+                <button type="submit" disabled={isSubmitting || !csrfToken}>
+                  {isSubmitting ? "Speichert..." : "Voranmeldung senden"}
                 </button>
               </div>
-              <div className="table-wrap">
-                <table className="data-table group-import-table">
-                  <thead>
-                    <tr>
-                      <th>Vorname</th>
-                      <th>Nachname</th>
-                      <th>Firma</th>
-                      <th>Ausweisart</th>
-                      <th>Ausweis gültig bis</th>
-                      <th>Ausweisnummer</th>
-                      <th>Kennzeichen</th>
-                      <th>Aktion</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {groupVisitors.map((visitor, index) => (
-                      <tr key={index}>
-                        <td><input value={visitor.firstName} onChange={(event) => updateGroupVisitor(index, "firstName", event.target.value)} /></td>
-                        <td><input value={visitor.lastName} onChange={(event) => updateGroupVisitor(index, "lastName", event.target.value)} /></td>
-                        <td><input value={visitor.company} onChange={(event) => updateGroupVisitor(index, "company", event.target.value)} /></td>
-                        <td>
-                          <select value={visitor.idDocumentType} onChange={(event) => updateGroupVisitor(index, "idDocumentType", event.target.value)}>
-                            <option value="">-</option>
-                            <option value="identity_card">Personalausweis</option>
-                            <option value="passport">Reisepass</option>
-                            <option value="other">Sonstiges</option>
-                          </select>
-                        </td>
-                        <td><input type="date" className={isPastDate(visitor.idDocumentValidUntil) ? "required-missing" : ""} value={visitor.idDocumentValidUntil} onChange={(event) => updateGroupVisitor(index, "idDocumentValidUntil", event.target.value)} /></td>
-                        <td><input value={visitor.idDocumentNumber} onChange={(event) => updateGroupVisitor(index, "idDocumentNumber", event.target.value)} /></td>
-                        <td><input value={visitor.licensePlate} onChange={(event) => updateGroupVisitor(index, "licensePlate", event.target.value)} /></td>
-                        <td>
-                          <button type="button" className="secondary-button" onClick={() => setGroupVisitors((current) => current.filter((_, visitorIndex) => visitorIndex !== index))}>
-                            Entfernen
-                          </button>
-                        </td>
+
+              {submitState.kind === "success" ? (
+                <div className="public-success-block">
+                  <Alert type="success">{submitState.message}</Alert>
+                  <div className="public-reference-grid">
+                    <div className="public-reference-card">
+                      <span className="public-reference-label">Besuchs-ID</span>
+                      <code>{submitState.visitId}</code>
+                    </div>
+                    <div className="public-reference-card">
+                      <span className="public-reference-label">Besucher-ID</span>
+                      <code>{submitState.visitorId}</code>
+                    </div>
+                    <div className="public-reference-card">
+                      <span className="public-reference-label">Status</span>
+                      <strong>{submitState.status}</strong>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {submitState.kind === "error" ? <Alert type="error">{submitState.message}</Alert> : null}
+            </form>
+          </section>
+
+          <section className="panel public-form-panel">
+            <form className="pre-registration-form group-pre-registration-form" onSubmit={handleGroupSubmit}>
+              <div className="form-section">
+                <div className="section-header">
+                  <div>
+                    <h3>Gruppenanmeldung</h3>
+                  </div>
+                  <button type="button" className="secondary-button" onClick={() => setGroupVisitors((current) => [...current, emptyGroupVisitor()])}>
+                    Besucherzeile hinzufügen
+                  </button>
+                </div>
+                <div className="table-wrap">
+                  <table className="data-table group-import-table">
+                    <thead>
+                      <tr>
+                        <th>Vorname</th>
+                        <th>Nachname</th>
+                        <th>Firma</th>
+                        <th>Ausweisart</th>
+                        <th>Ausweis gültig bis</th>
+                        <th>Ausweisnummer</th>
+                        <th>Kennzeichen</th>
+                        <th>Aktion</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {groupVisitors.map((visitor, index) => (
+                        <tr key={index}>
+                          <td><input value={visitor.firstName} onChange={(event) => updateGroupVisitor(index, "firstName", event.target.value)} /></td>
+                          <td><input value={visitor.lastName} onChange={(event) => updateGroupVisitor(index, "lastName", event.target.value)} /></td>
+                          <td><input value={visitor.company} onChange={(event) => updateGroupVisitor(index, "company", event.target.value)} /></td>
+                          <td>
+                            <select value={visitor.idDocumentType} onChange={(event) => updateGroupVisitor(index, "idDocumentType", event.target.value)}>
+                              <option value="">-</option>
+                              <option value="identity_card">Personalausweis</option>
+                              <option value="passport">Reisepass</option>
+                              <option value="other">Sonstiges</option>
+                            </select>
+                          </td>
+                          <td><input type="date" className={isPastDate(visitor.idDocumentValidUntil) ? "required-missing" : ""} value={visitor.idDocumentValidUntil} onChange={(event) => updateGroupVisitor(index, "idDocumentValidUntil", event.target.value)} /></td>
+                          <td><input value={visitor.idDocumentNumber} onChange={(event) => updateGroupVisitor(index, "idDocumentNumber", event.target.value)} /></td>
+                          <td><input value={visitor.licensePlate} onChange={(event) => updateGroupVisitor(index, "licensePlate", event.target.value)} /></td>
+                          <td>
+                            <button type="button" className="secondary-button" onClick={() => setGroupVisitors((current) => current.filter((_, visitorIndex) => visitorIndex !== index))}>
+                              Entfernen
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
-            <div className="form-actions">
-              <button type="submit" disabled={isSubmittingGroup || !csrfToken}>
-                {isSubmittingGroup ? "Importiert..." : "Gruppe voranmelden"}
-              </button>
-            </div>
-          </form>
+              <div className="form-actions">
+                <button type="submit" disabled={isSubmittingGroup || !csrfToken}>
+                  {isSubmittingGroup ? "Importiert..." : "Gruppe voranmelden"}
+                </button>
+              </div>
+
+              {groupSubmitState.kind === "success" ? <Alert type="success">{groupSubmitState.message}</Alert> : null}
+              {groupSubmitState.kind === "error" ? <Alert type="error">{groupSubmitState.message}</Alert> : null}
+            </form>
+          </section>
         </section>
 
         {groupResult && groupResult.needsReview > 0 ? (

@@ -57,7 +57,7 @@ export function LoginPage() {
     event.preventDefault();
 
     if (!pendingLogin || !selectedGateId) {
-      setError("Bitte waehlen Sie eine Wache aus.");
+      setError("Bitte wählen Sie eine Wache aus.");
       return;
     }
 
@@ -77,7 +77,7 @@ export function LoginPage() {
       if ("requiresGateSelection" in payload && payload.requiresGateSelection) {
         setAvailableGates(payload.gates);
         setSelectedGateId(payload.gates[0]?.id || "");
-        setError("Die Wache muss erneut ausgewaehlt werden.");
+        setError("Die Wache muss erneut ausgewählt werden.");
         return;
       }
 
@@ -101,12 +101,8 @@ export function LoginPage() {
           <Card className="login-panel">
             <div className="section-header">
               <div>
-                <h2>{pendingLogin ? "Wache auswaehlen" : "Anmeldung"}</h2>
-                <p className="section-copy">
-                  {pendingLogin
-                    ? "Waehlen Sie den aktiven Standort fuer diese Anmeldung."
-                    : "Melden Sie sich für Wache, SiBe, KasKdt oder Administration an."}
-                </p>
+                <h2>{pendingLogin ? "Wache auswählen" : "Anmeldung"}</h2>
+                {pendingLogin ? <p className="section-copy">Wählen Sie den aktiven Standort für diese Anmeldung.</p> : null}
               </div>
             </div>
 
@@ -136,7 +132,7 @@ export function LoginPage() {
                       setError(null);
                     }}
                   >
-                    Zurueck
+                    Zurück
                   </button>
                 </div>
                 {error ? <Alert type="error">{error}</Alert> : null}
@@ -153,7 +149,7 @@ export function LoginPage() {
                 </label>
                 <div className="form-actions">
                   <button type="submit" disabled={submitting}>
-                    {submitting ? "Prueft..." : "Anmelden"}
+                    {submitting ? "Prüft..." : "Anmelden"}
                   </button>
                 </div>
                 {error ? <Alert type="error">{error}</Alert> : null}

@@ -19,6 +19,9 @@ function createApp() {
     const app = (0, express_1.default)();
     const frontendDist = resolveFrontendDist();
     app.disable("x-powered-by");
+    if (env_1.env.appTrustProxy !== undefined) {
+        app.set("trust proxy", env_1.env.appTrustProxy);
+    }
     app.use((0, helmet_1.default)({
         contentSecurityPolicy: false
     }));

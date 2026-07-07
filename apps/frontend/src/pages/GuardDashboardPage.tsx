@@ -116,7 +116,7 @@ export function GuardDashboardPage() {
       setVisits(payload.visits);
     } catch (apiError) {
       const errorPayload = apiError as ApiError;
-      setError(errorPayload.message || "Die Tagesuebersicht konnte nicht geladen werden.");
+      setError(errorPayload.message || "Die Tagesübersicht konnte nicht geladen werden.");
     } finally {
       setLoading(false);
     }
@@ -243,7 +243,7 @@ export function GuardDashboardPage() {
                   setStatusFilter("all");
                 }}
               >
-                Zuruecksetzen
+                Zurücksetzen
               </button>
             ) : null}
           </form>
@@ -290,7 +290,7 @@ export function GuardDashboardPage() {
                   <th>Abteilung</th>
                   <th className="cell-wrap">Besuchszweck</th>
                   <th className="cell-nowrap">Unterschrift</th>
-                  <th className="cell-nowrap">Gueltig bis</th>
+                  <th className="cell-nowrap">Gültig bis</th>
                   <th className="actions-cell">Aktionen</th>
                 </tr>
               </thead>
@@ -314,27 +314,30 @@ export function GuardDashboardPage() {
                       <td className="cell-nowrap">{formatSignatureStatus(visit.hostSignatureStatus)}</td>
                       <td className="cell-nowrap">{formatDateOnly(visit.validUntil)}</td>
                       <td className="actions-cell">
-                        <div className="row-actions action-stack">
-                          {visit.status === "pre_registered" ? (
-                            <button type="button" onClick={() => void handleCheckIn(visit.id)}>
-                              Einchecken
-                            </button>
-                          ) : null}
+                        <div className="action-row guard-action-row">
+                          <div className="guard-action-strip">
+                            {visit.status === "pre_registered" ? (
+                              <button type="button" className="guard-primary-action" onClick={() => void handleCheckIn(visit.id)}>
+                                Einchecken
+                              </button>
+                            ) : null}
 
-                          <Link className="button-link" to={`/wache/besuche/${visit.id}`}>
-                            Details
-                          </Link>
-
-                          {visit.status === "pre_registered" || visit.status === "checked_in" || visit.status === "checked_out" ? (
-                            <Link className="button-link" to={`/wache/besuche/${visit.id}/druck`}>
-                              Besucherschein drucken
+                            <Link className="button-link" to={`/wache/besuche/${visit.id}`}>
+                              Details
                             </Link>
-                          ) : null}
+
+                            {visit.status === "pre_registered" || visit.status === "checked_in" || visit.status === "checked_out" ? (
+                              <Link className="button-link" to={`/wache/besuche/${visit.id}/druck`}>
+                                Drucken
+                              </Link>
+                            ) : null}
+                          </div>
 
                           {visit.status === "checked_in" ? (
                             <div className="checkout-box">
                               <input
-                                placeholder="Besuchsnummer vom Besucherschein"
+                                className="guard-badge-input"
+                                placeholder="Besuchsnummer"
                                 maxLength={badgeInputLength}
                                 value={checkoutForm.returnedVisitNumber}
                                 onChange={(event) => updateCheckoutState(visit.id, { returnedVisitNumber: event.target.value.toUpperCase().slice(0, badgeInputLength) })}
@@ -345,7 +348,7 @@ export function GuardDashboardPage() {
                                   checked={checkoutForm.signedByHostConfirmed}
                                   onChange={(event) => updateCheckoutState(visit.id, { signedByHostConfirmed: event.target.checked })}
                                 />
-                                Unterschrift vom Ansprechpartner erledigt
+                                Unterschrift Ansprechpartner liegt vor
                               </label>
                               <button
                                 type="button"
@@ -364,7 +367,7 @@ export function GuardDashboardPage() {
 
                 {!visits.length ? (
                   <tr>
-                    <td colSpan={10}>Keine Besuche fuer die aktuelle Auswahl gefunden.</td>
+                    <td colSpan={10}>Keine Besuche für die aktuelle Auswahl gefunden.</td>
                   </tr>
                 ) : null}
               </tbody>
@@ -376,7 +379,7 @@ export function GuardDashboardPage() {
           <div className="calendar-layout">
             <div className="calendar-toolbar">
               <button type="button" className="secondary-button" onClick={() => setCalendarMonth((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))}>
-                Monat zurueck
+                Monat zurück
               </button>
               <strong className="calendar-title">
                 {new Intl.DateTimeFormat("de-DE", { month: "long", year: "numeric" }).format(calendarMonth)}
@@ -429,7 +432,7 @@ export function GuardDashboardPage() {
             <div className="calendar-day-list panel">
               <h3>Besuche am {new Intl.DateTimeFormat("de-DE", { dateStyle: "full" }).format(selectedDay)}</h3>
               {selectedDayItems.length === 0 ? (
-                <p className="section-copy">Keine Besuche fuer diesen Tag.</p>
+                <p className="section-copy">Keine Besuche für diesen Tag.</p>
               ) : (
                 <div className="table-wrap">
                   <table className="data-table">
@@ -448,7 +451,7 @@ export function GuardDashboardPage() {
                     <tbody>
                       {selectedDayItems.map((item) => (
                         <tr key={item.id}>
-                          <td className="cell-nowrap">{formatDateOnly(item.validFrom)}</td>
+                          <td className="cell-nowrap">{formatDateTime(item.validFrom)}</td>
                           <td className="cell-nowrap">{item.badgeNumber || "-"}</td>
                           <td>{item.visitorName}</td>
                           <td>{item.company}</td>

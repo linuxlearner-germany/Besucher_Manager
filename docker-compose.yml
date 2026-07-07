@@ -1,6 +1,7 @@
 services:
   sqlserver:
     image: mcr.microsoft.com/mssql/server:2022-latest
+    profiles: ["local-db"]
     restart: unless-stopped
     environment:
       ACCEPT_EULA: "Y"
@@ -23,6 +24,7 @@ services:
 
   db-bootstrap:
     image: mcr.microsoft.com/mssql/server:2022-latest
+    profiles: ["local-db"]
     restart: "no"
     depends_on:
       sqlserver:
@@ -51,12 +53,18 @@ services:
     depends_on:
       sqlserver:
         condition: service_healthy
+        required: false
       db-bootstrap:
         condition: service_completed_successfully
+        required: false
     env_file:
       - .env
     environment:
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3030}
+      APP_SECURE_COOKIES: ${APP_SECURE_COOKIES:-}
+      APP_TRUST_PROXY: ${APP_TRUST_PROXY:-}
       UPLOAD_DIR: /app/uploads
+      MAIL_RELAY_CONFIG_PATH: ${MAIL_RELAY_CONFIG_PATH:-/app/config/mail-relay.yml}
       HTTP_PROXY: ${HTTP_PROXY:-}
       HTTPS_PROXY: ${HTTPS_PROXY:-}
       NO_PROXY: ${NO_PROXY:-}
@@ -67,6 +75,7 @@ services:
       - "${PORT:-3030}:3030"
     volumes:
       - uploads_data:/app/uploads
+      - ./config:/app/config:ro
     healthcheck:
       test:
         [

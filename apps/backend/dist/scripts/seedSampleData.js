@@ -11,7 +11,7 @@ const sampleGates = [
 const sampleUsers = [
     { username: "guard.demo", password: "Test1234!", role: "guard", gateName: "Hauptwache" },
     { username: "guard.nord", password: "Test1234!", role: "guard", gateName: "Nordtor" },
-    { username: "sibe.demo", password: "Test1234!", role: "sibe" }
+    { username: "sibe.demo", password: "Test1234!", role: "sibe", email: "sibe.demo@wiweb.test" }
 ];
 const sampleVisitors = [
     { firstName: "Max", lastName: "Beispiel", company: "Acme GmbH", birthDate: "1988-04-12", phone: "0151 111111", email: "max.beispiel@acme.test" },
@@ -159,12 +159,14 @@ async function ensureUsers(gateIds) {
                 .input("passwordHash", passwordHash)
                 .input("role", user.role)
                 .input("gateId", gateId)
+                .input("email", user.role === "guard" ? null : user.email ?? null)
                 .query(`
           UPDATE dbo.users
           SET
             password_hash = @passwordHash,
             role = @role,
             gate_id = @gateId,
+            user_email = @email,
             is_active = 1,
             updated_at = SYSUTCDATETIME()
           WHERE id = @id
@@ -176,9 +178,10 @@ async function ensureUsers(gateIds) {
             .input("passwordHash", passwordHash)
             .input("role", user.role)
             .input("gateId", gateId)
+            .input("email", user.role === "guard" ? null : user.email ?? null)
             .query(`
-        INSERT INTO dbo.users (username, password_hash, display_name, role, gate_id, is_active)
-        VALUES (@username, @passwordHash, @username, @role, @gateId, 1)
+        INSERT INTO dbo.users (username, password_hash, display_name, user_email, role, gate_id, is_active)
+        VALUES (@username, @passwordHash, @username, @email, @role, @gateId, 1)
       `);
     }
 }

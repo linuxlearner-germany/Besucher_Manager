@@ -1,9 +1,11 @@
 import sql from "mssql";
+import { notifyApprovalRequested } from "./mailRelay";
 import { writeAuditLog } from "./auditLog";
 import { getPool } from "./db";
 import { generateBadgeNumberCandidate } from "./badgeNumber";
 import type { PublicPreRegistrationInput } from "./publicPreRegistrationSchema";
-import { VISIT_STATUS } from "./visitWorkflow";
+import { loadWorkflowSettings } from "./systemSettings";
+import { APPROVAL_STATUS, VISIT_STATUS } from "./visitWorkflow";
 
 export type GateSummary = {
   id: string;
@@ -21,6 +23,7 @@ export type CreatedPreRegistration = {
   visitId: string;
   visitorId: string;
   status: string;
+  approvalStatus: string;
 };
 
 async function generateUniqueBadgeNumber(transaction: sql.Transaction): Promise<string> {
@@ -110,6 +113,11 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
   await transaction.begin();
 
   try {
+    const workflowSettings = await loadWorkflowSettings({ transaction });
+    const approvalStatus = workflowSettings.approvalRequired
+      ? APPROVAL_STATUS.PENDING
+      : APPROVAL_STATUS.NOT_REQUIRED;
+    const gateId = cleanOptional(input.gateId);
     const badgeNumber = await generateUniqueBadgeNumber(transaction);
 
     const visitorInsert = await new sql.Request(transaction)
@@ -156,7 +164,7 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
 
     const visitInsert = await new sql.Request(transaction)
       .input("visitorId", sql.UniqueIdentifier, visitorId)
-      .input("gateId", sql.UniqueIdentifier, cleanOptional(input.gateId))
+      .input("gateId", sql.UniqueIdentifier, gateId)
       .input("hostName", sql.NVarChar(255), input.hostName.trim())
       .input("hostEmail", sql.NVarChar(255), cleanOptional(input.hostEmail))
       .input("hostPhone", sql.NVarChar(80), cleanOptional(input.hostPhone))
@@ -167,8 +175,9 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
       .input("licensePlate", sql.NVarChar(40), cleanOptional(input.licensePlate))
       .input("badgeNumber", sql.NVarChar(64), badgeNumber)
       .input("notes", sql.NVarChar(sql.MAX), cleanOptional(input.notes))
+      .input("approvalStatus", sql.NVarChar(32), approvalStatus)
       .input("submittedIpAddress", sql.NVarChar(64), cleanOptional(input.submittedIpAddress ?? undefined))
-      .query<{ id: string; status: string }>(`
+      .query<{ id: string; status: string; approvalStatus: string }>(`
         INSERT INTO dbo.visits (
           visitor_id,
           gate_id,
@@ -182,11 +191,12 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
           license_plate,
           badge_number,
           status,
+          approval_status,
           created_via_public_form,
           submitted_ip_address,
           notes
         )
-        OUTPUT inserted.id, inserted.status
+        OUTPUT inserted.id, inserted.status, inserted.approval_status AS approvalStatus
         VALUES (
           @visitorId,
           @gateId,
@@ -200,6 +210,7 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
           @licensePlate,
           @badgeNumber,
           '${VISIT_STATUS.PRE_REGISTERED}',
+          @approvalStatus,
           1,
           @submittedIpAddress,
           @notes
@@ -230,10 +241,24 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
 
     await transaction.commit();
 
+    if (visit.approvalStatus === APPROVAL_STATUS.PENDING) {
+      const gate = gateId ? await findActiveGateById(gateId) : null;
+      void notifyApprovalRequested({
+        visitId: visit.id,
+        visitorName: `${input.firstName.trim()} ${input.lastName.trim()}`,
+        company: input.company.trim(),
+        hostName: input.hostName.trim(),
+        validFrom: input.validFrom,
+        validUntil: input.validUntil,
+        gateName: gate?.name ?? null
+      });
+    }
+
     return {
       visitId: visit.id,
       visitorId,
-      status: visit.status
+      status: visit.status,
+      approvalStatus: visit.approvalStatus
     };
   } catch (error) {
     await transaction.rollback();

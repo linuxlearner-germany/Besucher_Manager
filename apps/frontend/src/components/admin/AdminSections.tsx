@@ -5,17 +5,27 @@ import {
   type AdminErrorLog,
   type AdminFieldDefinition,
   type AdminGate,
+  type AdminWorkflowSettings,
   type AdminUser,
+  type AppPermission,
   type AppMenuKey,
   type EditableAdminUser,
   formatDateTime,
+  formatAuditAction,
   formatFileSize,
+  formatRoleLabel,
   formatUserAgent,
+  getDefaultPermissionsForRole,
   getAllowedMenuAccessForRole,
-  type SiteMapSummary
+  type SiteMapSummary,
+  type UserPermissions
 } from "../../app/core";
 
 export type AdminSectionKey = "dashboard" | "wachen" | "benutzer" | "texte" | "karte" | "felder" | "audit" | "fehler" | "system";
+
+function truncateLabel(value: string, maxLength = 36): string {
+  return value.length > maxLength ? `${value.slice(0, maxLength - 1)}…` : value;
+}
 
 export function AdminDashboardSection({
   gates,
@@ -40,14 +50,14 @@ export function AdminDashboardSection({
 }) {
   return (
     <div className="card-grid stat-grid admin-dashboard-grid">
-      <article className="panel mini-card"><h3>Wachen</h3><p>{gates.filter((gate) => gate.isActive).length} aktive Wachen</p><button type="button" className="secondary-button" onClick={() => onOpenSection("wachen")}>Oeffnen</button></article>
-      <article className="panel mini-card"><h3>Benutzer</h3><p>{users.filter((entry) => entry.isActive).length} aktive Benutzer</p><button type="button" className="secondary-button" onClick={() => onOpenSection("benutzer")}>Oeffnen</button></article>
-      <article className="panel mini-card"><h3>Hinweistexte</h3><p>{texts.filter((text) => text.isActive).length} aktive Texte</p><button type="button" className="secondary-button" onClick={() => onOpenSection("texte")}>Oeffnen</button></article>
-      <article className="panel mini-card"><h3>Gelaendeplan</h3><p>{activeSiteMap ? activeSiteMap.name : "Kein aktiver Plan"}</p><button type="button" className="secondary-button" onClick={() => onOpenSection("karte")}>Oeffnen</button></article>
-      <article className="panel mini-card"><h3>Feldkonfiguration</h3><p>{fieldDefinitions.filter((field) => field.isActive).length} aktive Felder</p><button type="button" className="secondary-button" onClick={() => onOpenSection("felder")}>Oeffnen</button></article>
-      <article className="panel mini-card"><h3>Auditlog</h3><p>{logs.length} letzte Eintraege</p><button type="button" className="secondary-button" onClick={() => onOpenSection("audit")}>Oeffnen</button></article>
-      <article className="panel mini-card"><h3>Fehlerlog</h3><p>{errorLogs.length} letzte Eintraege</p><button type="button" className="secondary-button" onClick={() => onOpenSection("fehler")}>Oeffnen</button></article>
-      <article className="panel mini-card"><h3>Systemstatus</h3><p>{systemStatus ? `${systemStatus.activeVisits} aktiv, ${systemStatus.signaturesFollowUp} Nachreichungen` : "Lade..."}</p><button type="button" className="secondary-button" onClick={() => onOpenSection("system")}>Oeffnen</button></article>
+      <article className="panel mini-card"><h3>Wachen</h3><p>{gates.filter((gate) => gate.isActive).length} aktive Wachen</p><button type="button" className="secondary-button" onClick={() => onOpenSection("wachen")}>Öffnen</button></article>
+      <article className="panel mini-card"><h3>Benutzer</h3><p>{users.filter((entry) => entry.isActive).length} aktive Benutzer</p><button type="button" className="secondary-button" onClick={() => onOpenSection("benutzer")}>Öffnen</button></article>
+      <article className="panel mini-card"><h3>Hinweistexte</h3><p>{texts.filter((text) => text.isActive).length} aktive Texte</p><button type="button" className="secondary-button" onClick={() => onOpenSection("texte")}>Öffnen</button></article>
+      <article className="panel mini-card"><h3>Geländeplan</h3><p title={activeSiteMap?.name || "Kein aktiver Plan"}>{activeSiteMap ? truncateLabel(activeSiteMap.name) : "Kein aktiver Plan"}</p><button type="button" className="secondary-button" onClick={() => onOpenSection("karte")}>Öffnen</button></article>
+      <article className="panel mini-card"><h3>Feldkonfiguration</h3><p>{fieldDefinitions.filter((field) => field.isActive).length} aktive Felder</p><button type="button" className="secondary-button" onClick={() => onOpenSection("felder")}>Öffnen</button></article>
+      <article className="panel mini-card"><h3>Auditlog</h3><p>{logs.length} letzte Einträge</p><button type="button" className="secondary-button" onClick={() => onOpenSection("audit")}>Öffnen</button></article>
+      <article className="panel mini-card"><h3>Fehlerlog</h3><p>{errorLogs.length} letzte Einträge</p><button type="button" className="secondary-button" onClick={() => onOpenSection("fehler")}>Öffnen</button></article>
+      <article className="panel mini-card"><h3>Systemstatus</h3><p>{systemStatus ? `${systemStatus.activeVisits} aktiv, ${systemStatus.signaturesFollowUp} Nachreichungen` : "Lade..."}</p><button type="button" className="secondary-button" onClick={() => onOpenSection("system")}>Öffnen</button></article>
     </div>
   );
 }
@@ -72,16 +82,36 @@ export function AdminGatesSection({
   toggleGateActive: (gateId: string, active: boolean) => Promise<void>;
 }) {
   return (
-    <Card>
-      <h3>Wachen</h3>
-      <form className="form-grid two-columns" onSubmit={createGate}>
-        <input placeholder="Name" value={newGate.name} onChange={(event) => setNewGate((current) => ({ ...current, name: event.target.value }))} />
-        <input placeholder="Standort" value={newGate.location} onChange={(event) => setNewGate((current) => ({ ...current, location: event.target.value }))} />
-        <input placeholder="Beschreibung" value={newGate.description} onChange={(event) => setNewGate((current) => ({ ...current, description: event.target.value }))} />
-        <button type="submit">Wache speichern</button>
+    <Card className="admin-section-stack">
+      <div className="section-header">
+        <div>
+          <h3>Wachen</h3>
+          <p className="section-copy">Neue Wachen kompakt anlegen und bestehende Standorte direkt pflegen.</p>
+        </div>
+      </div>
+      <form className="admin-inline-form admin-gate-form" onSubmit={createGate}>
+        <FormField label="Name">
+          <input placeholder="z. B. Hauptwache" value={newGate.name} onChange={(event) => setNewGate((current) => ({ ...current, name: event.target.value }))} />
+        </FormField>
+        <FormField label="Standort">
+          <input placeholder="z. B. Werk Nord" value={newGate.location} onChange={(event) => setNewGate((current) => ({ ...current, location: event.target.value }))} />
+        </FormField>
+        <FormField label="Beschreibung">
+          <input placeholder="Kurze interne Einordnung" value={newGate.description} onChange={(event) => setNewGate((current) => ({ ...current, description: event.target.value }))} />
+        </FormField>
+        <div className="admin-form-actions admin-form-span-full">
+          <button type="submit">Wache speichern</button>
+        </div>
       </form>
-      <div className="table-wrap">
-        <table className="data-table">
+      <div className="table-section admin-table-shell">
+        <div className="table-section-header">
+          <div>
+            <h4>Bestehende Wachen</h4>
+            <p className="section-copy">{gates.length} Einträge</p>
+          </div>
+        </div>
+        <div className="table-wrap">
+          <table className="data-table admin-table-compact admin-gates-table">
           <thead><tr><th>Name</th><th>Standort</th><th>Status</th><th>Aktion</th></tr></thead>
           <tbody>
             {gates.map((gate) => (
@@ -98,8 +128,8 @@ export function AdminGatesSection({
                     Aktiv
                   </label>
                 </td>
-                <td>
-                  <div className="row-actions">
+                <td className="actions-cell">
+                  <div className="action-row admin-action-row">
                     <button type="button" onClick={() => void saveGate(gate.id)}>Speichern</button>
                     <button className="danger-button" type="button" onClick={() => void toggleGateActive(gate.id, gate.isActive)}>{gate.isActive ? "Deaktivieren" : "Reaktivieren"}</button>
                   </div>
@@ -107,7 +137,8 @@ export function AdminGatesSection({
               </tr>
             ))}
           </tbody>
-        </table>
+          </table>
+        </div>
       </div>
     </Card>
   );
@@ -117,15 +148,21 @@ export function AdminUsersSection({
   newUser,
   setNewUser,
   menuOptions,
+  permissionGroups,
   createUser,
   users,
   editableUsers,
   setEditableUsers,
+  selectedUserId,
+  setSelectedUserId,
   updateEditableUserRole,
   updateEditableUserGroups,
   formatGroupText,
+  isPermissionEnabled,
   toggleNewUserMenuAccess,
+  toggleNewUserPermission,
   toggleEditableUserMenuAccess,
+  toggleEditableUserPermission,
   saveUser,
   toggleUserActive,
   deleteUser,
@@ -134,143 +171,293 @@ export function AdminUsersSection({
   newUser: {
     username: string;
     displayName: string;
+    email: string;
     password: string;
     role: AdminUser["role"];
     gateId: string;
     groupsText: string;
     menuAccess: AppMenuKey[];
+    permissions: UserPermissions;
   };
   setNewUser: Dispatch<SetStateAction<{
     username: string;
     displayName: string;
+    email: string;
     password: string;
     role: AdminUser["role"];
     gateId: string;
     groupsText: string;
     menuAccess: AppMenuKey[];
+    permissions: UserPermissions;
   }>>;
   menuOptions: Array<{ key: AppMenuKey; label: string }>;
+  permissionGroups: Array<{ title: string; items: Array<{ key: AppPermission; label: string }> }>;
   createUser: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   users: AdminUser[];
   editableUsers: Record<string, EditableAdminUser>;
   setEditableUsers: Dispatch<SetStateAction<Record<string, EditableAdminUser>>>;
+  selectedUserId: string | null;
+  setSelectedUserId: Dispatch<SetStateAction<string | null>>;
   updateEditableUserRole: (userId: string, role: AdminUser["role"]) => void;
   updateEditableUserGroups: (userId: string, value: string) => void;
   formatGroupText: (groups: string[] | undefined) => string;
+  isPermissionEnabled: (permissions: UserPermissions, permission: AppPermission) => boolean;
   toggleNewUserMenuAccess: (menuKey: AppMenuKey, checked: boolean) => void;
+  toggleNewUserPermission: (permission: AppPermission, checked: boolean) => void;
   toggleEditableUserMenuAccess: (userId: string, menuKey: AppMenuKey, checked: boolean) => void;
+  toggleEditableUserPermission: (userId: string, permission: AppPermission, checked: boolean) => void;
   saveUser: (userId: string) => Promise<void>;
   toggleUserActive: (userId: string, active: boolean) => Promise<void>;
   deleteUser: (userEntry: AdminUser) => Promise<void>;
   currentUserId?: string;
 }) {
+  const selectedUser = selectedUserId ? editableUsers[selectedUserId] : null;
+
+  function summarizeMenuAccess(menuAccess: AppMenuKey[]) {
+    if (!menuAccess.length) {
+      return "Keine";
+    }
+    return menuOptions
+      .filter((option) => menuAccess.includes(option.key))
+      .map((option) => option.label)
+      .join(", ");
+  }
+
+  function summarizePermissions(user: EditableAdminUser) {
+    const summary = permissionGroups.flatMap((group) =>
+      group.items.filter((item) => isPermissionEnabled(user.permissions, item.key)).map((item) => item.label)
+    );
+    if (!summary.length) {
+      return "Keine Zusatzrechte";
+    }
+    return summary.slice(0, 3).join(", ") + (summary.length > 3 ? ` +${summary.length - 3}` : "");
+  }
+
   return (
-    <Card>
-      <h3>Benutzer</h3>
-      <form className="form-grid two-columns" onSubmit={createUser}>
-        <input placeholder="Benutzername" value={newUser.username} onChange={(event) => setNewUser((current) => ({ ...current, username: event.target.value }))} />
-        <input placeholder="Anzeigename" value={newUser.displayName} onChange={(event) => setNewUser((current) => ({ ...current, displayName: event.target.value }))} />
-        <input type="password" placeholder="Passwort (min. 8)" value={newUser.password} onChange={(event) => setNewUser((current) => ({ ...current, password: event.target.value }))} />
-        <select value={newUser.role} onChange={(event) => {
-          const role = event.target.value as AdminUser["role"];
-          setNewUser((current) => ({ ...current, role, gateId: "", menuAccess: getAllowedMenuAccessForRole(role) }));
-        }}>
-          <option value="guard">guard</option>
-          <option value="admin">admin</option>
-          <option value="sibe">sibe</option>
-          <option value="kaskdt">kaskdt</option>
-        </select>
-        <textarea
-          placeholder="Gruppen, z. B. Werkschutz, Schicht A"
-          value={newUser.groupsText}
-          onChange={(event) => setNewUser((current) => ({ ...current, groupsText: event.target.value }))}
-        />
-        <div className="menu-access-grid">
-          {menuOptions.map((option) => {
-            const allowed = getAllowedMenuAccessForRole(newUser.role).includes(option.key);
-            return (
-              <label key={option.key} className={`checkbox-row compact-checkbox ${allowed ? "" : "muted-option"}`}>
-                <input
-                  type="checkbox"
-                  checked={newUser.menuAccess.includes(option.key)}
-                  disabled={!allowed}
-                  onChange={(event) => toggleNewUserMenuAccess(option.key, event.target.checked)}
-                />
-                {option.label}
-              </label>
-            );
-          })}
+    <Card className="admin-section-stack">
+      <div className="section-header">
+        <div>
+          <h3>Benutzer</h3>
+          <p className="section-copy">Neue Konten kompakt anlegen und bestehende Benutzer getrennt bearbeiten.</p>
         </div>
-        <button type="submit">Benutzer speichern</button>
-      </form>
-      <div className="table-wrap">
-        <table className="data-table">
-          <thead><tr><th>Username</th><th>Anzeigename</th><th>Rolle</th><th>Gruppen</th><th>Menü</th><th>Passwort</th><th>Status</th><th>Aktion</th></tr></thead>
+      </div>
+      <div className="panel admin-user-card">
+        <div className="table-section-header">
+          <div>
+            <h4>Neuer Benutzer</h4>
+          </div>
+        </div>
+        <form className="admin-user-create-grid" onSubmit={createUser}>
+          <FormField label="Benutzername">
+            <input placeholder="Benutzername" value={newUser.username} onChange={(event) => setNewUser((current) => ({ ...current, username: event.target.value }))} />
+          </FormField>
+          <FormField label="Anzeigename">
+            <input placeholder="Anzeigename" value={newUser.displayName} onChange={(event) => setNewUser((current) => ({ ...current, displayName: event.target.value }))} />
+          </FormField>
+          <FormField label={newUser.role === "guard" ? "E-Mail (optional)" : "E-Mail (optional)"}>
+            <input type="text" inputMode="email" placeholder="name@firma.de" value={newUser.email} onChange={(event) => setNewUser((current) => ({ ...current, email: event.target.value }))} />
+          </FormField>
+          <FormField label="Passwort">
+            <input type="password" placeholder="Mindestens 8 Zeichen" value={newUser.password} onChange={(event) => setNewUser((current) => ({ ...current, password: event.target.value }))} />
+          </FormField>
+          <FormField label="Rolle">
+            <select
+              value={newUser.role}
+              onChange={(event) => {
+                const role = event.target.value as AdminUser["role"];
+                setNewUser((current) => ({
+                  ...current,
+                  role,
+                  gateId: "",
+                  menuAccess: getAllowedMenuAccessForRole(role),
+                  permissions: role === "custom"
+                    ? current.role === "custom" ? current.permissions : getDefaultPermissionsForRole("custom")
+                    : getDefaultPermissionsForRole(role)
+                }));
+              }}
+            >
+              <option value="guard">Wache</option>
+              <option value="admin">Admin</option>
+              <option value="sibe">SiBe</option>
+              <option value="kaskdt">Kasernenkommandant</option>
+              <option value="custom">Benutzerdefiniert</option>
+            </select>
+          </FormField>
+          <FormField label="Gruppen">
+            <textarea rows={3} placeholder="z. B. Werkschutz, Schicht A" value={newUser.groupsText} onChange={(event) => setNewUser((current) => ({ ...current, groupsText: event.target.value }))} />
+          </FormField>
+          <div className="admin-user-access-shell">
+            <div>
+              <div className="admin-subsection-title">Menüzugriffe</div>
+              <div className="menu-access-grid">
+                {menuOptions.map((option) => {
+                  const allowed = getAllowedMenuAccessForRole(newUser.role).includes(option.key);
+                  return (
+                    <label key={option.key} className={`checkbox-row compact-checkbox ${allowed ? "" : "muted-option"}`}>
+                      <input
+                        type="checkbox"
+                        checked={newUser.menuAccess.includes(option.key)}
+                        disabled={!allowed}
+                        onChange={(event) => toggleNewUserMenuAccess(option.key, event.target.checked)}
+                      />
+                      {option.label}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+            {newUser.role === "custom" ? (
+              <div>
+                <div className="admin-subsection-title">Berechtigungen</div>
+                <div className="permission-group-grid">
+                  {permissionGroups.map((group) => (
+                    <div key={group.title} className="permission-group-card">
+                      <strong>{group.title}</strong>
+                      <div className="permission-check-list">
+                        {group.items.map((item) => (
+                          <label key={item.key} className="checkbox-row compact-checkbox">
+                            <input
+                              type="checkbox"
+                              checked={isPermissionEnabled(newUser.permissions, item.key)}
+                              onChange={(event) => toggleNewUserPermission(item.key, event.target.checked)}
+                            />
+                            {item.label}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+          <div className="admin-form-actions admin-form-span-full">
+            <button type="submit">Benutzer speichern</button>
+          </div>
+        </form>
+      </div>
+      <div className="table-section admin-table-shell">
+        <div className="table-section-header">
+          <div>
+            <h4>Bestehende Benutzer</h4>
+            <p className="section-copy">{users.length} Einträge</p>
+          </div>
+        </div>
+        <div className="table-wrap">
+          <table className="data-table admin-table-compact admin-users-table">
+          <thead><tr><th>Benutzername</th><th>Anzeigename</th><th>E-Mail</th><th>Rolle</th><th>Status</th><th>Menüzugriffe</th><th>Rechte</th><th>Aktion</th></tr></thead>
           <tbody>
             {users.map((entry) => (
               <tr key={entry.id}>
-                <td><input value={editableUsers[entry.id]?.username || ""} onChange={(event) => setEditableUsers((current) => ({ ...current, [entry.id]: { ...(current[entry.id] || entry), username: event.target.value } }))} /></td>
-                <td><input value={editableUsers[entry.id]?.displayName || ""} onChange={(event) => setEditableUsers((current) => ({ ...current, [entry.id]: { ...(current[entry.id] || entry), displayName: event.target.value } }))} /></td>
-                <td>
-                  <select value={editableUsers[entry.id]?.role || entry.role} onChange={(event) => updateEditableUserRole(entry.id, event.target.value as AdminUser["role"])}>
-                    <option value="guard">guard</option>
-                    <option value="admin">admin</option>
-                    <option value="sibe">sibe</option>
-                    <option value="kaskdt">kaskdt</option>
-                  </select>
-                </td>
-                <td>
-                  <textarea
-                    rows={2}
-                    value={formatGroupText(editableUsers[entry.id]?.groups)}
-                    onChange={(event) => updateEditableUserGroups(entry.id, event.target.value)}
-                  />
-                </td>
-                <td>
-                  <div className="menu-access-grid menu-access-grid-compact">
-                    {menuOptions.map((option) => {
-                      const currentEntry = editableUsers[entry.id] || entry;
-                      const allowed = getAllowedMenuAccessForRole(currentEntry.role).includes(option.key);
-                      return (
-                        <label key={option.key} className={`checkbox-row compact-checkbox ${allowed ? "" : "muted-option"}`}>
-                          <input
-                            type="checkbox"
-                            checked={currentEntry.menuAccess.includes(option.key)}
-                            disabled={!allowed}
-                            onChange={(event) => toggleEditableUserMenuAccess(entry.id, option.key, event.target.checked)}
-                          />
-                          {option.label}
-                        </label>
-                      );
-                    })}
-                  </div>
-                </td>
-                <td>
-                  <input
-                    type="password"
-                    placeholder="Neues Passwort"
-                    value={editableUsers[entry.id]?.password || ""}
-                    onChange={(event) => setEditableUsers((current) => ({ ...current, [entry.id]: { ...(current[entry.id] || entry), password: event.target.value } }))}
-                  />
-                </td>
-                <td>
-                  <label className="checkbox-row">
-                    <input type="checkbox" checked={editableUsers[entry.id]?.isActive ?? entry.isActive} onChange={(event) => setEditableUsers((current) => ({ ...current, [entry.id]: { ...(current[entry.id] || entry), isActive: event.target.checked } }))} />
-                    Aktiv
-                  </label>
-                </td>
-                <td>
-                  <div className="row-actions">
-                    <button type="button" onClick={() => void saveUser(entry.id)}>Speichern</button>
-                    <button className="danger-button" type="button" onClick={() => void toggleUserActive(entry.id, entry.isActive)}>{entry.isActive ? "Deaktivieren" : "Reaktivieren"}</button>
-                    <button className="danger-button" type="button" onClick={() => void deleteUser(entry)} disabled={currentUserId === entry.id}>Loeschen</button>
+                <td>{entry.username}</td>
+                <td>{entry.displayName}</td>
+                <td>{entry.email || "—"}</td>
+                <td>{formatRoleLabel(entry.role)}</td>
+                <td><span className={entry.isActive ? "badge status-active" : "badge status-cancelled"}>{entry.isActive ? "Aktiv" : "Inaktiv"}</span></td>
+                <td className="truncate-cell" title={summarizeMenuAccess(entry.menuAccess)}>{summarizeMenuAccess(entry.menuAccess)}</td>
+                <td className="truncate-cell" title={summarizePermissions(editableUsers[entry.id] || entry as EditableAdminUser)}>{summarizePermissions(editableUsers[entry.id] || entry as EditableAdminUser)}</td>
+                <td className="actions-cell">
+                  <div className="action-row admin-action-row compact-action-row">
+                    <button type="button" className="secondary-button" onClick={() => setSelectedUserId(entry.id)}>Bearbeiten</button>
+                    <button className="secondary-button" type="button" onClick={() => void toggleUserActive(entry.id, entry.isActive)}>{entry.isActive ? "Deaktivieren" : "Aktivieren"}</button>
+                    <button className="danger-button" type="button" onClick={() => void deleteUser(entry)} disabled={currentUserId === entry.id}>Löschen</button>
                   </div>
                 </td>
               </tr>
             ))}
           </tbody>
-        </table>
+          </table>
+        </div>
       </div>
+      {selectedUser ? (
+        <div className="panel admin-user-card">
+          <div className="table-section-header">
+            <div>
+              <h4>Benutzer bearbeiten</h4>
+              <p className="section-copy">{selectedUser.username}</p>
+            </div>
+            <button type="button" className="secondary-button" onClick={() => setSelectedUserId(null)}>Schließen</button>
+          </div>
+          <div className="admin-user-create-grid">
+            <FormField label="Benutzername">
+              <input value={selectedUser.username} onChange={(event) => setEditableUsers((current) => ({ ...current, [selectedUser.id]: { ...selectedUser, username: event.target.value } }))} />
+            </FormField>
+            <FormField label="Anzeigename">
+              <input value={selectedUser.displayName} onChange={(event) => setEditableUsers((current) => ({ ...current, [selectedUser.id]: { ...selectedUser, displayName: event.target.value } }))} />
+            </FormField>
+            <FormField label="E-Mail (optional)">
+              <input type="text" inputMode="email" value={selectedUser.email || ""} onChange={(event) => setEditableUsers((current) => ({ ...current, [selectedUser.id]: { ...selectedUser, email: event.target.value } }))} />
+            </FormField>
+            <FormField label="Neues Passwort">
+              <input type="password" placeholder="Leer lassen für unverändert" value={selectedUser.password || ""} onChange={(event) => setEditableUsers((current) => ({ ...current, [selectedUser.id]: { ...selectedUser, password: event.target.value } }))} />
+            </FormField>
+            <FormField label="Rolle">
+              <select value={selectedUser.role} onChange={(event) => updateEditableUserRole(selectedUser.id, event.target.value as AdminUser["role"])}>
+                <option value="guard">Wache</option>
+                <option value="admin">Admin</option>
+                <option value="sibe">SiBe</option>
+                <option value="kaskdt">Kasernenkommandant</option>
+                <option value="custom">Benutzerdefiniert</option>
+              </select>
+            </FormField>
+            <FormField label="Gruppen">
+              <textarea rows={3} value={formatGroupText(selectedUser.groups)} onChange={(event) => updateEditableUserGroups(selectedUser.id, event.target.value)} />
+            </FormField>
+            <div className="admin-user-access-shell">
+              <div>
+                <div className="admin-subsection-title">Menüzugriffe</div>
+                <div className="menu-access-grid">
+                  {menuOptions.map((option) => {
+                    const allowed = getAllowedMenuAccessForRole(selectedUser.role).includes(option.key);
+                    return (
+                      <label key={option.key} className={`checkbox-row compact-checkbox ${allowed ? "" : "muted-option"}`}>
+                        <input
+                          type="checkbox"
+                          checked={selectedUser.menuAccess.includes(option.key)}
+                          disabled={!allowed}
+                          onChange={(event) => toggleEditableUserMenuAccess(selectedUser.id, option.key, event.target.checked)}
+                        />
+                        {option.label}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+              {selectedUser.role === "custom" ? (
+                <div>
+                  <div className="admin-subsection-title">Berechtigungen</div>
+                  <div className="permission-group-grid">
+                    {permissionGroups.map((group) => (
+                      <div key={group.title} className="permission-group-card">
+                        <strong>{group.title}</strong>
+                        <div className="permission-check-list">
+                          {group.items.map((item) => (
+                            <label key={item.key} className="checkbox-row compact-checkbox">
+                              <input
+                                type="checkbox"
+                                checked={isPermissionEnabled(selectedUser.permissions, item.key)}
+                                onChange={(event) => toggleEditableUserPermission(selectedUser.id, item.key, event.target.checked)}
+                              />
+                              {item.label}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+            <div className="admin-form-actions admin-form-span-full">
+              <label className="checkbox-row">
+                <input type="checkbox" checked={selectedUser.isActive} onChange={(event) => setEditableUsers((current) => ({ ...current, [selectedUser.id]: { ...selectedUser, isActive: event.target.checked } }))} />
+                Aktiv
+              </label>
+              <button type="button" onClick={() => void saveUser(selectedUser.id)}>Speichern</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </Card>
   );
 }
@@ -310,7 +497,7 @@ export function AdminSiteMapSection({
 }) {
   return (
     <Card>
-      <h3>Gelaendeplan hochladen</h3>
+      <h3>Geländeplan hochladen</h3>
       <form className="site-map-upload-stack" onSubmit={uploadSiteMap}>
         <FormField label="Bezeichnung">
           <input
@@ -359,13 +546,13 @@ export function AdminSiteMapSection({
         {siteMapPreviewUrl ? (
           <div className="site-map-preview-card">
             <p className="section-copy">Vorschau vor dem Upload</p>
-            <img className="admin-site-map-preview" src={siteMapPreviewUrl} alt="Vorschau des neuen Gelaendeplans" />
+            <img className="admin-site-map-preview" src={siteMapPreviewUrl} alt="Vorschau des neuen Geländeplans" />
           </div>
         ) : null}
 
         <div className="row-actions">
           <button type="submit" disabled={siteMapUploading || !siteMapFile}>
-            {siteMapUploading ? "Upload laeuft..." : "Gelaendeplan hochladen"}
+            {siteMapUploading ? "Upload läuft..." : "Geländeplan hochladen"}
           </button>
           <button className="secondary-button" type="button" onClick={resetSiteMapSelection}>
             Auswahl leeren
@@ -375,7 +562,7 @@ export function AdminSiteMapSection({
 
       <div className="site-map-admin-grid">
         <div className="site-map-current">
-          <h4>Aktiver Gelaendeplan</h4>
+          <h4>Aktiver Geländeplan</h4>
           {activeSiteMap ? (
             <>
               <img className="admin-site-map-preview" src={activeSiteMap.filePath} alt={activeSiteMap.name} />
@@ -388,7 +575,7 @@ export function AdminSiteMapSection({
               </div>
             </>
           ) : (
-            <p className="section-copy">Aktuell ist kein aktiver Gelaendeplan gesetzt.</p>
+            <p className="section-copy">Aktuell ist kein aktiver Geländeplan gesetzt.</p>
           )}
         </div>
 
@@ -439,7 +626,15 @@ export function AdminSiteMapSection({
 }
 
 export function AdminSystemSection({
-  systemStatus
+  systemStatus,
+  workflowSettings,
+  setWorkflowSettings,
+  workflowPassword,
+  setWorkflowPassword,
+  workflowTestRecipient,
+  setWorkflowTestRecipient,
+  saveWorkflowSettings,
+  sendWorkflowTestMail
 }: {
   systemStatus: {
     app: string;
@@ -449,7 +644,20 @@ export function AdminSystemSection({
     signaturesPending: number;
     signaturesFollowUp: number;
     signaturesExceptions: number;
+    approvalsPending?: number;
+    retentionDays?: number | null;
+    retentionEnabled?: boolean;
+    dbHost?: string;
+    dbName?: string;
   } | null;
+  workflowSettings: AdminWorkflowSettings | null;
+  setWorkflowSettings: Dispatch<SetStateAction<AdminWorkflowSettings | null>>;
+  workflowPassword: string;
+  setWorkflowPassword: Dispatch<SetStateAction<string>>;
+  workflowTestRecipient: string;
+  setWorkflowTestRecipient: Dispatch<SetStateAction<string>>;
+  saveWorkflowSettings: () => Promise<void>;
+  sendWorkflowTestMail: () => Promise<void>;
 }) {
   return (
     <Card>
@@ -459,9 +667,170 @@ export function AdminSystemSection({
         <article className="panel mini-card"><h3>Aktive Wachen</h3><p>{systemStatus?.activeGates ?? "-"}</p></article>
         <article className="panel mini-card"><h3>Aktive Besucher</h3><p>{systemStatus?.activeVisits ?? "-"}</p></article>
         <article className="panel mini-card"><h3>Offene Voranmeldungen heute</h3><p>{systemStatus?.openPreRegistrationsToday ?? "-"}</p></article>
+        <article className="panel mini-card"><h3>Freigaben offen</h3><p>{systemStatus?.approvalsPending ?? "-"}</p></article>
         <article className="panel mini-card"><h3>Unterschrift offen</h3><p>{systemStatus?.signaturesPending ?? "-"}</p></article>
         <article className="panel mini-card"><h3>Nachgereicht</h3><p>{systemStatus?.signaturesFollowUp ?? "-"}</p></article>
         <article className="panel mini-card"><h3>Ausnahmen</h3><p>{systemStatus?.signaturesExceptions ?? "-"}</p></article>
+      </div>
+
+      <div className="detail-grid">
+        <div><dt>Datenbank</dt><dd>{systemStatus?.dbHost || "-"} / {systemStatus?.dbName || "-"}</dd></div>
+        <div><dt>Aufbewahrung</dt><dd>{systemStatus?.retentionEnabled ? `${systemStatus?.retentionDays ?? "-"} Tage` : "deaktiviert"}</dd></div>
+      </div>
+
+      <div className="panel">
+        <h3>SiBe-Freigabe und E-Mail-Relay</h3>
+        <div className="form-grid two-columns">
+          {workflowSettings?.emailRelay.source === "yml" ? (
+            <div className="detail-span-2">
+              <div className="feedback info">
+                Das Mail-Relay wird aus einer YML-Datei geladen.
+                {workflowSettings.emailRelay.configPath ? ` Pfad: ${workflowSettings.emailRelay.configPath}` : ""}
+                {" "}Die SMTP-Felder sind hier nur lesbar, Tests bleiben moeglich.
+              </div>
+            </div>
+          ) : null}
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={workflowSettings?.approvalRequired ?? true}
+              onChange={(event) => setWorkflowSettings((current) => current ? {
+                ...current,
+                approvalRequired: event.target.checked
+              } : current)}
+            />
+            SiBe-Freigabe vor Check-in erzwingen
+          </label>
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={workflowSettings?.emailRelay.enabled ?? false}
+              onChange={(event) => setWorkflowSettings((current) => current ? {
+                ...current,
+                emailRelay: {
+                  ...current.emailRelay,
+                  enabled: event.target.checked
+                }
+              } : current)}
+            />
+            E-Mail-Relay aktivieren
+          </label>
+
+          <FormField label="SMTP Host">
+            <input
+              disabled={workflowSettings?.emailRelay.isReadOnly ?? false}
+              value={workflowSettings?.emailRelay.host ?? ""}
+              onChange={(event) => setWorkflowSettings((current) => current ? {
+                ...current,
+                emailRelay: {
+                  ...current.emailRelay,
+                  host: event.target.value
+                }
+              } : current)}
+            />
+          </FormField>
+          <FormField label="SMTP Port">
+            <input
+              type="number"
+              disabled={workflowSettings?.emailRelay.isReadOnly ?? false}
+              value={workflowSettings?.emailRelay.port ?? 587}
+              onChange={(event) => setWorkflowSettings((current) => current ? {
+                ...current,
+                emailRelay: {
+                  ...current.emailRelay,
+                  port: Number(event.target.value) || 587
+                }
+              } : current)}
+            />
+          </FormField>
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              disabled={workflowSettings?.emailRelay.isReadOnly ?? false}
+              checked={workflowSettings?.emailRelay.secure ?? false}
+              onChange={(event) => setWorkflowSettings((current) => current ? {
+                ...current,
+                emailRelay: {
+                  ...current.emailRelay,
+                  secure: event.target.checked
+                }
+              } : current)}
+            />
+            SMTPS / TLS direkt nutzen
+          </label>
+          <div />
+          <FormField label="Benutzername">
+            <input
+              disabled={workflowSettings?.emailRelay.isReadOnly ?? false}
+              value={workflowSettings?.emailRelay.username ?? ""}
+              onChange={(event) => setWorkflowSettings((current) => current ? {
+                ...current,
+                emailRelay: {
+                  ...current.emailRelay,
+                  username: event.target.value
+                }
+              } : current)}
+            />
+          </FormField>
+          <FormField label={workflowSettings?.emailRelay.hasPassword ? "Passwort (leer = beibehalten)" : "Passwort"}>
+            <input
+              type="password"
+              disabled={workflowSettings?.emailRelay.isReadOnly ?? false}
+              value={workflowPassword}
+              onChange={(event) => setWorkflowPassword(event.target.value)}
+            />
+          </FormField>
+          <FormField label="Absenderadresse">
+            <input
+              type="email"
+              disabled={workflowSettings?.emailRelay.isReadOnly ?? false}
+              value={workflowSettings?.emailRelay.fromAddress ?? ""}
+              onChange={(event) => setWorkflowSettings((current) => current ? {
+                ...current,
+                emailRelay: {
+                  ...current.emailRelay,
+                  fromAddress: event.target.value
+                }
+              } : current)}
+            />
+          </FormField>
+          <FormField label="SiBe-Empfaenger">
+            <textarea
+              rows={3}
+              disabled={workflowSettings?.emailRelay.isReadOnly ?? false}
+              value={(workflowSettings?.emailRelay.approvalRecipients ?? []).join(", ")}
+              onChange={(event) => setWorkflowSettings((current) => current ? {
+                ...current,
+                emailRelay: {
+                  ...current.emailRelay,
+                  approvalRecipients: event.target.value
+                    .split(/[,\n;]+/)
+                    .map((entry) => entry.trim())
+                    .filter(Boolean)
+                }
+              } : current)}
+            />
+          </FormField>
+        </div>
+
+        <div className="row-actions action-bar">
+          <button type="button" onClick={() => void saveWorkflowSettings()}>Workflow speichern</button>
+        </div>
+
+        <div className="form-grid two-columns">
+          <FormField label="Testadresse">
+            <input
+              type="email"
+              value={workflowTestRecipient}
+              onChange={(event) => setWorkflowTestRecipient(event.target.value)}
+            />
+          </FormField>
+          <div className="row-actions action-bar">
+            <button type="button" className="secondary-button" onClick={() => void sendWorkflowTestMail()}>
+              Testmail senden
+            </button>
+          </div>
+        </div>
       </div>
     </Card>
   );
@@ -485,17 +854,36 @@ export function AdminAuditSection({
   setSelectedAuditLogId: Dispatch<SetStateAction<string | null>>;
 }) {
   return (
-    <Card>
-      <h3>Auditlog</h3>
-      <div className="toolbar audit-toolbar">
-        <input placeholder="Suche nach Benutzer, Aktion oder Objekt" value={auditFilters.search} onChange={(event) => setAuditFilters((current) => ({ ...current, search: event.target.value }))} />
-        <input placeholder="Aktion" value={auditFilters.action} onChange={(event) => setAuditFilters((current) => ({ ...current, action: event.target.value }))} />
-        <input placeholder="Benutzer" value={auditFilters.user} onChange={(event) => setAuditFilters((current) => ({ ...current, user: event.target.value }))} />
-        <input placeholder="IP" value={auditFilters.ip} onChange={(event) => setAuditFilters((current) => ({ ...current, ip: event.target.value }))} />
-        <input type="datetime-local" value={auditFilters.from} onChange={(event) => setAuditFilters((current) => ({ ...current, from: event.target.value }))} />
-        <input type="datetime-local" value={auditFilters.to} onChange={(event) => setAuditFilters((current) => ({ ...current, to: event.target.value }))} />
+    <Card className="admin-section-stack">
+      <div className="section-header">
+        <div>
+          <h3>Auditlog</h3>
+          <p className="section-copy">Aktionen, Benutzer und Zeiträume gezielt filtern.</p>
+        </div>
+      </div>
+      <div className="filter-grid admin-filter-grid">
+        <FormField label="Suche">
+          <input placeholder="Benutzer, Aktion oder Objekt" value={auditFilters.search} onChange={(event) => setAuditFilters((current) => ({ ...current, search: event.target.value }))} />
+        </FormField>
+        <FormField label="Aktion">
+          <input placeholder="z. B. VISIT_CHECKED_IN" value={auditFilters.action} onChange={(event) => setAuditFilters((current) => ({ ...current, action: event.target.value }))} />
+        </FormField>
+        <FormField label="Benutzer">
+          <input placeholder="Benutzer" value={auditFilters.user} onChange={(event) => setAuditFilters((current) => ({ ...current, user: event.target.value }))} />
+        </FormField>
+        <FormField label="IP">
+          <input placeholder="IP-Adresse" value={auditFilters.ip} onChange={(event) => setAuditFilters((current) => ({ ...current, ip: event.target.value }))} />
+        </FormField>
+        <FormField label="Von">
+          <input type="datetime-local" value={auditFilters.from} onChange={(event) => setAuditFilters((current) => ({ ...current, from: event.target.value }))} />
+        </FormField>
+        <FormField label="Bis">
+          <input type="datetime-local" value={auditFilters.to} onChange={(event) => setAuditFilters((current) => ({ ...current, to: event.target.value }))} />
+        </FormField>
+      </div>
+      <div className="row-actions admin-filter-actions">
         <button type="button" onClick={() => void applyAuditFilters()}>Filter anwenden</button>
-        <button type="button" className="secondary-button" onClick={() => void resetAuditFilters()}>Zuruecksetzen</button>
+        <button type="button" className="secondary-button" onClick={() => void resetAuditFilters()}>Zurücksetzen</button>
       </div>
       <DataTable>
         <thead>
@@ -514,19 +902,15 @@ export function AdminAuditSection({
             <tr key={log.id}>
               <td>{formatDateTime(log.timestamp)}</td>
               <td>{log.user}</td>
-              <td>{log.action}</td>
+              <td>{formatAuditAction(log.action)}</td>
               <td>{log.objectType}:{log.objectId}</td>
               <td>{log.ipAddress || "-"}</td>
               <td>{formatUserAgent(log.userAgent)}</td>
-              <td>
-                <button type="button" className="secondary-button" onClick={() => setSelectedAuditLogId(log.id)}>
-                  Anzeigen
-                </button>
-              </td>
+              <td><button type="button" className="secondary-button" onClick={() => setSelectedAuditLogId(log.id)}>Details</button></td>
             </tr>
           )) : (
             <tr>
-              <td colSpan={7}>Keine Audit-Eintraege fuer die aktuelle Auswahl gefunden.</td>
+              <td colSpan={7}>Keine Audit-Einträge für die aktuelle Auswahl gefunden.</td>
             </tr>
           )}
         </tbody>
@@ -538,7 +922,7 @@ export function AdminAuditSection({
             <div>
               <h3>Audit-Details</h3>
               <p className="section-copy">
-                {selectedAuditLog.action} fuer {selectedAuditLog.objectType}:{selectedAuditLog.objectId}
+                {formatAuditAction(selectedAuditLog.action)} für {selectedAuditLog.objectType}:{selectedAuditLog.objectId}
               </p>
             </div>
           </div>
@@ -575,16 +959,33 @@ export function AdminErrorLogSection({
   setSelectedErrorLogId: Dispatch<SetStateAction<string | null>>;
 }) {
   return (
-    <Card>
-      <h3>Fehlerlog</h3>
-      <div className="toolbar audit-toolbar">
-        <input placeholder="Suche nach Meldung, Benutzer oder Pfad" value={errorLogFilters.search} onChange={(event) => setErrorLogFilters((current) => ({ ...current, search: event.target.value }))} />
-        <input placeholder="Fehlercode" value={errorLogFilters.errorCode} onChange={(event) => setErrorLogFilters((current) => ({ ...current, errorCode: event.target.value }))} />
-        <input placeholder="Pfad" value={errorLogFilters.path} onChange={(event) => setErrorLogFilters((current) => ({ ...current, path: event.target.value }))} />
-        <input type="datetime-local" value={errorLogFilters.from} onChange={(event) => setErrorLogFilters((current) => ({ ...current, from: event.target.value }))} />
-        <input type="datetime-local" value={errorLogFilters.to} onChange={(event) => setErrorLogFilters((current) => ({ ...current, to: event.target.value }))} />
+    <Card className="admin-section-stack">
+      <div className="section-header">
+        <div>
+          <h3>Fehlerlog</h3>
+          <p className="section-copy">Fehler nach Code, Pfad und Zeitraum eingrenzen.</p>
+        </div>
+      </div>
+      <div className="filter-grid admin-filter-grid">
+        <FormField label="Suche">
+          <input placeholder="Meldung, Benutzer oder Pfad" value={errorLogFilters.search} onChange={(event) => setErrorLogFilters((current) => ({ ...current, search: event.target.value }))} />
+        </FormField>
+        <FormField label="Fehlercode">
+          <input placeholder="Fehlercode" value={errorLogFilters.errorCode} onChange={(event) => setErrorLogFilters((current) => ({ ...current, errorCode: event.target.value }))} />
+        </FormField>
+        <FormField label="Pfad">
+          <input placeholder="/api/..." value={errorLogFilters.path} onChange={(event) => setErrorLogFilters((current) => ({ ...current, path: event.target.value }))} />
+        </FormField>
+        <FormField label="Von">
+          <input type="datetime-local" value={errorLogFilters.from} onChange={(event) => setErrorLogFilters((current) => ({ ...current, from: event.target.value }))} />
+        </FormField>
+        <FormField label="Bis">
+          <input type="datetime-local" value={errorLogFilters.to} onChange={(event) => setErrorLogFilters((current) => ({ ...current, to: event.target.value }))} />
+        </FormField>
+      </div>
+      <div className="row-actions admin-filter-actions">
         <button type="button" onClick={() => void applyErrorLogFilters()}>Filter anwenden</button>
-        <button type="button" className="secondary-button" onClick={() => void resetErrorLogFilters()}>Zuruecksetzen</button>
+        <button type="button" className="secondary-button" onClick={() => void resetErrorLogFilters()}>Zurücksetzen</button>
       </div>
       <DataTable>
         <thead>
@@ -606,14 +1007,12 @@ export function AdminErrorLogSection({
               <td>{entry.requestMethod || "-"} {entry.requestPath || "-"}</td>
               <td>{entry.userName || "-"}</td>
               <td>
-                <button type="button" className="secondary-button" onClick={() => setSelectedErrorLogId(entry.id)}>
-                  Anzeigen
-                </button>
+                <button type="button" className="secondary-button" onClick={() => setSelectedErrorLogId(entry.id)}>Details</button>
               </td>
             </tr>
           )) : (
             <tr>
-              <td colSpan={6}>Keine Fehler fuer die aktuelle Auswahl gefunden.</td>
+              <td colSpan={6}>Keine Fehler für die aktuelle Auswahl gefunden.</td>
             </tr>
           )}
         </tbody>

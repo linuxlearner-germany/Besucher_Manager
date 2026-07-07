@@ -41,6 +41,26 @@ const optionalBooleanish = zod_1.z.preprocess((value) => {
     }
     return value;
 }, zod_1.z.boolean().optional());
+function parseTrustProxy(value) {
+    if (typeof value !== "string") {
+        return undefined;
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+        return undefined;
+    }
+    const normalized = trimmed.toLowerCase();
+    if (["1", "true", "yes", "on"].includes(normalized)) {
+        return true;
+    }
+    if (["0", "false", "no", "off"].includes(normalized)) {
+        return false;
+    }
+    if (/^\d+$/.test(trimmed)) {
+        return Number.parseInt(trimmed, 10);
+    }
+    return trimmed;
+}
 const envSchema = zod_1.z.object({
     NODE_ENV: zod_1.z.enum(["development", "test", "production"]).default("development"),
     APP_HOST: zod_1.z.string().default("0.0.0.0"),
@@ -52,6 +72,7 @@ const envSchema = zod_1.z.object({
     INITIAL_ADMIN_PASSWORD: zod_1.z.string().min(8).optional(),
     PUBLIC_BASE_URL: zod_1.z.string().url().default("http://localhost:3030"),
     APP_SECURE_COOKIES: optionalBooleanish,
+    APP_TRUST_PROXY: zod_1.z.string().trim().optional(),
     MSSQL_HOST: zod_1.z.string().min(1, "MSSQL_HOST is required"),
     MSSQL_PORT: zod_1.z.coerce.number().int().positive().default(1433),
     MSSQL_DATABASE: zod_1.z.string().min(1, "MSSQL_DATABASE is required"),
@@ -62,7 +83,8 @@ const envSchema = zod_1.z.object({
     UPLOAD_DIR: zod_1.z.string().default("./uploads"),
     VISITOR_RETENTION_DAYS: zod_1.z.coerce.number().int().positive().default(90),
     PUBLIC_FORM_RATE_LIMIT: zod_1.z.coerce.number().int().positive().default(10),
-    PUBLIC_FORM_RATE_WINDOW_SECONDS: zod_1.z.coerce.number().int().positive().default(900)
+    PUBLIC_FORM_RATE_WINDOW_SECONDS: zod_1.z.coerce.number().int().positive().default(900),
+    MAIL_RELAY_CONFIG_PATH: zod_1.z.string().trim().optional()
 });
 const parsed = envSchema.safeParse(process.env);
 if (!parsed.success) {
@@ -72,5 +94,7 @@ if (!parsed.success) {
 exports.env = {
     ...parsed.data,
     APP_SECURE_COOKIES: parsed.data.APP_SECURE_COOKIES ?? parsed.data.PUBLIC_BASE_URL.startsWith("https://"),
-    uploadDir: node_path_1.default.resolve(parsed.data.UPLOAD_DIR)
+    appTrustProxy: parseTrustProxy(parsed.data.APP_TRUST_PROXY),
+    uploadDir: node_path_1.default.resolve(parsed.data.UPLOAD_DIR),
+    mailRelayConfigPath: parsed.data.MAIL_RELAY_CONFIG_PATH ? node_path_1.default.resolve(parsed.data.MAIL_RELAY_CONFIG_PATH) : null
 };

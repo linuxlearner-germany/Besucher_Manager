@@ -5,9 +5,13 @@ import {
   APP_MENU_KEYS,
   getAllowedMenuAccessForRole,
   getDefaultMenuAccessForRole,
+  normalizeUserPermissions,
+  parsePermissionsJson,
   type AppMenuKey,
   type AppRole,
-  type AuthenticatedUser
+  type AuthenticatedUser,
+  type UserPermissions,
+  type UserPermissionsInput
 } from "./visitWorkflow";
 
 type DbUserRow = {
@@ -17,6 +21,13 @@ type DbUserRow = {
   role: AuthenticatedUser["role"];
   gateId: string | null;
   isActive: boolean;
+  permissionsJson?: string | null;
+};
+
+type UserNotificationRow = {
+  id: string;
+  email: string | null;
+  role: AppRole;
 };
 
 type CreateAdminInput = {
@@ -34,6 +45,15 @@ export function normalizeGroups(groups: string[] | null | undefined): string[] {
   ).sort((left, right) => left.localeCompare(right, "de"));
 }
 
+export function normalizeUserEmail(email: string | null | undefined): string | null {
+  if (typeof email !== "string") {
+    return null;
+  }
+
+  const normalized = email.trim().toLowerCase();
+  return normalized ? normalized : null;
+}
+
 export function normalizeMenuAccess(role: AppRole, menuAccess: string[] | null | undefined): AppMenuKey[] {
   const allowed = new Set(getAllowedMenuAccessForRole(role));
   const requested = (menuAccess ?? [])
@@ -45,6 +65,14 @@ export function normalizeMenuAccess(role: AppRole, menuAccess: string[] | null |
   }
 
   return Array.from(new Set(requested)).sort((left, right) => left.localeCompare(right, "de")) as AppMenuKey[];
+}
+
+export function normalizePermissions(
+  role: AppRole,
+  permissions: UserPermissionsInput | null | undefined,
+  menuAccess: string[] | null | undefined
+): UserPermissions {
+  return normalizeUserPermissions(role, permissions, normalizeMenuAccess(role, menuAccess));
 }
 
 type GroupRow = {
@@ -160,7 +188,8 @@ export async function findUserForLogin(username: string): Promise<DbUserRow | nu
       password_hash AS passwordHash,
       role,
       COALESCE(gate_id, default_gate_id) AS gateId,
-      is_active AS isActive
+      is_active AS isActive,
+      permissions_json AS permissionsJson
     FROM dbo.users
     WHERE username = @username
   `);
@@ -170,13 +199,14 @@ export async function findUserForLogin(username: string): Promise<DbUserRow | nu
 
 export async function findUserById(id: string): Promise<AuthenticatedUser | null> {
   const pool = await getPool();
-  const result = await pool.request().input("id", sql.UniqueIdentifier, id).query<AuthenticatedUser & { isActive: boolean }>(`
+  const result = await pool.request().input("id", sql.UniqueIdentifier, id).query<AuthenticatedUser & { isActive: boolean; permissionsJson: string | null }>(`
     SELECT
       id,
       username,
       role,
       COALESCE(gate_id, default_gate_id) AS gateId,
-      is_active AS isActive
+      is_active AS isActive,
+      permissions_json AS permissionsJson
     FROM dbo.users
     WHERE id = @id
   `);
@@ -189,14 +219,60 @@ export async function findUserById(id: string): Promise<AuthenticatedUser | null
 
   const { groupsByUserId, menuAccessByUserId } = await loadUserGroupsAndMenuAccess([user.id]);
 
+  const effectiveMenuAccess = normalizeMenuAccess(
+    user.role,
+    menuAccessByUserId[user.id]?.length ? menuAccessByUserId[user.id] : getDefaultMenuAccessForRole(user.role)
+  );
+
   return {
     id: user.id,
     username: user.username,
     role: user.role,
     gateId: user.gateId,
     groups: groupsByUserId[user.id] ?? [],
-    menuAccess: (menuAccessByUserId[user.id]?.length ? menuAccessByUserId[user.id] : getDefaultMenuAccessForRole(user.role))
+    menuAccess: effectiveMenuAccess,
+    permissions: normalizePermissions(
+      user.role,
+      parsePermissionsJson(user.permissionsJson),
+      effectiveMenuAccess
+    )
   };
+}
+
+export async function listNotificationEmailsByMenuAccess(menuKey: AppMenuKey): Promise<string[]> {
+  const pool = await getPool();
+  const result = await pool.request().query<UserNotificationRow>(`
+    SELECT
+      id,
+      user_email AS email,
+      role
+    FROM dbo.users
+    WHERE is_active = 1
+      AND role <> 'guard'
+      AND user_email IS NOT NULL
+      AND LTRIM(RTRIM(user_email)) <> ''
+  `);
+
+  if (result.recordset.length === 0) {
+    return [];
+  }
+
+  const { menuAccessByUserId } = await loadUserGroupsAndMenuAccess(result.recordset.map((entry) => entry.id));
+
+  return Array.from(
+    new Set(
+      result.recordset
+        .filter((entry) => {
+          const effectiveMenuAccess = menuAccessByUserId[entry.id]?.length
+            ? normalizeMenuAccess(entry.role, menuAccessByUserId[entry.id])
+            : getDefaultMenuAccessForRole(entry.role);
+
+          return effectiveMenuAccess.includes(menuKey);
+        })
+        .map((entry) => normalizeUserEmail(entry.email))
+        .filter((entry): entry is string => Boolean(entry))
+    )
+  );
 }
 
 export async function createOrUpdateAdmin(input: CreateAdminInput): Promise<{ created: boolean; userId: string }> {

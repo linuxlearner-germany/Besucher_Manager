@@ -1,56 +1,170 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Alert } from "../components/ui";
-import { AppLayout, type ApiError, fetchJson, type SibeSummary, useAuth } from "../app/core";
+import { AppLayout, type ApiError, fetchJson, formatDateTime, formatSignatureStatus, formatStatus, statusClassName, type SibeSummary, type SibeVisitRow } from "../app/core";
+import { Alert, Card, DataTable } from "../components/ui";
 
 export function SibeDashboardPage() {
-  const { user } = useAuth();
   const [summary, setSummary] = useState<SibeSummary | null>(null);
+  const [pendingApprovals, setPendingApprovals] = useState<SibeVisitRow[]>([]);
+  const [recentVisits, setRecentVisits] = useState<SibeVisitRow[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    async function loadSummary() {
+    async function loadDashboard() {
       try {
-        const payload = await fetchJson<SibeSummary>("/api/sibe/summary", { method: "GET", headers: {} });
-        setSummary(payload);
+        const [summaryPayload, pendingPayload, recentPayload] = await Promise.all([
+          fetchJson<SibeSummary>("/api/sibe/summary", { method: "GET", headers: {} }),
+          fetchJson<{ visits: SibeVisitRow[] }>("/api/sibe/visits?approvalStatus=pending&status=pre_registered", { method: "GET", headers: {} }),
+          fetchJson<{ visits: SibeVisitRow[] }>("/api/sibe/visits?status=all", { method: "GET", headers: {} })
+        ]);
+
+        setSummary(summaryPayload);
+        setPendingApprovals(pendingPayload.visits.slice(0, 8));
+        setRecentVisits(recentPayload.visits.slice(0, 24));
       } catch (apiError) {
         const errorPayload = apiError as ApiError;
-        setError(errorPayload.message || "SiBe-Dashboard konnte nicht geladen werden.");
+        setError(errorPayload.message || "Die Übersicht konnte nicht geladen werden.");
       }
     }
 
-    void loadSummary();
+    void loadDashboard();
   }, []);
+
+  const checkedInVisits = useMemo(
+    () => recentVisits.filter((visit) => visit.status === "checked_in").slice(0, 8),
+    [recentVisits]
+  );
+  const signatureFollowUps = useMemo(
+    () => recentVisits
+      .filter((visit) => visit.hostSignatureStatus === "pending" || visit.hostSignatureStatus === "signed_later" || visit.hostSignatureStatus === "missing_exception")
+      .slice(0, 8),
+    [recentVisits]
+  );
 
   return (
     <AppLayout>
-      <main className="panel page-panel page-shell-full admin-page-shell">
-        <div className="section-header">
-          <div>
-            <h2>{user?.role === "kaskdt" ? "KasKdt Dashboard" : "SiBe Dashboard"}</h2>
+      <main className="page-panel page-shell-wide">
+        <section className="page-hero">
+          <div className="page-hero-grid dashboard-hero-grid">
+            <div className="page-hero-content">
+              <h2>SiBe-Übersicht</h2>
+              <p className="section-copy">Freigaben, offene Nachreichungen und aktuelle Besuchslage in einer Arbeitsübersicht.</p>
+            </div>
+            <div className="hero-stat-grid">
+              <div className="hero-stat-card">
+                <span className="hero-stat-label">Besucher gesamt</span>
+                <strong className="hero-stat-value">{summary?.visitorsTotal ?? "-"}</strong>
+              </div>
+              <div className="hero-stat-card">
+                <span className="hero-stat-label">Heutige Besuche</span>
+                <strong className="hero-stat-value">{summary?.todaysVisits ?? "-"}</strong>
+              </div>
+              <div className="hero-stat-card">
+                <span className="hero-stat-label">Aktuell eingecheckt</span>
+                <strong className="hero-stat-value">{summary?.checkedInVisitors ?? "-"}</strong>
+              </div>
+              <div className="hero-stat-card">
+                <span className="hero-stat-label">Unterschriften offen</span>
+                <strong className="hero-stat-value">{summary?.signaturesPending ?? "-"}</strong>
+              </div>
+              <div className="hero-stat-card">
+                <span className="hero-stat-label">Nachreichungen</span>
+                <strong className="hero-stat-value">{summary?.signaturesFollowUp ?? "-"}</strong>
+              </div>
+              <div className="hero-stat-card">
+                <span className="hero-stat-label">Ausnahmen</span>
+                <strong className="hero-stat-value">{summary?.signaturesExceptions ?? "-"}</strong>
+              </div>
+              <div className="hero-stat-card">
+                <span className="hero-stat-label">Freigaben offen</span>
+                <strong className="hero-stat-value">{summary?.approvalsPending ?? "-"}</strong>
+              </div>
+            </div>
           </div>
-        </div>
+        </section>
 
         {error ? <Alert type="error">{error}</Alert> : null}
 
-        <div className="card-grid stat-grid">
-          <article className="panel mini-card"><h3>Besucher gesamt</h3><p>{summary?.visitorsTotal ?? "-"}</p></article>
-          <article className="panel mini-card"><h3>Aktive Besucher</h3><p>{summary?.activeVisitors ?? "-"}</p></article>
-          <article className="panel mini-card"><h3>Heutige Besuche</h3><p>{summary?.todaysVisits ?? "-"}</p></article>
-          <article className="panel mini-card"><h3>Aktuell eingecheckt</h3><p>{summary?.checkedInVisitors ?? "-"}</p></article>
-          <article className="panel mini-card"><h3>Unterschrift offen</h3><p>{summary?.signaturesPending ?? "-"}</p></article>
-          <article className="panel mini-card"><h3>Nachgereicht</h3><p>{summary?.signaturesFollowUp ?? "-"}</p></article>
-          <article className="panel mini-card"><h3>Ausnahmen</h3><p>{summary?.signaturesExceptions ?? "-"}</p></article>
-          <article className="panel mini-card"><h3>Benutzer gesamt</h3><p>{summary?.usersTotal ?? "-"}</p></article>
-          <article className="panel mini-card"><h3>Aktive Benutzer</h3><p>{summary?.activeUsers ?? "-"}</p></article>
-        </div>
+        <div className="split-card-grid">
+          <Card>
+            <div className="section-header">
+              <div>
+                <h3>Offene Freigaben</h3>
+                <p className="section-copy">Die wichtigsten offenen Voranmeldungen direkt im Zugriff.</p>
+              </div>
+              <Link className="button-link" to="/genehmigungen">Genehmigungen öffnen</Link>
+            </div>
+            <DataTable>
+              <thead>
+                <tr>
+                  <th>Besucher</th>
+                  <th>Firma</th>
+                  <th>Ansprechpartner</th>
+                  <th>Wache</th>
+                  <th>Gültig von</th>
+                  <th>Aktion</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pendingApprovals.length > 0 ? pendingApprovals.map((visit) => (
+                  <tr key={visit.id}>
+                    <td>{visit.visitorName}</td>
+                    <td>{visit.company}</td>
+                    <td>{visit.hostName}</td>
+                    <td>{visit.gateName}</td>
+                    <td>{formatDateTime(visit.validFrom)}</td>
+                    <td>
+                      <Link className="button-link" to={`/sibe/besucher/${visit.id}`}>Prüfen</Link>
+                    </td>
+                  </tr>
+                )) : (
+                  <tr>
+                    <td colSpan={6}>Keine offenen Freigaben vorhanden.</td>
+                  </tr>
+                )}
+              </tbody>
+            </DataTable>
+          </Card>
 
-        <div className="row-actions">
-          <Link className="button-link" to="/sibe/besucher">Besucher suchen</Link>
-          <Link className="button-link" to="/sibe/benutzer">Benutzer suchen</Link>
-          {user && (user.role === "kaskdt" || user.role === "admin") ? (
-            <Link className="button-link" to="/kaskdt/texte">Texte verwalten</Link>
-          ) : null}
+          <Card>
+            <div className="section-header">
+              <div>
+                <h3>Nachreichungen und Unterschriften</h3>
+                <p className="section-copy">Einträge mit offener oder nachgereichter Ansprechpartner-Unterschrift.</p>
+              </div>
+              <Link className="button-link" to="/sibe/besucher">Besucherübersicht</Link>
+            </div>
+            <DataTable>
+              <thead>
+                <tr>
+                  <th>Besucher</th>
+                  <th>Firma</th>
+                  <th>Status</th>
+                  <th>Unterschrift</th>
+                  <th>Gültig bis</th>
+                  <th>Aktion</th>
+                </tr>
+              </thead>
+              <tbody>
+                {signatureFollowUps.length > 0 ? signatureFollowUps.map((visit) => (
+                  <tr key={visit.id}>
+                    <td>{visit.visitorName}</td>
+                    <td>{visit.company}</td>
+                    <td><span className={statusClassName(visit.status)}>{formatStatus(visit.status)}</span></td>
+                    <td>{formatSignatureStatus(visit.hostSignatureStatus)}</td>
+                    <td>{formatDateTime(visit.validUntil)}</td>
+                    <td>
+                      <Link className="button-link" to={`/sibe/besucher/${visit.id}`}>Details</Link>
+                    </td>
+                  </tr>
+                )) : (
+                  <tr>
+                    <td colSpan={6}>Keine offenen Nachreichungen gefunden.</td>
+                  </tr>
+                )}
+              </tbody>
+            </DataTable>
+          </Card>
         </div>
       </main>
     </AppLayout>

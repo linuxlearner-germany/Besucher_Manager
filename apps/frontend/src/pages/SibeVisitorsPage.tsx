@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Alert, Card, DataTable } from "../components/ui";
+import { Alert, Card, DataTable, FormField } from "../components/ui";
 import {
   AppLayout,
   type ApiError,
   fetchJson,
+  formatApprovalStatus,
   formatDateOnly,
   formatDateTime,
   formatSignatureStatus,
@@ -12,10 +13,13 @@ import {
   statusClassName,
   toDateInputValue,
   type SibeVisitRow,
-  type SibeVisitorRow
+  type SibeVisitorRow,
+  useAuth
 } from "../app/core";
 
 export function SibeVisitorsPage() {
+  const { user } = useAuth();
+  const isCommanderView = user?.role === "kaskdt";
   const [visits, setVisits] = useState<SibeVisitRow[]>([]);
   const [visitors, setVisitors] = useState<SibeVisitorRow[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -26,9 +30,14 @@ export function SibeVisitorsPage() {
   const [companyFilter, setCompanyFilter] = useState("");
   const [hostFilter, setHostFilter] = useState("");
   const [gateFilter, setGateFilter] = useState("");
+  const [approvalFilter, setApprovalFilter] = useState("all");
   const [licensePlateFilter, setLicensePlateFilter] = useState("");
   const [badgeFilter, setBadgeFilter] = useState("");
   const [exportDate, setExportDate] = useState(() => toDateInputValue(new Date()));
+  const filteredVisitCount = visits.length;
+  const filteredVisitorCount = visitors.length;
+  const checkedInCount = visits.filter((visit) => visit.status === "checked_in").length;
+  const approvalsPendingCount = visits.filter((visit) => visit.approvalStatus === "pending").length;
 
   function applyRangePreset(preset: "today" | "yesterday" | "week" | "last7" | "month") {
     const now = new Date();
@@ -61,6 +70,7 @@ export function SibeVisitorsPage() {
       if (companyFilter) visitParams.set("company", companyFilter);
       if (hostFilter) visitParams.set("hostName", hostFilter);
       if (gateFilter) visitParams.set("gate", gateFilter);
+      if (approvalFilter) visitParams.set("approvalStatus", approvalFilter);
       if (licensePlateFilter) visitParams.set("licensePlate", licensePlateFilter);
       if (badgeFilter) visitParams.set("badgeNumber", badgeFilter);
 
@@ -74,7 +84,7 @@ export function SibeVisitorsPage() {
       const errorPayload = apiError as ApiError;
       setError(errorPayload.message || "Besucher konnten nicht geladen werden.");
     }
-  }, [badgeFilter, companyFilter, dateFrom, dateTo, gateFilter, hostFilter, licensePlateFilter, search, status]);
+  }, [approvalFilter, badgeFilter, companyFilter, dateFrom, dateTo, gateFilter, hostFilter, licensePlateFilter, search, status]);
 
   useEffect(() => {
     void loadData();
@@ -85,61 +95,141 @@ export function SibeVisitorsPage() {
     window.location.href = `/api/sibe/visits/export?${params.toString()}`;
   }
 
+  function resetFilters() {
+    setSearch("");
+    setDateFrom("");
+    setDateTo("");
+    setStatus("all");
+    setCompanyFilter("");
+    setHostFilter("");
+    setGateFilter("");
+    setApprovalFilter("all");
+    setLicensePlateFilter("");
+    setBadgeFilter("");
+  }
+
   return (
     <AppLayout>
-      <main className="panel page-panel page-shell-wide">
-        <div className="section-header">
-          <div>
-            <h2>SiBe Besucher</h2>
-            <p className="section-copy">Besucher, Besuche und Historie lesen, filtern und durchsuchen.</p>
+      <main className="page-panel page-shell-wide">
+        <section className="page-hero">
+          <div className="page-hero-grid">
+            <div className="page-hero-content">
+              <h2>{isCommanderView ? "Besucherübersicht" : "SiBe Besucherübersicht"}</h2>
+              <p className="section-copy">
+                {isCommanderView
+                  ? "Lesender Zugriff auf Besuche, Historie und aktuelle Lageinformationen."
+                  : "Besuche, Besucherhistorie und Freigaben in einer kompakten Arbeitsansicht."}
+              </p>
+            </div>
+            <div className="hero-stat-grid">
+              <div className="hero-stat-card">
+                <span className="hero-stat-label">Besuche</span>
+                <strong className="hero-stat-value">{filteredVisitCount}</strong>
+              </div>
+              <div className="hero-stat-card">
+                <span className="hero-stat-label">Besucher</span>
+                <strong className="hero-stat-value">{filteredVisitorCount}</strong>
+              </div>
+              <div className="hero-stat-card">
+                <span className="hero-stat-label">Eingecheckt</span>
+                <strong className="hero-stat-value">{checkedInCount}</strong>
+              </div>
+              <div className="hero-stat-card">
+                <span className="hero-stat-label">Freigaben offen</span>
+                <strong className="hero-stat-value">{approvalsPendingCount}</strong>
+              </div>
+            </div>
           </div>
-        </div>
+        </section>
 
-        <div className="toolbar filter-bar">
-          <input
-            placeholder="Name, Firma, Ansprechpartner, Kennzeichen oder Besuchsnummer"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
-          <select value={status} onChange={(event) => setStatus(event.target.value)}>
-            <option value="all">Alle</option>
-            <option value="pre_registered">Vorangemeldet</option>
-            <option value="checked_in">Eingecheckt</option>
-            <option value="checked_out">Ausgecheckt</option>
-            <option value="cancelled">Storniert</option>
-            <option value="overdue">Ueberfaellig</option>
-          </select>
-          <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
-          <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
-          <input placeholder="Firma" value={companyFilter} onChange={(event) => setCompanyFilter(event.target.value)} />
-          <input placeholder="Ansprechpartner" value={hostFilter} onChange={(event) => setHostFilter(event.target.value)} />
-          <input placeholder="Wache" value={gateFilter} onChange={(event) => setGateFilter(event.target.value)} />
-          <input placeholder="Kennzeichen" value={licensePlateFilter} onChange={(event) => setLicensePlateFilter(event.target.value)} />
-          <input placeholder="Besuchsnummer" value={badgeFilter} onChange={(event) => setBadgeFilter(event.target.value)} />
-        </div>
-        <div className="toolbar filter-bar">
-          <button type="button" className="secondary-button" onClick={() => applyRangePreset("today")}>Heute</button>
-          <button type="button" className="secondary-button" onClick={() => applyRangePreset("yesterday")}>Gestern</button>
-          <button type="button" className="secondary-button" onClick={() => applyRangePreset("week")}>Diese Woche</button>
-          <button type="button" className="secondary-button" onClick={() => applyRangePreset("last7")}>Letzte 7 Tage</button>
-          <button type="button" className="secondary-button" onClick={() => applyRangePreset("month")}>Dieser Monat</button>
-          <button type="button" className="secondary-button" onClick={() => { setDateFrom(""); setDateTo(""); }}>Zeitraum loeschen</button>
-        </div>
+        <Card className="filter-panel">
+          <div className="section-header">
+            <div>
+              <h3>Filter</h3>
+              <p className="section-copy">Suche und Detailfilter bleiben zusammen, damit die Auswertung schneller lesbar wird.</p>
+            </div>
+            <div className="row-actions">
+              <button type="button" className="secondary-button" onClick={() => void loadData()}>Aktualisieren</button>
+              <button type="button" className="secondary-button" onClick={resetFilters}>Zurücksetzen</button>
+            </div>
+          </div>
+
+          <div className="toolbar-search filter-search-row">
+            <input
+              placeholder="Name, Firma, Ansprechpartner, Kennzeichen oder Besuchsnummer"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
+          </div>
+
+          <div className="filter-grid">
+            <FormField label="Status">
+              <select value={status} onChange={(event) => setStatus(event.target.value)}>
+                <option value="all">Alle</option>
+                <option value="pre_registered">Vorangemeldet</option>
+                <option value="checked_in">Eingecheckt</option>
+                <option value="checked_out">Ausgecheckt</option>
+                <option value="cancelled">Storniert</option>
+                <option value="overdue">Überfällig</option>
+              </select>
+            </FormField>
+            <FormField label="Freigabe">
+              <select value={approvalFilter} onChange={(event) => setApprovalFilter(event.target.value)}>
+                <option value="all">Alle Freigaben</option>
+                <option value="pending">Freigabe offen</option>
+                <option value="approved">Freigegeben</option>
+                <option value="rejected">Abgelehnt</option>
+                <option value="not_required">Keine Freigabe</option>
+              </select>
+            </FormField>
+            <FormField label="Von">
+              <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
+            </FormField>
+            <FormField label="Bis">
+              <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
+            </FormField>
+            <FormField label="Firma">
+              <input value={companyFilter} onChange={(event) => setCompanyFilter(event.target.value)} />
+            </FormField>
+            <FormField label="Ansprechpartner">
+              <input value={hostFilter} onChange={(event) => setHostFilter(event.target.value)} />
+            </FormField>
+            <FormField label="Wache">
+              <input value={gateFilter} onChange={(event) => setGateFilter(event.target.value)} />
+            </FormField>
+            <FormField label="Kennzeichen">
+              <input value={licensePlateFilter} onChange={(event) => setLicensePlateFilter(event.target.value)} />
+            </FormField>
+            <FormField label="Besuchsnummer">
+              <input value={badgeFilter} onChange={(event) => setBadgeFilter(event.target.value)} />
+            </FormField>
+          </div>
+
+          <div className="toolbar filter-bar preset-row">
+            <button type="button" className="secondary-button" onClick={() => applyRangePreset("today")}>Heute</button>
+            <button type="button" className="secondary-button" onClick={() => applyRangePreset("yesterday")}>Gestern</button>
+            <button type="button" className="secondary-button" onClick={() => applyRangePreset("week")}>Diese Woche</button>
+            <button type="button" className="secondary-button" onClick={() => applyRangePreset("last7")}>Letzte 7 Tage</button>
+            <button type="button" className="secondary-button" onClick={() => applyRangePreset("month")}>Dieser Monat</button>
+            <button type="button" className="secondary-button" onClick={() => { setDateFrom(""); setDateTo(""); }}>Zeitraum löschen</button>
+          </div>
+        </Card>
 
         {error ? <Alert type="error">{error}</Alert> : null}
 
-        <Card>
-          <h3>Export</h3>
-          <p className="section-copy">Import steht jetzt als eigener Menüpunkt bereit. Hier bleibt die Auswertung und der Export.</p>
-          <div className="toolbar filter-bar import-export-bar">
-            <Link className="button-link" to="/import">Import oeffnen</Link>
-            <input type="date" value={exportDate} onChange={(event) => setExportDate(event.target.value)} />
-            <button type="button" className="secondary-button" onClick={() => downloadExport("day")}>Tagesexport</button>
-            <button type="button" className="secondary-button" onClick={() => downloadExport("week")}>Wochenexport</button>
-            <button type="button" className="secondary-button" onClick={() => downloadExport("month")}>Monatsexport</button>
-            <button type="button" className="secondary-button" onClick={() => downloadExport("all")}>Gesamtübersicht</button>
-          </div>
-        </Card>
+        {!isCommanderView ? (
+          <Card>
+            <h3>Export</h3>
+            <div className="toolbar filter-bar import-export-bar">
+              <Link className="button-link" to="/import">Import öffnen</Link>
+              <input type="date" value={exportDate} onChange={(event) => setExportDate(event.target.value)} />
+              <button type="button" className="secondary-button" onClick={() => downloadExport("day")}>Tagesexport</button>
+              <button type="button" className="secondary-button" onClick={() => downloadExport("week")}>Wochenexport</button>
+              <button type="button" className="secondary-button" onClick={() => downloadExport("month")}>Monatsexport</button>
+              <button type="button" className="secondary-button" onClick={() => downloadExport("all")}>Gesamtübersicht</button>
+            </div>
+          </Card>
+        ) : null}
 
         <Card>
           <h3>Besuchsvorgaenge</h3>
@@ -153,10 +243,11 @@ export function SibeVisitorsPage() {
                 <th>Status</th>
                 <th>Wache</th>
                 <th>Ansprechpartner</th>
-                <th>Gueltig von</th>
-                <th>Gueltig bis</th>
+                <th>Gültig von</th>
+                <th>Gültig bis</th>
                 <th>Check-in</th>
                 <th>Check-out</th>
+                <th>Freigabe</th>
                 <th>Unterschrift</th>
                 <th>Aktion</th>
               </tr>
@@ -175,8 +266,13 @@ export function SibeVisitorsPage() {
                   <td>{formatDateOnly(visit.validUntil)}</td>
                   <td>{formatDateTime(visit.checkInAt)}</td>
                   <td>{formatDateTime(visit.checkOutAt)}</td>
+                  <td>{formatApprovalStatus(visit.approvalStatus)}</td>
                   <td>{formatSignatureStatus(visit.hostSignatureStatus)}</td>
-                  <td><Link className="button-link" to={`/sibe/besucher/${visit.id}`}>Details</Link></td>
+                  <td>
+                    <Link className="button-link" to={`${isCommanderView ? "/kaskdt/besucher" : "/sibe/besucher"}/${visit.id}`}>
+                      {isCommanderView ? "Ansehen" : "Details"}
+                    </Link>
+                  </td>
                 </tr>
               ))}
             </tbody>

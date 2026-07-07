@@ -1,108 +1,15 @@
 import sql from "mssql";
-import * as XLSX from "xlsx";
 import { writeAuditLog } from "./auditLog";
 import { generateBadgeNumberCandidate } from "./badgeNumber";
 import { getPool } from "./db";
+import { notifyApprovalRequested } from "./mailRelay";
 import { findActiveGateById, listActiveGates } from "./publicPreRegistrations";
 import { getVisitCompleteness } from "./guardVisits";
-import { VISIT_STATUS, type AuthenticatedUser } from "./visitWorkflow";
+import type { ImportVisitInput, ImportVisitResult, ImportVisitsResult } from "./visitImportDefinitions";
+import { loadWorkflowSettings } from "./systemSettings";
+import { APPROVAL_STATUS, VISIT_STATUS, hasPermission, type AuthenticatedUser } from "./visitWorkflow";
 
 export const MISSING_IMPORT_VALUE = "[fehlt]";
-
-export type ImportVisitInput = {
-  gateId?: string | null;
-  gateName?: string | null;
-  firstName?: string | null;
-  lastName?: string | null;
-  company?: string | null;
-  birthDate?: string | null;
-  phone?: string | null;
-  email?: string | null;
-  licensePlate?: string | null;
-  hostName?: string | null;
-  hostEmail?: string | null;
-  hostPhone?: string | null;
-  hostDepartment?: string | null;
-  purpose?: string | null;
-  validFrom?: string | null;
-  validUntil?: string | null;
-  idDocumentType?: string | null;
-  idDocumentValidUntil?: string | null;
-  idDocumentNumber?: string | null;
-  notes?: string | null;
-};
-
-export type ImportVisitResult = {
-  rowNumber: number;
-  visitId: string;
-  visitorId: string;
-  badgeNumber: string;
-  visitorName: string;
-  company: string;
-  missingFields: string[];
-  warnings: string[];
-  needsReview: boolean;
-};
-
-export type ImportVisitsResult = {
-  imported: number;
-  needsReview: number;
-  rows: ImportVisitResult[];
-};
-
-type ImportTemplateColumn = {
-  header: string;
-  samples: [string, string];
-};
-
-type ExcelImportTemplateColumn = ImportTemplateColumn & {
-  section: "visitor" | "host" | "visit";
-  required: boolean;
-};
-
-const visitorImportCsvTemplateColumns: ImportTemplateColumn[] = [
-  { header: "Vorname [Pflicht]", samples: ["Max", "Erika"] },
-  { header: "Nachname [Pflicht]", samples: ["Beispiel", "Import"] },
-  { header: "Firma / Organisation [Pflicht]", samples: ["Musterfirma GmbH", "Test AG"] },
-  { header: "Ansprechpartner [Pflicht]", samples: ["Maria Muster", "Peter Beispiel"] },
-  { header: "Besuchszweck [Pflicht]", samples: ["Projektbesprechung", "Kurztermin"] },
-  { header: "Gültig von [Pflicht]", samples: ["19.06.2026", "19.06.2026"] },
-  { header: "Gültig bis [Pflicht]", samples: ["19.06.2026", "19.06.2026"] },
-  { header: "Wache [Optional]", samples: ["Hauptwache", ""] },
-  { header: "Geburtsdatum [Optional]", samples: ["15.04.1988", ""] },
-  { header: "Telefon [Optional]", samples: ["+49 151 12345678", ""] },
-  { header: "E-Mail [Optional]", samples: ["max.beispiel@musterfirma.de", ""] },
-  { header: "Kennzeichen [Optional]", samples: ["B-MB 1234", ""] },
-  { header: "Ansprechpartner Telefon [Optional]", samples: ["+49 30 123456", ""] },
-  { header: "Ansprechpartner E-Mail [Optional]", samples: ["maria.muster@wiweb.de", "peter.beispiel@wiweb.de"] },
-  { header: "Abteilung / Bereich [Optional]", samples: ["Werksschutz", "IT"] },
-  { header: "Ausweisart [Optional]", samples: ["Personalausweis", "Reisepass"] },
-  { header: "Ausweis gültig bis [Optional]", samples: ["31.12.2030", "01.09.2028"] },
-  { header: "Ausweisnummer [Optional]", samples: ["L01X00ABC", "XK998877"] },
-  { header: "Bemerkung [Optional]", samples: ["Beispielimport mit vollständigen Daten", ""] },
-  { header: "GateId [Optional]", samples: ["", ""] }
-];
-
-const visitorImportExcelTemplateColumns: ExcelImportTemplateColumn[] = [
-  { header: "Vorname [Pflicht]", samples: ["", ""], section: "visitor", required: true },
-  { header: "Nachname [Pflicht]", samples: ["", ""], section: "visitor", required: true },
-  { header: "Firma / Organisation [Pflicht]", samples: ["", ""], section: "visitor", required: true },
-  { header: "Geburtsdatum [Optional]", samples: ["", ""], section: "visitor", required: false },
-  { header: "Telefon [Optional]", samples: ["", ""], section: "visitor", required: false },
-  { header: "E-Mail [Optional]", samples: ["", ""], section: "visitor", required: false },
-  { header: "Kennzeichen [Optional]", samples: ["", ""], section: "visitor", required: false },
-  { header: "Ausweisart [Pflicht]", samples: ["", ""], section: "visitor", required: true },
-  { header: "Ausweis gültig bis [Optional]", samples: ["", ""], section: "visitor", required: false },
-  { header: "Ausweisnummer [Pflicht]", samples: ["", ""], section: "visitor", required: true },
-  { header: "Bemerkung [Optional]", samples: ["", ""], section: "visitor", required: false },
-  { header: "Ansprechpartner [Pflicht]", samples: ["", ""], section: "host", required: true },
-  { header: "Ansprechpartner Telefon [Pflicht]", samples: ["", ""], section: "host", required: true },
-  { header: "Ansprechpartner E-Mail [Optional]", samples: ["", ""], section: "host", required: false },
-  { header: "Abteilung / Bereich [Optional]", samples: ["", ""], section: "host", required: false },
-  { header: "Besuchszweck [Pflicht]", samples: ["", ""], section: "visit", required: true },
-  { header: "Gültig von [Pflicht]", samples: ["", ""], section: "visit", required: true },
-  { header: "Gültig bis [Pflicht]", samples: ["", ""], section: "visit", required: true }
-];
 
 function cleanOptional(value: string | null | undefined): string | null {
   if (typeof value !== "string") {
@@ -237,7 +144,18 @@ export async function createImportedPreRegistrations(
   await transaction.begin();
 
   try {
+    const workflowSettings = await loadWorkflowSettings({ transaction });
+    const shouldAutoApprove = options.createdBy ? hasPermission(options.createdBy, "approvals.approve") : false;
     const importedRows: ImportVisitResult[] = [];
+    const pendingApprovals: Array<{
+      visitId: string;
+      visitorName: string;
+      company: string;
+      hostName: string;
+      validFrom: string;
+      validUntil: string;
+      gateName: string | null;
+    }> = [];
 
     for (const [index, row] of rows.entries()) {
       const badgeNumber = await generateUniqueBadgeNumber(transaction);
@@ -247,6 +165,11 @@ export async function createImportedPreRegistrations(
       const idDocumentType = normalizeIdDocumentType(row.idDocumentType);
       const birthDate = normalizeDateOnly(row.birthDate);
       const gateId = await resolveGateId(row, options.fallbackGateId);
+      const approvalStatus = workflowSettings.approvalRequired && !shouldAutoApprove
+        ? APPROVAL_STATUS.PENDING
+        : shouldAutoApprove
+          ? APPROVAL_STATUS.APPROVED
+          : APPROVAL_STATUS.NOT_REQUIRED;
 
       const visitorInsert = await new sql.Request(transaction)
         .input("firstName", sql.NVarChar(120), requiredOrPlaceholder(row.firstName))
@@ -303,6 +226,7 @@ export async function createImportedPreRegistrations(
         .input("badgeNumber", sql.NVarChar(64), badgeNumber)
         .input("notes", sql.NVarChar(sql.MAX), cleanOptional(row.notes))
         .input("createdBy", sql.UniqueIdentifier, options.createdBy?.id ?? null)
+        .input("approvalStatus", sql.NVarChar(32), approvalStatus)
         .input("submittedIpAddress", sql.NVarChar(64), cleanOptional(options.submittedIpAddress))
         .query<{ id: string; status: string }>(`
           INSERT INTO dbo.visits (
@@ -318,6 +242,7 @@ export async function createImportedPreRegistrations(
             license_plate,
             badge_number,
             status,
+            approval_status,
             created_by,
             created_via_public_form,
             submitted_ip_address,
@@ -337,6 +262,7 @@ export async function createImportedPreRegistrations(
             @licensePlate,
             @badgeNumber,
             '${VISIT_STATUS.PRE_REGISTERED}',
+            @approvalStatus,
             @createdBy,
             ${options.source === "public_group_form" ? "1" : "0"},
             @submittedIpAddress,
@@ -351,6 +277,7 @@ export async function createImportedPreRegistrations(
 
       const completeness = getVisitCompleteness({
         status: VISIT_STATUS.PRE_REGISTERED,
+        approvalStatus,
         firstName: requiredOrPlaceholder(row.firstName),
         lastName: requiredOrPlaceholder(row.lastName),
         company: requiredOrPlaceholder(row.company),
@@ -383,6 +310,19 @@ export async function createImportedPreRegistrations(
         warnings: completeness.warnings.map((issue) => issue.message),
         needsReview: completeness.errors.length > 0 || completeness.warnings.length > 0
       });
+
+      if (approvalStatus === APPROVAL_STATUS.PENDING) {
+        const gates = gateId ? await findActiveGateById(gateId) : null;
+        pendingApprovals.push({
+          visitId: visit.id,
+          visitorName: `${requiredOrPlaceholder(row.firstName)} ${requiredOrPlaceholder(row.lastName)}`,
+          company: requiredOrPlaceholder(row.company),
+          hostName: requiredOrPlaceholder(row.hostName),
+          validFrom,
+          validUntil,
+          gateName: gates?.name ?? null
+        });
+      }
     }
 
     await writeAuditLog(
@@ -405,6 +345,10 @@ export async function createImportedPreRegistrations(
 
     await transaction.commit();
 
+    for (const pendingApproval of pendingApprovals) {
+      void notifyApprovalRequested(pendingApproval);
+    }
+
     return {
       imported: importedRows.length,
       needsReview: importedRows.filter((row) => row.needsReview).length,
@@ -414,181 +358,4 @@ export async function createImportedPreRegistrations(
     await transaction.rollback();
     throw error;
   }
-}
-
-const columnAliases: Record<string, keyof ImportVisitInput> = {
-  wache: "gateName",
-  eingang: "gateName",
-  gate: "gateName",
-  wacheid: "gateId",
-  gateid: "gateId",
-  vorname: "firstName",
-  firstname: "firstName",
-  first_name: "firstName",
-  nachname: "lastName",
-  lastname: "lastName",
-  last_name: "lastName",
-  firma: "company",
-  firmaorganisation: "company",
-  organisation: "company",
-  organization: "company",
-  company: "company",
-  geburtsdatum: "birthDate",
-  birthdate: "birthDate",
-  telefon: "phone",
-  phone: "phone",
-  email: "email",
-  "e-mail": "email",
-  kennzeichen: "licensePlate",
-  licenseplate: "licensePlate",
-  ansprechpartner: "hostName",
-  gastgeber: "hostName",
-  hostname: "hostName",
-  "ansprechpartnertelefon": "hostPhone",
-  "ansprechpartner_telefon": "hostPhone",
-  hostphone: "hostPhone",
-  "ansprechpartneremail": "hostEmail",
-  "ansprechpartner_e-mail": "hostEmail",
-  hostemail: "hostEmail",
-  abteilung: "hostDepartment",
-  abteilungbereich: "hostDepartment",
-  bereich: "hostDepartment",
-  besuchszweck: "purpose",
-  zweck: "purpose",
-  purpose: "purpose",
-  "gueltigvon": "validFrom",
-  "gültigvon": "validFrom",
-  "validfrom": "validFrom",
-  "gueltigbis": "validUntil",
-  "gültigbis": "validUntil",
-  "validuntil": "validUntil",
-  ausweisart: "idDocumentType",
-  dokumentart: "idDocumentType",
-  "ausweisgueltigbis": "idDocumentValidUntil",
-  "ausweisgültigbis": "idDocumentValidUntil",
-  dokumentgueltigbis: "idDocumentValidUntil",
-  dokumentgültigbis: "idDocumentValidUntil",
-  ausweisnummer: "idDocumentNumber",
-  dokumentnummer: "idDocumentNumber",
-  bemerkung: "notes",
-  notiz: "notes",
-  notes: "notes"
-};
-
-function normalizeHeader(value: unknown): string {
-  return String(value ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/\[[^\]]*]/g, "")
-    .replace(/\([^)]*\)/g, "")
-    .replace(/\s+/g, "")
-    .replace(/[./-]/g, "")
-    .replace(/ä/g, "ae")
-    .replace(/ö/g, "oe")
-    .replace(/ü/g, "ue")
-    .replace(/ß/g, "ss");
-}
-
-export function getVisitorImportTemplateHeaders(): string[] {
-  return visitorImportCsvTemplateColumns.map((column) => column.header);
-}
-
-export function getVisitorImportTemplateRows(): string[][] {
-  return [0, 1].map((sampleIndex) => visitorImportCsvTemplateColumns.map((column) => column.samples[sampleIndex] ?? ""));
-}
-
-export function getVisitorImportExcelTemplateColumns(): ExcelImportTemplateColumn[] {
-  return visitorImportExcelTemplateColumns.map((column) => ({ ...column }));
-}
-
-export function getVisitorImportExcelTemplateHeaders(): string[] {
-  return visitorImportExcelTemplateColumns.map((column) => column.header);
-}
-
-function mapTableRows(rows: unknown[][]): ImportVisitInput[] {
-  const [headerRow, ...dataRows] = rows;
-  if (!headerRow || headerRow.length === 0) {
-    return [];
-  }
-
-  const mappedHeaders = headerRow.map((header) => columnAliases[normalizeHeader(header)]);
-  return dataRows
-    .map((row) => {
-      const item: ImportVisitInput = {};
-      row.forEach((value, index) => {
-        const key = mappedHeaders[index];
-        if (key) {
-          item[key] = cleanOptional(String(value ?? ""));
-        }
-      });
-      return item;
-    })
-    .filter((item) => Object.values(item).some((value) => cleanOptional(value)));
-}
-
-export function parseCsvBuffer(buffer: Buffer): ImportVisitInput[] {
-  const text = buffer.toString("utf8").replace(/^\uFEFF/, "");
-  const delimiter = (text.split("\n")[0]?.match(/;/g)?.length ?? 0) >= (text.split("\n")[0]?.match(/,/g)?.length ?? 0) ? ";" : ",";
-  const rows: string[][] = [];
-  let current = "";
-  let row: string[] = [];
-  let inQuotes = false;
-
-  for (let index = 0; index < text.length; index += 1) {
-    const char = text[index];
-    const next = text[index + 1];
-
-    if (char === "\"") {
-      if (inQuotes && next === "\"") {
-        current += "\"";
-        index += 1;
-      } else {
-        inQuotes = !inQuotes;
-      }
-      continue;
-    }
-
-    if (!inQuotes && char === delimiter) {
-      row.push(current);
-      current = "";
-      continue;
-    }
-
-    if (!inQuotes && (char === "\n" || char === "\r")) {
-      if (char === "\r" && next === "\n") {
-        index += 1;
-      }
-      row.push(current);
-      if (row.some((cell) => cleanOptional(cell))) {
-        rows.push(row);
-      }
-      row = [];
-      current = "";
-      continue;
-    }
-
-    current += char;
-  }
-
-  row.push(current);
-  if (row.some((cell) => cleanOptional(cell))) {
-    rows.push(row);
-  }
-
-  return mapTableRows(rows);
-}
-
-export function parseExcelBuffer(buffer: Buffer): ImportVisitInput[] {
-  const workbook = XLSX.read(buffer, { type: "buffer", cellDates: false });
-  const firstSheetName = workbook.SheetNames[0];
-  if (!firstSheetName) {
-    return [];
-  }
-
-  const rows = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[firstSheetName], {
-    header: 1,
-    defval: ""
-  });
-
-  return mapTableRows(rows);
 }

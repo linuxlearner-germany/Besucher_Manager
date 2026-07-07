@@ -2,13 +2,13 @@ import { AppLayout, useAuth } from "../app/core";
 import { BadgeTextManager } from "../components/BadgeTextManager";
 
 export function TextManagementPage() {
-  const { user } = useAuth();
+  useAuth();
 
   return (
     <AppLayout>
       <main className="panel page-panel page-shell-wide">
         <BadgeTextManager
-          heading={user?.role === "kaskdt" ? "KasKdt Texte" : "Texte"}
+          heading="Hinweistexte"
           description=""
         />
       </main>

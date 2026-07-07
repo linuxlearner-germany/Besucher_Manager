@@ -3,7 +3,6 @@ import {
   type DragEvent,
   useCallback,
   useEffect,
-  useMemo,
   useState,
   type FormEvent
 } from "react";
@@ -11,15 +10,17 @@ import {
   AdminAuditSection,
   AdminDashboardSection,
   AdminErrorLogSection,
-  AdminGatesSection,
   type AdminSectionKey,
+  AdminGatesSection,
   AdminSiteMapSection,
   AdminSystemSection,
   AdminUsersSection
 } from "../components/admin/AdminSections";
-import { Alert, Card, FormField } from "../components/ui";
+import { AdminFieldDefinitionsSection } from "../components/admin/AdminFieldDefinitionsSection";
+import { Alert } from "../components/ui";
 import { BadgeTextManager } from "../components/BadgeTextManager";
 import {
+  type AppPermission,
   type AppMenuKey,
   AppLayout,
   type AdminAuditLog,
@@ -27,30 +28,79 @@ import {
   type AdminErrorLog,
   type AdminFieldDefinition,
   type AdminGate,
+  type AdminWorkflowSettings,
   type AdminUser,
   type ApiError,
   type EditableAdminUser,
   extractFieldErrors,
-  fetchJson,
-  getAllowedMenuAccessForRole,
   type FieldConfigExportPayload,
+  fetchJson,
+  getDefaultPermissionsForRole,
+  getAllowedMenuAccessForRole,
+  hasPermission,
   type NewFieldDefinitionForm,
   type SiteMapSummary,
+  type UserPermissions,
   useAuth
 } from "../app/core";
 
 export function AdminPage() {
   const { user: currentUser } = useAuth();
   const menuOptions: Array<{ key: AppMenuKey; label: string }> = [
+    { key: "voranmeldung", label: "Voranmeldung" },
     { key: "wache", label: "Wache" },
     { key: "import", label: "Import" },
     { key: "admin", label: "Admin" },
+    { key: "genehmigung", label: "Genehmigungen" },
     { key: "sibe", label: "SiBe" },
-    { key: "kaskdt", label: "KasKdt" },
+    { key: "kaskdt", label: "Kasernenkommandant" },
     { key: "texte", label: "Texte" }
   ];
+  const permissionGroups: Array<{ title: string; items: Array<{ key: AppPermission; label: string }> }> = [
+    {
+      title: "Besucher",
+      items: [
+        { key: "visits.read", label: "Besucher lesen" },
+        { key: "visits.create", label: "Besucher erstellen" },
+        { key: "visits.update", label: "Besucher bearbeiten" },
+        { key: "visits.delete", label: "Besucher löschen" },
+        { key: "visits.checkIn", label: "Check-in" },
+        { key: "visits.checkOut", label: "Check-out" },
+        { key: "visits.printBadge", label: "Ausweis drucken" }
+      ]
+    },
+    {
+      title: "Freigaben",
+      items: [
+        { key: "approvals.read", label: "Freigaben ansehen" },
+        { key: "approvals.review", label: "Freigaben prüfen" },
+        { key: "approvals.approve", label: "Freigeben" },
+        { key: "approvals.reject", label: "Ablehnen" }
+      ]
+    },
+    {
+      title: "Verwaltung",
+      items: [
+        { key: "imports.execute", label: "Import ausführen" },
+        { key: "dashboards.sibe", label: "SiBe-Übersicht" },
+        { key: "dashboards.commander", label: "Kasernenkommandant-Übersicht" },
+        { key: "admin.users", label: "Benutzer verwalten" },
+        { key: "admin.guards", label: "Wachen verwalten" },
+        { key: "admin.texts", label: "Texte verwalten" },
+        { key: "admin.map", label: "Geländeplan verwalten" },
+        { key: "admin.fields", label: "Felder verwalten" },
+        { key: "admin.system", label: "System verwalten" }
+      ]
+    },
+    {
+      title: "Protokolle",
+      items: [
+        { key: "logs.audit", label: "Auditlog ansehen" },
+        { key: "logs.errors", label: "Fehlerlog ansehen" }
+      ]
+    }
+  ];
   const [activeSection, setActiveSection] = useState<AdminSectionKey>("dashboard");
-  const [stats, setStats] = useState<{ users: number; gates: number; templates: number } | null>(null);
   const [gates, setGates] = useState<AdminGate[]>([]);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [texts, setTexts] = useState<AdminBadgeText[]>([]);
@@ -64,10 +114,16 @@ export function AdminPage() {
     signaturesPending: number;
     signaturesFollowUp: number;
     signaturesExceptions: number;
+    approvalsPending: number;
     staleVisits: number;
     retentionDays: number | null;
     retentionEnabled: boolean;
+    dbHost?: string;
+    dbName?: string;
   } | null>(null);
+  const [workflowSettings, setWorkflowSettings] = useState<AdminWorkflowSettings | null>(null);
+  const [workflowPassword, setWorkflowPassword] = useState("");
+  const [workflowTestRecipient, setWorkflowTestRecipient] = useState("");
   const [activeSiteMap, setActiveSiteMap] = useState<SiteMapSummary>(null);
   const [siteMaps, setSiteMaps] = useState<NonNullable<SiteMapSummary>[]>([]);
   const [fieldDefinitions, setFieldDefinitions] = useState<AdminFieldDefinition[]>([]);
@@ -95,19 +151,23 @@ export function AdminPage() {
   const [newUser, setNewUser] = useState<{
     username: string;
     displayName: string;
+    email: string;
     password: string;
     role: AdminUser["role"];
     gateId: string;
     groupsText: string;
     menuAccess: AppMenuKey[];
+    permissions: UserPermissions;
   }>({
     username: "",
     displayName: "",
+    email: "",
     password: "",
     role: "guard",
     gateId: "",
     groupsText: "",
-    menuAccess: getAllowedMenuAccessForRole("guard")
+    menuAccess: getAllowedMenuAccessForRole("guard"),
+    permissions: getDefaultPermissionsForRole("guard")
   });
   const [siteMapName, setSiteMapName] = useState("");
   const [siteMapFile, setSiteMapFile] = useState<File | null>(null);
@@ -117,6 +177,7 @@ export function AdminPage() {
   const [dragActive, setDragActive] = useState(false);
   const [editableGates, setEditableGates] = useState<Record<string, AdminGate>>({});
   const [editableUsers, setEditableUsers] = useState<Record<string, EditableAdminUser>>({});
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [editableFieldDefinitions, setEditableFieldDefinitions] = useState<Record<string, AdminFieldDefinition>>({});
   const [selectedFieldDefinitionId, setSelectedFieldDefinitionId] = useState<string | null>(null);
   const [selectedFieldSection, setSelectedFieldSection] = useState<string | null>(null);
@@ -175,22 +236,23 @@ export function AdminPage() {
   const loadAll = useCallback(async () => {
     setError(null);
     try {
-      const [bootstrap, gatePayload, userPayload, textPayload, statusPayload, siteMapPayload, siteMapsPayload, fieldDefinitionsPayload] = await Promise.all([
-        fetchJson<{ users: number; gates: number; templates: number }>("/api/admin/bootstrap", { method: "GET", headers: {} }),
+      const [gatePayload, userPayload, textPayload, statusPayload, workflowPayload, siteMapPayload, siteMapsPayload, fieldDefinitionsPayload] = await Promise.all([
         fetchJson<{ gates: AdminGate[] }>("/api/admin/gates", { method: "GET", headers: {} }),
         fetchJson<{ users: AdminUser[] }>("/api/admin/users", { method: "GET", headers: {} }),
         fetchJson<{ texts: AdminBadgeText[] }>("/api/admin/badge-texts", { method: "GET", headers: {} }),
-        fetchJson<{ app: string; activeVisits: number; activeGates: number; openPreRegistrationsToday: number; signaturesPending: number; signaturesFollowUp: number; signaturesExceptions: number; staleVisits: number; retentionDays: number | null; retentionEnabled: boolean }>("/api/admin/system-status", { method: "GET", headers: {} }),
+        fetchJson<{ app: string; activeVisits: number; activeGates: number; openPreRegistrationsToday: number; signaturesPending: number; signaturesFollowUp: number; signaturesExceptions: number; approvalsPending: number; staleVisits: number; retentionDays: number | null; retentionEnabled: boolean; dbHost?: string; dbName?: string }>("/api/admin/system-status", { method: "GET", headers: {} }),
+        fetchJson<AdminWorkflowSettings>("/api/admin/system-settings/workflow-email", { method: "GET", headers: {} }),
         fetchJson<{ siteMap: SiteMapSummary }>("/api/admin/site-map", { method: "GET", headers: {} }),
         fetchJson<{ siteMaps: NonNullable<SiteMapSummary>[] }>("/api/admin/site-maps", { method: "GET", headers: {} }),
         fetchJson<{ definitions: AdminFieldDefinition[] }>("/api/admin/field-definitions", { method: "GET", headers: {} })
       ]);
 
-      setStats(bootstrap);
       setGates(gatePayload.gates);
       setUsers(userPayload.users);
       setTexts(textPayload.texts);
       setSystemStatus(statusPayload);
+      setWorkflowSettings(workflowPayload);
+      setWorkflowPassword("");
       setActiveSiteMap(siteMapPayload.siteMap);
       setSiteMaps(siteMapsPayload.siteMaps);
       setFieldDefinitions(fieldDefinitionsPayload.definitions);
@@ -199,7 +261,8 @@ export function AdminPage() {
         ...entry,
         password: "",
         menuAccess: entry.menuAccess?.length ? entry.menuAccess : getAllowedMenuAccessForRole(entry.role),
-        groups: entry.groups ?? []
+        groups: entry.groups ?? [],
+        permissions: entry.permissions ?? getDefaultPermissionsForRole(entry.role)
       }])));
       setEditableFieldDefinitions(Object.fromEntries(fieldDefinitionsPayload.definitions.map((field) => [field.id, { ...field }])));
       await Promise.all([
@@ -273,21 +336,25 @@ export function AdminPage() {
         body: JSON.stringify({
           username: newUser.username,
           displayName: newUser.displayName,
+          email: newUser.email,
           password: newUser.password,
           role: newUser.role,
           gateId: null,
           groups: parseGroupText(newUser.groupsText),
-          menuAccess: newUser.menuAccess
+          menuAccess: newUser.menuAccess,
+          ...(newUser.role === "custom" ? { permissions: newUser.permissions } : {})
         })
       });
       setNewUser({
         username: "",
         displayName: "",
+        email: "",
         password: "",
         role: "guard",
         gateId: "",
         groupsText: "",
-        menuAccess: getAllowedMenuAccessForRole("guard")
+        menuAccess: getAllowedMenuAccessForRole("guard"),
+        permissions: getDefaultPermissionsForRole("guard")
       });
       setMessage("Benutzer angelegt.");
       setError(null);
@@ -359,6 +426,22 @@ export function AdminPage() {
     return (groups ?? []).join(", ");
   }
 
+  function isPermissionEnabled(permissions: UserPermissions, permission: AppPermission): boolean {
+    const [section, key] = permission.split(".") as [keyof UserPermissions, string];
+    return Boolean((permissions[section] as Record<string, boolean>)[key]);
+  }
+
+  function setPermissionValue(permissions: UserPermissions, permission: AppPermission, checked: boolean): UserPermissions {
+    const [section, key] = permission.split(".") as [keyof UserPermissions, string];
+    return {
+      ...permissions,
+      [section]: {
+        ...(permissions[section] as Record<string, boolean>),
+        [key]: checked
+      }
+    } as UserPermissions;
+  }
+
   function toggleNewUserMenuAccess(menuKey: AppMenuKey, checked: boolean) {
     setNewUser((current) => {
       const allowed = new Set(getAllowedMenuAccessForRole(current.role));
@@ -372,6 +455,13 @@ export function AdminPage() {
 
       return { ...current, menuAccess: next };
     });
+  }
+
+  function toggleNewUserPermission(permission: AppPermission, checked: boolean) {
+    setNewUser((current) => ({
+      ...current,
+      permissions: setPermissionValue(current.permissions, permission, checked)
+    }));
   }
 
   function updateEditableUserRole(userId: string, role: AdminUser["role"]) {
@@ -390,7 +480,8 @@ export function AdminPage() {
           ...currentEntry,
           role,
           gateId: null,
-          menuAccess: nextMenuAccess.length ? nextMenuAccess : allowedAccess
+          menuAccess: nextMenuAccess.length ? nextMenuAccess : allowedAccess,
+          permissions: getDefaultPermissionsForRole(role)
         }
       };
     });
@@ -439,11 +530,28 @@ export function AdminPage() {
     });
   }
 
+  function toggleEditableUserPermission(userId: string, permission: AppPermission, checked: boolean) {
+    setEditableUsers((current) => {
+      const currentEntry = current[userId];
+      if (!currentEntry) {
+        return current;
+      }
+
+      return {
+        ...current,
+        [userId]: {
+          ...currentEntry,
+          permissions: setPermissionValue(currentEntry.permissions, permission, checked)
+        }
+      };
+    });
+  }
+
   async function uploadSiteMap(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     if (!siteMapFile) {
-      setSiteMapFieldError("Bitte waehlen Sie eine Datei aus.");
+      setSiteMapFieldError("Bitte wählen Sie eine Datei aus.");
       return;
     }
 
@@ -460,7 +568,7 @@ export function AdminPage() {
         body: formData
       });
       resetSiteMapSelection();
-      setMessage("Gelaendeplan hochgeladen und aktiviert.");
+      setMessage("Geländeplan hochgeladen und aktiviert.");
       setError(null);
       await loadAll();
     } catch (apiError) {
@@ -469,7 +577,7 @@ export function AdminPage() {
       if (fieldErrors.file) {
         setSiteMapFieldError(fieldErrors.file);
       }
-      setError(payload.message || "Gelaendeplan konnte nicht hochgeladen werden.");
+      setError(payload.message || "Geländeplan konnte nicht hochgeladen werden.");
     } finally {
       setSiteMapUploading(false);
     }
@@ -481,12 +589,12 @@ export function AdminPage() {
         method: "POST",
         body: JSON.stringify({})
       });
-      setMessage("Gelaendeplan aktiviert.");
+      setMessage("Geländeplan aktiviert.");
       setError(null);
       await loadAll();
     } catch (apiError) {
       const payload = apiError as ApiError;
-      setError(payload.message || "Gelaendeplan konnte nicht aktiviert werden.");
+      setError(payload.message || "Geländeplan konnte nicht aktiviert werden.");
     }
   }
 
@@ -516,11 +624,13 @@ export function AdminPage() {
         body: JSON.stringify({
           username: adminUser.username,
           displayName: adminUser.displayName,
+          email: adminUser.email || "",
           role: adminUser.role,
           gateId: null,
           isActive: adminUser.isActive,
           groups: adminUser.groups,
           menuAccess: adminUser.menuAccess,
+          ...(adminUser.role === "custom" ? { permissions: adminUser.permissions } : {}),
           ...(adminUser.password ? { password: adminUser.password } : {})
         })
       });
@@ -673,7 +783,7 @@ export function AdminPage() {
 
   async function previewFieldImport() {
     if (!fieldImportText.trim()) {
-      setError("Bitte zuerst eine JSON-Datei fuer den Import auswaehlen.");
+      setError("Bitte zuerst eine JSON-Datei für den Import auswählen.");
       return;
     }
 
@@ -699,7 +809,7 @@ export function AdminPage() {
 
   async function confirmFieldImport() {
     if (!fieldImportText.trim()) {
-      setError("Bitte zuerst eine JSON-Datei fuer den Import auswaehlen.");
+      setError("Bitte zuerst eine JSON-Datei für den Import auswählen.");
       return;
     }
 
@@ -748,7 +858,7 @@ export function AdminPage() {
 
   async function deleteUser(userEntry: AdminUser) {
     const confirmed = window.confirm(
-      `Benutzer "${userEntry.username}" loeschen?\n\nWenn der Benutzer bereits mit Besuchen, Auditlogs oder anderen Daten verknuepft ist, wird er sicher deaktiviert statt hart geloescht.`
+      `Benutzer "${userEntry.username}" löschen?\n\nWenn der Benutzer bereits mit Besuchen, Auditlogs oder anderen Daten verknüpft ist, wird er sicher deaktiviert statt hart gelöscht.`
     );
 
     if (!confirmed) {
@@ -760,12 +870,12 @@ export function AdminPage() {
         method: "DELETE",
         body: JSON.stringify({})
       });
-      setMessage(result.message || (result.deleted ? "Benutzer geloescht." : "Benutzer deaktiviert."));
+      setMessage(result.message || (result.deleted ? "Benutzer gelöscht." : "Benutzer deaktiviert."));
       setError(null);
       await loadAll();
     } catch (apiError) {
       const payload = apiError as ApiError;
-      setError(payload.message || "Benutzer konnte nicht geloescht werden.");
+      setError(payload.message || "Benutzer konnte nicht gelöscht werden.");
     }
   }
 
@@ -809,45 +919,73 @@ export function AdminPage() {
     setErrorLogFilters(next);
     await loadErrorLogs(next);
   }
-  const selectedFieldDefinition = selectedFieldDefinitionId ? editableFieldDefinitions[selectedFieldDefinitionId] || null : null;
-  const fieldSectionOrder = ["Besucher", "Adresse", "Ansprechpartner", "Besuch", "Ausweis", "Ziel/Raum", "Sonstiges"];
-  const hiddenSections = new Set(["Geraete", "Mitgefuehrte Geraete"]);
-  const hiddenFieldKeys = new Set(["visitor_address", "id_document_issuing_place"]);
-  const fieldSectionDescriptions: Record<string, string> = {
-    Besucher: "Daten zur besuchenden Person.",
-    Adresse: "Strukturierte Adressdaten für Check-in und Druck.",
-    Ansprechpartner: "Kontakt zur empfangenden Person im Unternehmen.",
-    Besuch: "Besuchszweck, Gültigkeitszeitraum und Ablaufdaten.",
-    Ausweis: "Ausweisdaten für Voranmeldung und Wache.",
-    "Ziel/Raum": "Interne Ziel-, Gebäude- und Raumangaben.",
-    Sonstiges: "Zusatzfelder ohne feste Kategorie."
-  };
-  const groupedFieldDefinitions = useMemo(() => {
-    const bySection = new Map<string, AdminFieldDefinition[]>();
-    for (const item of fieldDefinitions) {
-      if (hiddenSections.has(item.section?.trim() || "") || hiddenFieldKeys.has(item.fieldKey)) {
-        continue;
-      }
-      const section = item.section?.trim() || "Sonstiges";
-      if (!bySection.has(section)) {
-        bySection.set(section, []);
-      }
-      bySection.get(section)?.push(item);
-    }
-    for (const list of bySection.values()) {
-      list.sort((a, b) => a.sortOrder - b.sortOrder || a.label.localeCompare(b.label));
+
+  async function saveWorkflowSettings() {
+    if (!workflowSettings) {
+      return;
     }
 
-    const orderedKeys = [
-      ...fieldSectionOrder.filter((key) => bySection.has(key)),
-      ...Array.from(bySection.keys()).filter((key) => !fieldSectionOrder.includes(key)).sort((a, b) => a.localeCompare(b))
-    ];
+    try {
+      const payload = await fetchJson<{ success: true; emailRelaySource: "database" | "yml" }>("/api/admin/system-settings/workflow-email", {
+        method: "PUT",
+        body: JSON.stringify({
+          approvalRequired: workflowSettings.approvalRequired,
+          emailRelay: {
+            enabled: workflowSettings.emailRelay.enabled,
+            host: workflowSettings.emailRelay.host,
+            port: workflowSettings.emailRelay.port,
+            secure: workflowSettings.emailRelay.secure,
+            username: workflowSettings.emailRelay.username,
+            password: workflowPassword,
+            fromAddress: workflowSettings.emailRelay.fromAddress,
+            approvalRecipients: workflowSettings.emailRelay.approvalRecipients
+          }
+        })
+      });
+      setWorkflowPassword("");
+      setMessage(
+        payload.emailRelaySource === "yml"
+          ? "Workflow gespeichert. Die SMTP-Relay-Daten kommen weiter aus der YML-Datei."
+          : "Workflow- und Relay-Einstellungen gespeichert."
+      );
+      setError(null);
+      await loadAll();
+    } catch (apiError) {
+      const payload = apiError as ApiError;
+      setError(payload.message || "Die Workflow-Einstellungen konnten nicht gespeichert werden.");
+    }
+  }
 
-    return orderedKeys.map((section) => ({ section, items: bySection.get(section) || [] }));
-  }, [fieldDefinitions]);
-  const selectedFieldSectionGroup = selectedFieldSection
-    ? groupedFieldDefinitions.find((entry) => entry.section === selectedFieldSection) || null
-    : null;
+  async function sendWorkflowTestMail() {
+    try {
+      const payload = await fetchJson<{ message: string }>("/api/admin/system-settings/workflow-email/test", {
+        method: "POST",
+        body: JSON.stringify({
+          recipient: workflowTestRecipient
+        })
+      });
+      setMessage(payload.message || "Testmail versendet.");
+      setError(null);
+    } catch (apiError) {
+      const payload = apiError as ApiError;
+      setError(payload.message || "Die Testmail konnte nicht versendet werden.");
+    }
+  }
+
+  const sectionTabs = [
+    { key: "dashboard" as const, label: "Dashboard", visible: true },
+    { key: "wachen" as const, label: "Wachen", visible: Boolean(currentUser && hasPermission(currentUser, "admin.guards")) },
+    { key: "benutzer" as const, label: "Benutzer", visible: Boolean(currentUser && hasPermission(currentUser, "admin.users")) },
+    { key: "texte" as const, label: "Texte", visible: Boolean(currentUser && hasPermission(currentUser, "admin.texts")) },
+    { key: "karte" as const, label: "Karte", visible: Boolean(currentUser && hasPermission(currentUser, "admin.map")) },
+    { key: "felder" as const, label: "Felder", visible: Boolean(currentUser && hasPermission(currentUser, "admin.fields")) },
+    { key: "audit" as const, label: "Audit", visible: Boolean(currentUser && hasPermission(currentUser, "logs.audit")) },
+    { key: "fehler" as const, label: "Fehlerlog", visible: Boolean(currentUser && hasPermission(currentUser, "logs.errors")) },
+    { key: "system" as const, label: "System", visible: Boolean(currentUser && hasPermission(currentUser, "admin.system")) }
+  ];
+
+  const visibleSectionKeys = sectionTabs.filter((tab) => tab.visible).map((tab) => tab.key);
+  const resolvedActiveSection = visibleSectionKeys.includes(activeSection) ? activeSection : visibleSectionKeys[0] ?? "dashboard";
 
   return (
     <AppLayout>
@@ -859,21 +997,17 @@ export function AdminPage() {
         </div>
 
         <div className="section-tabs">
-          <button type="button" className={activeSection === "dashboard" ? "tab-button tab-active" : "tab-button"} onClick={() => setActiveSection("dashboard")}>Dashboard</button>
-          <button type="button" className={activeSection === "wachen" ? "tab-button tab-active" : "tab-button"} onClick={() => setActiveSection("wachen")}>Wachen</button>
-          <button type="button" className={activeSection === "benutzer" ? "tab-button tab-active" : "tab-button"} onClick={() => setActiveSection("benutzer")}>Benutzer</button>
-          <button type="button" className={activeSection === "texte" ? "tab-button tab-active" : "tab-button"} onClick={() => setActiveSection("texte")}>Texte</button>
-          <button type="button" className={activeSection === "karte" ? "tab-button tab-active" : "tab-button"} onClick={() => setActiveSection("karte")}>Karte</button>
-          <button type="button" className={activeSection === "felder" ? "tab-button tab-active" : "tab-button"} onClick={() => setActiveSection("felder")}>Felder</button>
-          <button type="button" className={activeSection === "audit" ? "tab-button tab-active" : "tab-button"} onClick={() => setActiveSection("audit")}>Audit</button>
-          <button type="button" className={activeSection === "fehler" ? "tab-button tab-active" : "tab-button"} onClick={() => setActiveSection("fehler")}>Fehlerlog</button>
-          <button type="button" className={activeSection === "system" ? "tab-button tab-active" : "tab-button"} onClick={() => setActiveSection("system")}>System</button>
+          {sectionTabs.filter((tab) => tab.visible).map((tab) => (
+            <button key={tab.key} type="button" className={resolvedActiveSection === tab.key ? "tab-button tab-active" : "tab-button"} onClick={() => setActiveSection(tab.key)}>
+              {tab.label}
+            </button>
+          ))}
         </div>
 
         {message ? <Alert type="success">{message}</Alert> : null}
         {error ? <Alert type="error">{error}</Alert> : null}
 
-        {activeSection === "dashboard" ? (
+        {resolvedActiveSection === "dashboard" ? (
           <AdminDashboardSection
             gates={gates}
             users={users}
@@ -887,7 +1021,7 @@ export function AdminPage() {
           />
         ) : null}
 
-        {activeSection === "wachen" ? (
+        {resolvedActiveSection === "wachen" ? (
           <AdminGatesSection
             newGate={newGate}
             setNewGate={setNewGate}
@@ -900,20 +1034,26 @@ export function AdminPage() {
           />
         ) : null}
 
-        {activeSection === "benutzer" ? (
+        {resolvedActiveSection === "benutzer" ? (
           <AdminUsersSection
             newUser={newUser}
             setNewUser={setNewUser}
             menuOptions={menuOptions}
+            permissionGroups={permissionGroups}
             createUser={createUser}
             users={users}
             editableUsers={editableUsers}
             setEditableUsers={setEditableUsers}
+            selectedUserId={selectedUserId}
+            setSelectedUserId={setSelectedUserId}
             updateEditableUserRole={updateEditableUserRole}
             updateEditableUserGroups={updateEditableUserGroups}
             formatGroupText={formatGroupText}
+            isPermissionEnabled={isPermissionEnabled}
             toggleNewUserMenuAccess={toggleNewUserMenuAccess}
+            toggleNewUserPermission={toggleNewUserPermission}
             toggleEditableUserMenuAccess={toggleEditableUserMenuAccess}
+            toggleEditableUserPermission={toggleEditableUserPermission}
             saveUser={saveUser}
             toggleUserActive={toggleUserActive}
             deleteUser={deleteUser}
@@ -921,7 +1061,7 @@ export function AdminPage() {
           />
         ) : null}
 
-        {activeSection === "karte" ? (
+        {resolvedActiveSection === "karte" ? (
           <AdminSiteMapSection
             uploadSiteMap={uploadSiteMap}
             siteMapName={siteMapName}
@@ -941,371 +1081,51 @@ export function AdminPage() {
           />
         ) : null}
 
-        {activeSection === "texte" ? (
+        {resolvedActiveSection === "texte" ? (
           <BadgeTextManager description="" />
         ) : null}
 
-        {activeSection === "felder" ? (
-          <Card className="admin-fields-card">
-            <h3>Feldkonfiguration</h3>
-            <p className="section-copy">Konfigurieren Sie die Felder als Modul-Baukasten. Oeffnen Sie ein Modul, um nur die dazugehoerigen Felder zu bearbeiten.</p>
-            <div className="panel field-config-transfer">
-              <h4>Import / Export</h4>
-              <p className="section-copy">Import-Modus: Zusammenfuehren. Vorhandene Felder werden anhand ihres Keys aktualisiert, nicht enthaltene Felder bleiben erhalten.</p>
-              <div className="row-actions action-bar">
-                <button type="button" onClick={() => void exportFieldConfiguration()}>Konfiguration exportieren</button>
-                <label className="secondary-button file-button-inline">
-                  JSON-Datei auswaehlen
-                  <input type="file" accept="application/json,.json" onChange={(event) => void handleImportConfigFile(event)} />
-                </label>
-                <button type="button" className="secondary-button" onClick={() => void previewFieldImport()} disabled={!fieldImportText.trim()}>
-                  Import pruefen
-                </button>
-              </div>
-              {fieldImportFileName ? <p className="section-copy">Datei: {fieldImportFileName}</p> : null}
-              {fieldImportPreview ? (
-                <div className="panel field-import-preview">
-                  <p>
-                    <strong>{fieldImportPreview.summary.total}</strong> Felder ·
-                    {" "}<strong>{fieldImportPreview.summary.willUpdate}</strong> aktualisiert ·
-                    {" "}<strong>{fieldImportPreview.summary.willCreate}</strong> neu
-                  </p>
-                  <div className="table-wrap">
-                    <table className="data-table">
-                      <thead><tr><th>Feld</th><th>Aktion</th><th>Label</th></tr></thead>
-                      <tbody>
-                        {fieldImportPreview.changes.map((item) => (
-                          <tr key={item.fieldKey}>
-                            <td><code>{item.fieldKey}</code></td>
-                            <td>{item.action === "update" ? "Update" : "Neu"}</td>
-                            <td>{item.label}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  <div className="row-actions action-bar">
-                    <button type="button" onClick={() => void confirmFieldImport()}>Import bestaetigen</button>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-
-            {selectedFieldSectionGroup ? (
-              <div className="field-module-detail">
-                <div className="field-module-header">
-                  <div>
-                    <p className="eyebrow">Modul</p>
-                    <h4>{selectedFieldSectionGroup.section}</h4>
-                    <p className="section-copy">{fieldSectionDescriptions[selectedFieldSectionGroup.section] || "Feldgruppe fuer diesen Bereich."}</p>
-                  </div>
-                  <div className="row-actions action-bar">
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      onClick={() => {
-                        setSelectedFieldSection(null);
-                        setSelectedFieldDefinitionId(null);
-                      }}
-                    >
-                      Zurueck zur Moduluebersicht
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setNewFieldDefinition((current) => ({ ...current, section: selectedFieldSectionGroup.section }));
-                        setIsCreateFieldModalOpen(true);
-                      }}
-                    >
-                      Neues Feld hinzufuegen
-                    </button>
-                  </div>
-                </div>
-                <div className="field-section-list">
-                  {selectedFieldSectionGroup.items.map((definition) => (
-                    <div key={definition.id} className="field-row-card">
-                      <div className="field-row-main">
-                        <div className="field-row-title">{definition.label}</div>
-                        <div className="field-row-meta">
-                          <span className="field-row-key">{definition.fieldKey}</span>
-                          <span>{definition.fieldType}</span>
-                        </div>
-                      </div>
-                      <div className="field-row-badges">
-                        {definition.isSystem ? <span className="field-config-badge">Systemfeld</span> : <span className="field-config-badge">Eigenes Feld</span>}
-                        {definition.isActive ? <span className="field-config-badge">Aktiv</span> : <span className="field-config-badge">Inaktiv</span>}
-                        {definition.showInPublic ? <span className="field-config-badge">Voranmeldung</span> : null}
-                        {definition.showInGuard ? <span className="field-config-badge">Wache</span> : null}
-                        {definition.showInSibe ? <span className="field-config-badge">SiBe</span> : null}
-                        {definition.showOnBadge ? <span className="field-config-badge">Druck</span> : null}
-                        {definition.requiredPublic ? <span className="field-config-badge">Pflicht Voranmeldung</span> : null}
-                        {definition.requiredGuardCheckin ? <span className="field-config-badge">Pflicht Check-in</span> : null}
-                        {definition.requiredBeforePrint ? <span className="field-config-badge">Pflicht Druck</span> : null}
-                      </div>
-                      <div className="field-row-actions">
-                        <button type="button" className="secondary-button" onClick={() => setSelectedFieldDefinitionId(definition.id)}>
-                          Bearbeiten
-                        </button>
-                        <button type="button" className="secondary-button" onClick={() => void toggleFieldDefinitionActive(definition)}>
-                          {definition.isActive ? "Ausblenden" : "Reaktivieren"}
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className="field-section-grid">
-                {groupedFieldDefinitions.map(({ section, items }) => {
-                  const activeCount = items.filter((item) => item.isActive).length;
-                  const requiredPublicCount = items.filter((item) => item.requiredPublic && item.isActive).length;
-                  const requiredCheckinCount = items.filter((item) => item.requiredGuardCheckin && item.isActive).length;
-                  const requiredPrintCount = items.filter((item) => item.requiredBeforePrint && item.isActive).length;
-                  const printCount = items.filter((item) => item.showOnBadge && item.isActive).length;
-                  return (
-                    <article key={section} className="field-section-card">
-                      <div className="field-section-summary">
-                        <h4>{section}</h4>
-                        <p>{fieldSectionDescriptions[section] || "Feldgruppe fuer diesen Bereich."}</p>
-                      </div>
-                      <ul className="field-module-stats">
-                        <li>{activeCount} aktive Felder</li>
-                        <li>{requiredPublicCount} Pflicht in Voranmeldung</li>
-                        <li>{requiredCheckinCount} Pflicht vor Check-in</li>
-                        <li>{requiredPrintCount} Pflicht vor Druck</li>
-                        <li>{printCount} Druckfelder</li>
-                      </ul>
-                      <div className="field-row-actions">
-                        <button type="button" className="secondary-button" onClick={() => setSelectedFieldSection(section)}>
-                          Oeffnen
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedFieldSection(section);
-                            setNewFieldDefinition((current) => ({ ...current, section }));
-                            setIsCreateFieldModalOpen(true);
-                          }}
-                        >
-                          Neues Feld in diesem Modul
-                        </button>
-                      </div>
-                    </article>
-                  );
-                })}
-              </div>
-            )}
-
-            <details className="field-expert-details">
-              <summary>Expertenansicht anzeigen</summary>
-              <div className="table-wrap admin-fields-wrap">
-                <table className="data-table admin-fields-table">
-                  <thead>
-                    <tr>
-                      <th className="col-label">Label</th>
-                      <th className="col-key">Key</th>
-                      <th className="col-type">Typ</th>
-                      <th className="col-section">Bereich</th>
-                      <th className="col-flag">System</th>
-                      <th className="col-flag">Aktiv</th>
-                      <th className="col-flag">Public</th>
-                      <th className="col-flag">Wache</th>
-                      <th className="col-flag">SiBe</th>
-                      <th className="col-flag">Druck</th>
-                      <th className="col-flag">Pflicht Public</th>
-                      <th className="col-flag">Pflicht Check-in</th>
-                      <th className="col-flag">Pflicht Druck</th>
-                      <th className="col-order">Sortierung</th>
-                      <th className="col-actions">Aktion</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {fieldDefinitions.map((definition) => (
-                      <tr key={definition.id}>
-                        <td className="col-label">{definition.label}</td>
-                        <td className="col-key"><code>{definition.fieldKey}</code></td>
-                        <td className="col-type">{definition.fieldType}</td>
-                        <td className="col-section">{definition.section}</td>
-                        <td className="col-flag">{definition.isSystem ? "Ja" : "Nein"}</td>
-                        <td className="col-flag">{definition.isActive ? "Ja" : "Nein"}</td>
-                        <td className="col-flag">{definition.showInPublic ? "Ja" : "Nein"}</td>
-                        <td className="col-flag">{definition.showInGuard ? "Ja" : "Nein"}</td>
-                        <td className="col-flag">{definition.showInSibe ? "Ja" : "Nein"}</td>
-                        <td className="col-flag">{definition.showOnBadge ? "Ja" : "Nein"}</td>
-                        <td className="col-flag">{definition.requiredPublic ? "Ja" : "Nein"}</td>
-                        <td className="col-flag">{definition.requiredGuardCheckin ? "Ja" : "Nein"}</td>
-                        <td className="col-flag">{definition.requiredBeforePrint ? "Ja" : "Nein"}</td>
-                        <td className="col-order">{definition.sortOrder}</td>
-                        <td className="col-actions">
-                          <button type="button" className="secondary-button" onClick={() => setSelectedFieldDefinitionId(definition.id)}>
-                            Bearbeiten
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </details>
-
-            {selectedFieldDefinition ? (
-              <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={(event) => {
-                if (event.target === event.currentTarget) {
-                  setSelectedFieldDefinitionId(null);
-                }
-              }}>
-                <div className="modal-card panel field-edit-modal">
-                  <div className="modal-header">
-                    <h4>Feld bearbeiten</h4>
-                    <button type="button" className="secondary-button modal-close-button" onClick={() => setSelectedFieldDefinitionId(null)}>
-                      Schliessen
-                    </button>
-                  </div>
-                  <div className="field-edit-form">
-                    <h5>Stammdaten</h5>
-                    <div className="form-grid two-columns">
-                      <FormField label="Label">
-                        <input
-                          value={selectedFieldDefinition.label}
-                          onChange={(event) => setEditableFieldDefinitions((current) => ({
-                            ...current,
-                            [selectedFieldDefinition.id]: { ...selectedFieldDefinition, label: event.target.value }
-                          }))}
-                        />
-                      </FormField>
-                      <FormField label="Key">
-                        <input value={selectedFieldDefinition.fieldKey} readOnly />
-                      </FormField>
-                      <FormField label="Typ">
-                        <input value={selectedFieldDefinition.fieldType} readOnly />
-                      </FormField>
-                      <FormField label="Bereich">
-                        <input
-                          value={selectedFieldDefinition.section}
-                          onChange={(event) => setEditableFieldDefinitions((current) => ({
-                            ...current,
-                            [selectedFieldDefinition.id]: { ...selectedFieldDefinition, section: event.target.value }
-                          }))}
-                        />
-                      </FormField>
-                      <FormField label="Sortierung">
-                        <input
-                          type="number"
-                          value={selectedFieldDefinition.sortOrder}
-                          onChange={(event) => setEditableFieldDefinitions((current) => ({
-                            ...current,
-                            [selectedFieldDefinition.id]: { ...selectedFieldDefinition, sortOrder: Number(event.target.value) || 0 }
-                          }))}
-                        />
-                      </FormField>
-                      <FormField label="Hilfetext">
-                        <input
-                          value={selectedFieldDefinition.helpText || ""}
-                          onChange={(event) => setEditableFieldDefinitions((current) => ({
-                            ...current,
-                            [selectedFieldDefinition.id]: { ...selectedFieldDefinition, helpText: event.target.value }
-                          }))}
-                        />
-                      </FormField>
-                    </div>
-
-                    <h5>Sichtbarkeit</h5>
-                    <p className="section-copy">Legen Sie fest, in welchem Bereich dieses Feld sichtbar ist.</p>
-                    <div className="form-grid two-columns">
-                      <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.showInPublic} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [selectedFieldDefinition.id]: { ...selectedFieldDefinition, showInPublic: event.target.checked } }))} />In Voranmeldung anzeigen<div className="field-help-text">Dieses Feld erscheint im Formular fuer Mitarbeiter ohne Login.</div></label>
-                      <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.showInGuard} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [selectedFieldDefinition.id]: { ...selectedFieldDefinition, showInGuard: event.target.checked } }))} />In Wache anzeigen<div className="field-help-text">Dieses Feld ist in der Wache-Detailansicht sichtbar und bearbeitbar.</div></label>
-                      <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.showInSibe} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [selectedFieldDefinition.id]: { ...selectedFieldDefinition, showInSibe: event.target.checked } }))} />In SiBe anzeigen<div className="field-help-text">Dieses Feld ist in der lesenden SiBe-Ansicht sichtbar.</div></label>
-                      <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.showOnBadge} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [selectedFieldDefinition.id]: { ...selectedFieldDefinition, showOnBadge: event.target.checked } }))} />Auf Besucherschein drucken<div className="field-help-text">Dieses Feld wird auf dem Druckschein ausgegeben.</div></label>
-                    </div>
-
-                    <h5>Pflichtregeln</h5>
-                    <p className="section-copy">Pflichtregeln steuern, wann ein Feld zwingend ausgefuellt sein muss.</p>
-                    <div className="form-grid two-columns">
-                      <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.requiredPublic} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [selectedFieldDefinition.id]: { ...selectedFieldDefinition, requiredPublic: event.target.checked } }))} />Pflicht in Voranmeldung<div className="field-help-text">Mitarbeiter muessen dieses Feld beim Anmelden ausfuellen.</div></label>
-                      <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.requiredGuardCheckin} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [selectedFieldDefinition.id]: { ...selectedFieldDefinition, requiredGuardCheckin: event.target.checked } }))} />Pflicht vor Check-in<div className="field-help-text">Die Wache muss dieses Feld vor dem Check-in ergaenzen.</div></label>
-                      <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.requiredBeforePrint} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [selectedFieldDefinition.id]: { ...selectedFieldDefinition, requiredBeforePrint: event.target.checked } }))} />Pflicht vor Druck<div className="field-help-text">Der Besucherschein darf erst nach Ergaenzung gedruckt werden.</div></label>
-                    </div>
-
-                    <h5>Status</h5>
-                    <div className="form-grid two-columns">
-                      <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.isActive} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [selectedFieldDefinition.id]: { ...selectedFieldDefinition, isActive: event.target.checked } }))} />Aktiv<div className="field-help-text">Inaktive Felder bleiben in Daten erhalten, werden aber nicht mehr aktiv verwendet.</div></label>
-                      <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.isSystem} readOnly disabled />Systemfeld<div className="field-help-text">Systemfelder gehoeren zum Grundsystem und sind nicht loeschbar.</div></label>
-                    </div>
-                  </div>
-                  <div className="row-actions action-bar modal-actions">
-                    <button type="button" onClick={() => void saveFieldDefinition(selectedFieldDefinition.id)}>Speichern</button>
-                    <button type="button" className="secondary-button" onClick={() => setSelectedFieldDefinitionId(null)}>Abbrechen</button>
-                  </div>
-                </div>
-              </div>
-            ) : null}
-
-            {isCreateFieldModalOpen ? (
-              <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={(event) => {
-                if (event.target === event.currentTarget) {
-                  setIsCreateFieldModalOpen(false);
-                }
-              }}>
-                <div className="modal-card panel field-edit-modal">
-                  <div className="modal-header">
-                    <h4>Neues Feld hinzufuegen</h4>
-                    <button type="button" className="secondary-button modal-close-button" onClick={() => setIsCreateFieldModalOpen(false)}>
-                      Schliessen
-                    </button>
-                  </div>
-                  <form className="field-edit-form" onSubmit={createFieldDefinition}>
-                    <h5>Stammdaten</h5>
-                    <div className="form-grid two-columns">
-                      <FormField label="Label" required><input value={newFieldDefinition.label} onChange={(event) => setNewFieldDefinition((current) => ({ ...current, label: event.target.value }))} /></FormField>
-                      <FormField label="Feldtyp" required>
-                        <select value={newFieldDefinition.fieldType} onChange={(event) => setNewFieldDefinition((current) => ({ ...current, fieldType: event.target.value }))}>
-                          <option value="text">Text</option>
-                          <option value="textarea">Mehrzeiliger Text</option>
-                          <option value="date">Datum</option>
-                          <option value="email">E-Mail</option>
-                          <option value="phone">Telefon</option>
-                          <option value="number">Zahl</option>
-                          <option value="checkbox">Checkbox</option>
-                          <option value="select">Auswahlfeld</option>
-                        </select>
-                      </FormField>
-                      <FormField label="Bereich" required><input value={newFieldDefinition.section} onChange={(event) => setNewFieldDefinition((current) => ({ ...current, section: event.target.value }))} /></FormField>
-                      <FormField label="Sortierung"><input type="number" value={newFieldDefinition.sortOrder} onChange={(event) => setNewFieldDefinition((current) => ({ ...current, sortOrder: Number(event.target.value) || 0 }))} /></FormField>
-                      <FormField label="Hilfetext"><input value={newFieldDefinition.helpText} onChange={(event) => setNewFieldDefinition((current) => ({ ...current, helpText: event.target.value }))} /></FormField>
-                      {newFieldDefinition.fieldType === "select" ? <FormField label="Optionen (eine pro Zeile)"><textarea rows={4} value={newFieldDefinition.optionsJson} onChange={(event) => setNewFieldDefinition((current) => ({ ...current, optionsJson: event.target.value }))} /></FormField> : null}
-                    </div>
-
-                    <h5>Sichtbarkeit</h5>
-                    <div className="form-grid two-columns">
-                      <label className="checkbox-row"><input type="checkbox" checked={newFieldDefinition.showInPublic} onChange={(event) => setNewFieldDefinition((current) => ({ ...current, showInPublic: event.target.checked }))} />In Voranmeldung anzeigen</label>
-                      <label className="checkbox-row"><input type="checkbox" checked={newFieldDefinition.showInGuard} onChange={(event) => setNewFieldDefinition((current) => ({ ...current, showInGuard: event.target.checked }))} />In Wache anzeigen</label>
-                      <label className="checkbox-row"><input type="checkbox" checked={newFieldDefinition.showInSibe} onChange={(event) => setNewFieldDefinition((current) => ({ ...current, showInSibe: event.target.checked }))} />In SiBe anzeigen</label>
-                      <label className="checkbox-row"><input type="checkbox" checked={newFieldDefinition.showOnBadge} onChange={(event) => setNewFieldDefinition((current) => ({ ...current, showOnBadge: event.target.checked }))} />Auf Besucherschein drucken</label>
-                    </div>
-
-                    <h5>Pflichtregeln</h5>
-                    <div className="form-grid two-columns">
-                      <label className="checkbox-row"><input type="checkbox" checked={newFieldDefinition.requiredPublic} onChange={(event) => setNewFieldDefinition((current) => ({ ...current, requiredPublic: event.target.checked }))} />Pflicht in Voranmeldung</label>
-                      <label className="checkbox-row"><input type="checkbox" checked={newFieldDefinition.requiredGuardCheckin} onChange={(event) => setNewFieldDefinition((current) => ({ ...current, requiredGuardCheckin: event.target.checked }))} />Pflicht vor Check-in</label>
-                      <label className="checkbox-row"><input type="checkbox" checked={newFieldDefinition.requiredBeforePrint} onChange={(event) => setNewFieldDefinition((current) => ({ ...current, requiredBeforePrint: event.target.checked }))} />Pflicht vor Druck</label>
-                      <label className="checkbox-row"><input type="checkbox" checked={newFieldDefinition.isActive} onChange={(event) => setNewFieldDefinition((current) => ({ ...current, isActive: event.target.checked }))} />Aktiv</label>
-                    </div>
-                    <div className="row-actions action-bar modal-actions">
-                      <button type="submit">Feld anlegen</button>
-                      <button type="button" className="secondary-button" onClick={() => setIsCreateFieldModalOpen(false)}>Abbrechen</button>
-                    </div>
-                  </form>
-                </div>
-              </div>
-            ) : null}
-          </Card>
+        {resolvedActiveSection === "felder" ? (
+          <AdminFieldDefinitionsSection
+            fieldDefinitions={fieldDefinitions}
+            editableFieldDefinitions={editableFieldDefinitions}
+            setEditableFieldDefinitions={setEditableFieldDefinitions}
+            selectedFieldDefinitionId={selectedFieldDefinitionId}
+            setSelectedFieldDefinitionId={setSelectedFieldDefinitionId}
+            selectedFieldSection={selectedFieldSection}
+            setSelectedFieldSection={setSelectedFieldSection}
+            isCreateFieldModalOpen={isCreateFieldModalOpen}
+            setIsCreateFieldModalOpen={setIsCreateFieldModalOpen}
+            newFieldDefinition={newFieldDefinition}
+            setNewFieldDefinition={setNewFieldDefinition}
+            fieldImportText={fieldImportText}
+            fieldImportFileName={fieldImportFileName}
+            fieldImportPreview={fieldImportPreview}
+            handleImportConfigFile={handleImportConfigFile}
+            previewFieldImport={previewFieldImport}
+            confirmFieldImport={confirmFieldImport}
+            exportFieldConfiguration={exportFieldConfiguration}
+            saveFieldDefinition={saveFieldDefinition}
+            createFieldDefinition={createFieldDefinition}
+            toggleFieldDefinitionActive={toggleFieldDefinitionActive}
+          />
         ) : null}
 
-        {activeSection === "system" ? (
-          <AdminSystemSection systemStatus={systemStatus} />
+        {resolvedActiveSection === "system" ? (
+          <AdminSystemSection
+            systemStatus={systemStatus}
+            workflowSettings={workflowSettings}
+            setWorkflowSettings={setWorkflowSettings}
+            workflowPassword={workflowPassword}
+            setWorkflowPassword={setWorkflowPassword}
+            workflowTestRecipient={workflowTestRecipient}
+            setWorkflowTestRecipient={setWorkflowTestRecipient}
+            saveWorkflowSettings={saveWorkflowSettings}
+            sendWorkflowTestMail={sendWorkflowTestMail}
+          />
         ) : null}
 
-        {activeSection === "audit" ? (
+        {resolvedActiveSection === "audit" ? (
           <AdminAuditSection
             auditFilters={auditFilters}
             setAuditFilters={setAuditFilters}
@@ -1317,7 +1137,7 @@ export function AdminPage() {
           />
         ) : null}
 
-        {activeSection === "fehler" ? (
+        {resolvedActiveSection === "fehler" ? (
           <AdminErrorLogSection
             errorLogFilters={errorLogFilters}
             setErrorLogFilters={setErrorLogFilters}

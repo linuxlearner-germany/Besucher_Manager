@@ -9,13 +9,15 @@ Interne Besucherverwaltung fuer Wache, Empfang und Administration.
 - Microsoft SQL Server 2022 als Compose-Service mit Bootstrap-Container
 - Oeffentliche Voranmeldung mit CSRF + Rate-Limit
 - Oeffentliche Gruppen-Voranmeldung als Formular
-- Oeffentlicher Besucher-Import per CSV und Excel
+- Oeffentlicher Besucher-Import per Excel
+- SiBe-Freigabeworkflow fuer Voranmeldungen vor dem Check-in
+- SMTP-/E-Mail-Relay im Admin-System konfigurierbar
 - Login mit Rollen `admin`, `guard`, `sibe` und `kaskdt`
 - Menuebasierte Rechte und Benutzergruppen im Admin-Panel
 - Guard-Login mit Wache-Auswahl bei jeder Anmeldung
 - Wache-Tagesuebersicht mit Suche/Filter, Check-in, Check-out, Druck
 - Besucherdetailseite
-- Importbereich mit Excel-/CSV-Vorlagen und Nachbearbeitungsstatus
+- Importbereich mit Excel-Vorlage und Nachbearbeitungsstatus
 - SiBe-/KasKdt-Dashboard mit Besucher-, Besuchs- und Benutzerrecherche
 - Admin-Panel mit Dashboard sowie getrennten Bereichen fuer Wachen, Benutzer, Texte, Gelaendeplan, Felder, Auditlog, Fehlerlog und System
 - Texte-Bearbeitung mit Suche, Typ-/Statusfiltern, Vorschau, Druck und Aktiv/Inaktiv-Schaltung
@@ -35,6 +37,7 @@ Interne Besucherverwaltung fuer Wache, Empfang und Administration.
 - `/wache/besuche/:id` Besucherdetails
 - `/wache/besuche/:id/druck` Druckansicht
 - `/import` Besucher-Import
+- `/genehmigungen` Offene SiBe-Freigaben
 - `/sibe` SiBe-Dashboard
 - `/kaskdt` KasKdt-Dashboard
 - `/kaskdt/texte` Texte-Bearbeitung
@@ -46,7 +49,7 @@ Interne Besucherverwaltung fuer Wache, Empfang und Administration.
 
 - Nicht eingeloggt: Voranmeldung, Gruppenformular, Import, Login
 - Guard: Wache, Import
-- SiBe: SiBe, Import
+- SiBe: Genehmigung, SiBe, Import
 - KasKdt: KasKdt, Import, Texte
 - Admin: alle Menues
 - Benutzer koennen zusaetzlich ueber Menuepunkte freigeschaltet oder eingeschraenkt werden.
@@ -77,6 +80,14 @@ npm run build
 ```bash
 npm run ops:update
 ```
+
+Fuer Installationen hinter Firmenproxy oder Reverse Proxy siehe:
+
+- [DEPLOYMENT.md](/root/Besucher_Manager/DEPLOYMENT.md)
+- Dort sind getrennt beschrieben:
+  - Outbound-Proxy fuer Docker-Build und Runtime
+  - Reverse Proxy mit HTTPS
+  - `PUBLIC_BASE_URL`, `APP_SECURE_COOKIES` und `APP_TRUST_PROXY`
 
 Zieladresse:
 
@@ -160,19 +171,50 @@ http://deb-srv-docker:3030
 - Es gibt zusaetzlich ein Gruppenformular fuer mehrere Besucher mit gemeinsamen Besuchsdaten.
 - Abgelaufene Ausweisdokumente werden im Formular sichtbar als Fehler markiert.
 - Unvollstaendige Import- oder Gruppenzeilen koennen spaeter durch die Wache nachbearbeitet werden.
+- Wenn die Freigabepflicht aktiv ist, werden neue Voranmeldungen zunaechst mit `Freigabe offen` angelegt.
+- Erst nach SiBe-Freigabe ist der Guard-Check-in moeglich.
 
 ## Besucher-Import
 
 - Route: `/import`
 - Ohne Login verfuegbar fuer oeffentlichen Import.
 - Mit Login verfuegbar fuer `guard`, `sibe`, `kaskdt` und `admin`.
-- Unterstuetzte Formate: `CSV`, `XLSX`, `XLS`
-- Downloadbare Vorlagen:
-  - `Excel-Vorlage herunterladen (Empfohlen)`
-  - `CSV-Vorlage herunterladen`
+- Unterstuetzte Formate: `XLSX`, `XLS`
+- Downloadbare Vorlage:
+  - `Excel-Vorlage herunterladen`
 - Die Excel-Vorlage ist bewusst vereinfacht und enthaelt Pflicht-/Optionalspalten sowie Dropdown-Hilfen.
 - Fehlende Daten blockieren den Import nicht grundsaetzlich; solche Eintraege werden mit Nachbearbeitungsbedarf markiert.
 - Mit Login verlinkt das Ergebnis direkt in die Detailbearbeitung des angelegten Besuchs.
+- Oeffentliche und Guard-Importe gehen bei aktiver Freigabepflicht zuerst in die SiBe-Freigabe.
+- Admin- und SiBe-Importe koennen direkt als freigegeben angelegt werden.
+
+## SiBe-Freigabe und E-Mail-Relay
+
+- Admin -> `System` enthaelt die Konfiguration fuer den Freigabeworkflow.
+- Schalter `SiBe-Freigabe vor Check-in erzwingen` aktiviert den Pflichtprozess.
+- Das Mail-Relay kann weiter im Admin gepflegt werden.
+- Fuer den produktiven Betrieb wird jetzt eine YML-Datei unter `config/mail-relay.yml` empfohlen.
+- Wenn die YML-Datei vorhanden ist, liest die App die SMTP-Relay-Daten daraus und zeigt sie im Admin nur noch lesend an.
+- Mit `Testmail senden` kann die Verbindung direkt aus dem Admin-Panel geprueft werden.
+- Bei neuer Voranmeldung koennen SiBe-Empfaenger per E-Mail informiert werden.
+- Freigabe oder Ablehnung erfolgt in `/sibe/besucher/:id`.
+- Eine Ablehnung kann mit Hinweis dokumentiert werden.
+
+Beispiel fuer `config/mail-relay.yml`:
+
+```yaml
+mailRelay:
+  enabled: true
+  host: smtp-relay.intern.example
+  port: 587
+  secure: false
+  username: relay-user
+  password: relay-pass
+  fromAddress: "Besucher Manager <noreply@example.org>"
+  approvalRecipients:
+    - sibe1@example.org
+    - sibe2@example.org
+```
 
 ## Texte-Bearbeitung
 

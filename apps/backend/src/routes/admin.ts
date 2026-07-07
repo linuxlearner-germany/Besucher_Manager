@@ -6,7 +6,6 @@ import sql from "mssql";
 import { Router, type Request, type Response } from "express";
 import { z } from "zod";
 import { getPool } from "../lib/db";
-import { listAdminFieldDefinitions, listFieldDefinitions, updateFieldDefinition } from "../lib/fieldDefinitions";
 import {
   ALLOWED_SITE_MAP_MIME_TYPES,
   SITE_MAP_MAX_FILE_SIZE_BYTES,
@@ -20,33 +19,39 @@ import {
 import {
   hashPassword,
   loadUserGroupsAndMenuAccess,
+  normalizeMenuAccess,
+  normalizePermissions,
   replaceUserGroupsAndMenuAccess
 } from "../lib/users";
+import { loadWorkflowSettings, upsertSystemSettings, WORKFLOW_SETTING_KEYS } from "../lib/systemSettings";
 import { writeAuditLog } from "../lib/auditLog";
 import { env } from "../config/env";
+import { verifyMailRelayConnection } from "../lib/mailRelay";
+import { adminFieldDefinitionsRouter } from "./adminFieldDefinitions";
 import {
+  APPROVAL_STATUS,
   APP_MENU_KEYS,
   getAllowedMenuAccessForRole,
   getDefaultMenuAccessForRole,
   HOST_SIGNATURE_STATUS,
   VISIT_STATUS,
+  parsePermissionsJson,
   type AppMenuKey,
+  type AppPermission,
   type AuthenticatedUser
 } from "../lib/visitWorkflow";
 import {
-  buildFieldKeyFromLabel,
   countUserReferences,
   getRequestIp,
   getRequestUserAgent,
   handleUnexpectedError,
   isSchemaMissingError,
-  normalizeImportOptions,
+  requireAnyPermission,
+  requirePermission,
   requireRole,
   sendError,
   sendValidationError
 } from "./shared";
-
-const fieldDefinitionsContextSchema = z.enum(["public", "guard", "sibe", "badge", "admin"]);
 const gateCreateSchema = z.object({
   name: z.string().trim().min(1).max(120),
   description: z.string().trim().max(500).optional().or(z.literal("")),
@@ -55,15 +60,63 @@ const gateCreateSchema = z.object({
   sortOrder: z.number().int().min(0).max(9999).optional()
 });
 const gateUpdateSchema = gateCreateSchema.partial();
+const permissionFlagsSchema = z.object({
+  menu: z.object({
+    preRegistration: z.boolean().optional(),
+    guard: z.boolean().optional(),
+    import: z.boolean().optional(),
+    admin: z.boolean().optional(),
+    approvals: z.boolean().optional(),
+    sibe: z.boolean().optional(),
+    commander: z.boolean().optional(),
+    texts: z.boolean().optional()
+  }).optional(),
+  visits: z.object({
+    read: z.boolean().optional(),
+    create: z.boolean().optional(),
+    update: z.boolean().optional(),
+    delete: z.boolean().optional(),
+    checkIn: z.boolean().optional(),
+    checkOut: z.boolean().optional(),
+    printBadge: z.boolean().optional()
+  }).optional(),
+  imports: z.object({
+    execute: z.boolean().optional()
+  }).optional(),
+  approvals: z.object({
+    read: z.boolean().optional(),
+    review: z.boolean().optional(),
+    approve: z.boolean().optional(),
+    reject: z.boolean().optional()
+  }).optional(),
+  dashboards: z.object({
+    sibe: z.boolean().optional(),
+    commander: z.boolean().optional()
+  }).optional(),
+  admin: z.object({
+    users: z.boolean().optional(),
+    guards: z.boolean().optional(),
+    texts: z.boolean().optional(),
+    map: z.boolean().optional(),
+    fields: z.boolean().optional(),
+    system: z.boolean().optional()
+  }).optional(),
+  logs: z.object({
+    audit: z.boolean().optional(),
+    errors: z.boolean().optional()
+  }).optional()
+}).optional();
 const userCreateSchema = z.object({
   username: z.string().trim().min(1).max(120),
   displayName: z.string().trim().max(255).optional().or(z.literal("")),
+  email: z.string().trim().email("Ungueltige E-Mail-Adresse.").optional().or(z.literal("")),
   password: z.string().min(8).max(128),
-  role: z.enum(["admin", "guard", "sibe", "kaskdt"]),
+  role: z.enum(["admin", "guard", "sibe", "kaskdt", "custom"]),
   gateId: z.string().uuid().nullable().optional(),
   isActive: z.boolean().optional(),
   groups: z.array(z.string().trim().min(1).max(120)).optional(),
-  menuAccess: z.array(z.enum(APP_MENU_KEYS)).optional()
+  menuAccess: z.array(z.enum(APP_MENU_KEYS)).optional(),
+  permissions: permissionFlagsSchema
 }).superRefine((value, context) => {
   const allowed = new Set(getAllowedMenuAccessForRole(value.role));
   const invalid = (value.menuAccess ?? []).filter((entry) => !allowed.has(entry));
@@ -75,98 +128,34 @@ const userCreateSchema = z.object({
       message: `Ungueltige Menuezugriffe fuer Rolle ${value.role}: ${invalid.join(", ")}`
     });
   }
+
+  if (value.role !== "guard" && !value.email?.trim()) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["email"],
+      message: "Fuer diese Rolle ist eine E-Mail-Adresse erforderlich."
+    });
+  }
+
+  if (value.role !== "custom" && value.permissions) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["permissions"],
+      message: "Zusatzrechte koennen nur fuer Benutzerdefiniert gesetzt werden."
+    });
+  }
 });
 const userUpdateSchema = z.object({
   username: z.string().trim().min(1).max(120).optional(),
   displayName: z.string().trim().max(255).optional().or(z.literal("")),
+  email: z.string().trim().email("Ungueltige E-Mail-Adresse.").optional().or(z.literal("")),
   password: z.string().min(8).max(128).optional(),
-  role: z.enum(["admin", "guard", "sibe", "kaskdt"]).optional(),
+  role: z.enum(["admin", "guard", "sibe", "kaskdt", "custom"]).optional(),
   gateId: z.string().uuid().nullable().optional(),
   isActive: z.boolean().optional(),
   groups: z.array(z.string().trim().min(1).max(120)).optional(),
-  menuAccess: z.array(z.enum(APP_MENU_KEYS)).optional()
-});
-const adminFieldDefinitionUpdateSchema = z.object({
-  label: z.string().trim().min(1).max(200),
-  section: z.string().trim().min(1).max(50),
-  isActive: z.boolean(),
-  showInPublic: z.boolean(),
-  showInGuard: z.boolean(),
-  showInSibe: z.boolean(),
-  showOnBadge: z.boolean(),
-  requiredPublic: z.boolean(),
-  requiredGuardCheckin: z.boolean(),
-  requiredBeforePrint: z.boolean(),
-  sortOrder: z.number().int().min(0).max(9999),
-  helpText: z.string().trim().max(500).optional().nullable().or(z.literal("")),
-  optionsJson: z.string().trim().optional().nullable().or(z.literal(""))
-}).superRefine((value, context) => {
-  if (!value.showInPublic && value.requiredPublic) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["requiredPublic"],
-      message: "Ein Feld kann nur Pflicht sein, wenn es im Kontext sichtbar ist."
-    });
-  }
-  if (!value.showInGuard && (value.requiredGuardCheckin || value.requiredBeforePrint)) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["requiredGuardCheckin"],
-      message: "Ein Feld kann nur Pflicht sein, wenn es im Guard-Kontext sichtbar ist."
-    });
-  }
-});
-const fieldDefinitionKeySchema = z.string().trim().regex(/^[a-z][a-z0-9_]{1,99}$/, "Ungueltiger fieldKey.");
-const allowedFieldTypes = ["text", "textarea", "date", "email", "phone", "select", "checkbox", "number"] as const;
-const allowedSections = ["Besucher", "Adresse", "Ansprechpartner", "Besuch", "Ausweis", "Ziel/Raum", "Geraete", "Sonstiges"] as const;
-const adminFieldDefinitionCreateSchema = z.object({
-  label: z.string().trim().min(1).max(200),
-  fieldType: z.enum(allowedFieldTypes),
-  section: z.enum(allowedSections),
-  isActive: z.boolean().optional().default(true),
-  showInPublic: z.boolean().optional().default(false),
-  showInGuard: z.boolean().optional().default(true),
-  showInSibe: z.boolean().optional().default(true),
-  showOnBadge: z.boolean().optional().default(false),
-  requiredPublic: z.boolean().optional().default(false),
-  requiredGuardCheckin: z.boolean().optional().default(false),
-  requiredBeforePrint: z.boolean().optional().default(false),
-  sortOrder: z.number().int().min(0).max(9999).optional().default(100),
-  helpText: z.string().trim().max(500).optional().nullable().or(z.literal("")),
-  optionsJson: z.string().trim().max(8000).optional().nullable().or(z.literal("")),
-  fieldKey: fieldDefinitionKeySchema.optional()
-});
-const fieldConfigImportFieldSchema = z.object({
-  fieldKey: fieldDefinitionKeySchema,
-  label: z.string().trim().min(1).max(200),
-  fieldType: z.enum(allowedFieldTypes),
-  section: z.enum(allowedSections),
-  isSystem: z.boolean().optional().default(false),
-  isActive: z.boolean(),
-  showInPublic: z.boolean(),
-  showInGuard: z.boolean(),
-  showInSibe: z.boolean(),
-  showOnBadge: z.boolean(),
-  requiredPublic: z.boolean(),
-  requiredGuardCheckin: z.boolean(),
-  requiredBeforePrint: z.boolean(),
-  sortOrder: z.number().int().min(0).max(9999),
-  helpText: z.string().trim().max(500).nullable().optional(),
-  options: z.unknown().nullable().optional()
-}).superRefine((value, context) => {
-  if (!value.showInPublic && value.requiredPublic) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["requiredPublic"], message: "requiredPublic erfordert showInPublic=true." });
-  }
-  if (!value.showInGuard && (value.requiredGuardCheckin || value.requiredBeforePrint)) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["requiredGuardCheckin"], message: "Guard-Pflichten erfordern showInGuard=true." });
-  }
-});
-const fieldConfigImportSchema = z.object({
-  schema: z.literal("besucher-manager-field-config"),
-  version: z.literal(1),
-  exportedAt: z.string().optional(),
-  app: z.string().optional(),
-  fields: z.array(fieldConfigImportFieldSchema).min(1)
+  menuAccess: z.array(z.enum(APP_MENU_KEYS)).optional(),
+  permissions: permissionFlagsSchema
 });
 const badgeTextUpdateSchema = z.object({
   name: z.string().trim().min(1).max(120),
@@ -182,8 +171,36 @@ const retentionSettingsSchema = z.object({
   enabled: z.boolean(),
   days: z.number().int().positive().max(3650).optional()
 });
+const workflowSettingsUpdateSchema = z.object({
+  approvalRequired: z.boolean(),
+  emailRelay: z.object({
+    enabled: z.boolean(),
+    host: z.string().trim().max(255),
+    port: z.number().int().min(1).max(65535),
+    secure: z.boolean(),
+    username: z.string().trim().max(255).optional().or(z.literal("")),
+    password: z.string().max(500).optional().or(z.literal("")),
+    fromAddress: z.string().trim().email("Ungueltige Absenderadresse.").optional().or(z.literal("")),
+    approvalRecipients: z.array(z.string().trim().email("Ungueltige E-Mail-Adresse.")).max(20)
+  })
+});
+const mailRelayTestSchema = z.object({
+  recipient: z.string().trim().email("Ungueltige Testadresse.").optional().or(z.literal(""))
+});
 
 export const apiRouter = Router();
+
+function serializePermissions(role: AuthenticatedUser["role"], permissionsJson: string | null | undefined, menuAccess: AppMenuKey[]) {
+  return normalizePermissions(role, parsePermissionsJson(permissionsJson), menuAccess);
+}
+
+function normalizePermissionsPayload(
+  role: AuthenticatedUser["role"],
+  permissions: z.infer<typeof permissionFlagsSchema> | undefined,
+  menuAccess: AppMenuKey[]
+) {
+  return JSON.stringify(normalizePermissions(role, permissions ?? null, menuAccess));
+}
 
 type SiteMapRow = {
   id: string;
@@ -403,9 +420,10 @@ async function getRetentionSettings() {
 }
 
 export const adminRouter = Router();
+adminRouter.use(adminFieldDefinitionsRouter);
 
 adminRouter.get("/api/admin/badge-texts", async (request, response) => {
-  const user = await requireRole(request, response, ["admin", "kaskdt"]);
+  const user = await requirePermission(request, response, "admin.texts");
 
   if (!user) {
     return;
@@ -429,7 +447,7 @@ adminRouter.get("/api/admin/badge-texts", async (request, response) => {
 });
 
 adminRouter.post("/api/admin/badge-texts", async (request, response) => {
-  const user = await requireRole(request, response, ["admin", "kaskdt"]);
+  const user = await requirePermission(request, response, "admin.texts");
   if (!user) return;
 
   const parsed = badgeTextCreateSchema.safeParse(request.body);
@@ -463,395 +481,9 @@ adminRouter.post("/api/admin/badge-texts", async (request, response) => {
   }
 });
 
-adminRouter.get("/api/field-definitions", async (request, response) => {
-  const parsed = fieldDefinitionsContextSchema.safeParse(request.query.context || "guard");
-  if (!parsed.success) {
-    return sendError(response, 400, "VALIDATION_ERROR", "Ungueltiger Feldkontext.");
-  }
-
-  try {
-    const definitions = parsed.data === "admin"
-      ? await listAdminFieldDefinitions()
-      : await listFieldDefinitions(parsed.data);
-    return response.json({ definitions });
-  } catch (error) {
-    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Felddefinitionen konnten nicht geladen werden.");
-  }
-});
-
-adminRouter.get("/api/admin/field-definitions", async (request, response) => {
-  const user = await requireRole(request, response, ["admin"]);
-  if (!user) {
-    return;
-  }
-
-  try {
-    const definitions = await listAdminFieldDefinitions();
-    return response.json({ definitions });
-  } catch (error) {
-    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Felddefinitionen konnten nicht geladen werden.");
-  }
-});
-
-adminRouter.get("/api/admin/field-definitions/export", async (request, response) => {
-  const user = await requireRole(request, response, ["admin"]);
-  if (!user) return;
-
-  try {
-    const definitions = await listAdminFieldDefinitions();
-    const parseOptions = (value: string | null): unknown => {
-      if (!value) return null;
-      try {
-        return JSON.parse(value);
-      } catch {
-        return value;
-      }
-    };
-    const payload = {
-      schema: "besucher-manager-field-config",
-      version: 1,
-      exportedAt: new Date().toISOString(),
-      app: "Besucher Manager",
-      fields: definitions.map((field) => ({
-        fieldKey: field.fieldKey,
-        label: field.label,
-        fieldType: field.fieldType,
-        section: field.section,
-        isSystem: field.isSystem,
-        isActive: field.isActive,
-        showInPublic: field.showInPublic,
-        showInGuard: field.showInGuard,
-        showInSibe: field.showInSibe,
-        showOnBadge: field.showOnBadge,
-        requiredPublic: field.requiredPublic,
-        requiredGuardCheckin: field.requiredGuardCheckin,
-        requiredBeforePrint: field.requiredBeforePrint,
-        sortOrder: field.sortOrder,
-        helpText: field.helpText,
-        options: parseOptions(field.optionsJson)
-      }))
-    };
-
-    await writeAuditLog({
-      user: user.username,
-      userId: user.id,
-      action: "FIELD_CONFIG_EXPORTED",
-      objectType: "field_definitions",
-      objectId: "all",
-      ipAddress: getRequestIp(request),
-      userAgent: getRequestUserAgent(request),
-      metadata: {
-        total: payload.fields.length,
-        version: payload.version
-      }
-    });
-
-    const date = new Date().toISOString().slice(0, 10);
-    response.setHeader("Content-Type", "application/json; charset=utf-8");
-    response.setHeader("Content-Disposition", `attachment; filename=\"besucher-manager-field-config-${date}.json\"`);
-    return response.status(200).send(JSON.stringify(payload, null, 2));
-  } catch (error) {
-    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Feldkonfiguration konnte nicht exportiert werden.");
-  }
-});
-
-adminRouter.post("/api/admin/field-definitions", async (request, response) => {
-  const user = await requireRole(request, response, ["admin"]);
-  if (!user) return;
-
-  const parsed = adminFieldDefinitionCreateSchema.safeParse(request.body);
-  if (!parsed.success) {
-    return sendValidationError(response, parsed.error.issues);
-  }
-
-  const payload = parsed.data;
-  const fieldKeyBase = payload.fieldKey || buildFieldKeyFromLabel(payload.label);
-  const fieldKey = fieldKeyBase.slice(0, 100);
-  if (!/^[a-z][a-z0-9_]{1,99}$/.test(fieldKey)) {
-    return sendValidationError(response, [{ field: "fieldKey", message: "Ungueltiger technischer Feldschluessel." }]);
-  }
-
-  try {
-    const pool = await getPool();
-    const exists = await pool.request()
-      .input("fieldKey", sql.NVarChar(100), fieldKey)
-      .query<{ count: number }>("SELECT COUNT(1) AS count FROM dbo.field_definitions WHERE field_key = @fieldKey");
-    if ((exists.recordset[0]?.count || 0) > 0) {
-      return sendError(response, 409, "CONFLICT", "Ein Feld mit diesem technischen Schluessel existiert bereits.");
-    }
-
-    await pool.request()
-      .input("id", sql.UniqueIdentifier, crypto.randomUUID())
-      .input("fieldKey", sql.NVarChar(100), fieldKey)
-      .input("label", sql.NVarChar(200), payload.label)
-      .input("fieldType", sql.NVarChar(50), payload.fieldType)
-      .input("section", sql.NVarChar(50), payload.section)
-      .input("isActive", sql.Bit, payload.isActive)
-      .input("showInPublic", sql.Bit, payload.showInPublic)
-      .input("showInGuard", sql.Bit, payload.showInGuard)
-      .input("showInSibe", sql.Bit, payload.showInSibe)
-      .input("showOnBadge", sql.Bit, payload.showOnBadge)
-      .input("requiredPublic", sql.Bit, payload.showInPublic ? payload.requiredPublic : false)
-      .input("requiredGuardCheckin", sql.Bit, payload.showInGuard ? payload.requiredGuardCheckin : false)
-      .input("requiredBeforePrint", sql.Bit, payload.showInGuard ? payload.requiredBeforePrint : false)
-      .input("sortOrder", sql.Int, payload.sortOrder)
-      .input("helpText", sql.NVarChar(500), payload.helpText || null)
-      .input("optionsJson", sql.NVarChar(sql.MAX), payload.optionsJson || null)
-      .query(`
-        INSERT INTO dbo.field_definitions (
-          id, field_key, label, field_type, section, is_system, is_active,
-          show_in_public, show_in_guard, show_in_sibe, show_on_badge,
-          required_public, required_guard_checkin, required_before_print,
-          sort_order, help_text, options_json
-        )
-        VALUES (
-          @id, @fieldKey, @label, @fieldType, @section, 0, @isActive,
-          @showInPublic, @showInGuard, @showInSibe, @showOnBadge,
-          @requiredPublic, @requiredGuardCheckin, @requiredBeforePrint,
-          @sortOrder, @helpText, @optionsJson
-        )
-      `);
-
-    await writeAuditLog({
-      user: user.username,
-      userId: user.id,
-      action: "FIELD_CONFIG_CREATED",
-      objectType: "field_definition",
-      objectId: fieldKey,
-      ipAddress: getRequestIp(request),
-      userAgent: getRequestUserAgent(request),
-      metadata: { fieldKey, section: payload.section }
-    });
-    return response.status(201).json({ created: true, fieldKey });
-  } catch (error) {
-    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Das Feld konnte nicht angelegt werden.");
-  }
-});
-
-adminRouter.post("/api/admin/field-definitions/import/preview", async (request, response) => {
-  const user = await requireRole(request, response, ["admin"]);
-  if (!user) return;
-
-  const parsed = fieldConfigImportSchema.safeParse(request.body);
-  if (!parsed.success) {
-    return sendValidationError(response, parsed.error.issues);
-  }
-
-  try {
-    const pool = await getPool();
-    const existing = await pool.request().query<{ fieldKey: string }>("SELECT field_key AS fieldKey FROM dbo.field_definitions");
-    const existingKeys = new Set(existing.recordset.map((row) => row.fieldKey));
-    const seen = new Set<string>();
-    const changes: Array<{ fieldKey: string; action: "update" | "create"; label: string }> = [];
-
-    for (const field of parsed.data.fields) {
-      if (seen.has(field.fieldKey)) {
-        return sendValidationError(response, [{ field: "fieldKey", message: `Doppelter fieldKey im Import: ${field.fieldKey}` }]);
-      }
-      seen.add(field.fieldKey);
-      changes.push({
-        fieldKey: field.fieldKey,
-        action: existingKeys.has(field.fieldKey) ? "update" : "create",
-        label: field.label
-      });
-    }
-
-    const willUpdate = changes.filter((item) => item.action === "update").length;
-    const willCreate = changes.filter((item) => item.action === "create").length;
-    return response.json({
-      valid: true,
-      summary: {
-        total: parsed.data.fields.length,
-        willUpdate,
-        willCreate,
-        willSkip: 0,
-        warnings: [] as string[]
-      },
-      changes
-    });
-  } catch (error) {
-    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Import-Vorschau konnte nicht erstellt werden.");
-  }
-});
-
-adminRouter.post("/api/admin/field-definitions/import", async (request, response) => {
-  const user = await requireRole(request, response, ["admin"]);
-  if (!user) return;
-
-  const parsed = fieldConfigImportSchema.safeParse(request.body);
-  if (!parsed.success) {
-    return sendValidationError(response, parsed.error.issues);
-  }
-
-  const payload = parsed.data;
-  const seen = new Set<string>();
-  for (const field of payload.fields) {
-    if (seen.has(field.fieldKey)) {
-      return sendValidationError(response, [{ field: "fieldKey", message: `Doppelter fieldKey im Import: ${field.fieldKey}` }]);
-    }
-    seen.add(field.fieldKey);
-  }
-
-  try {
-    const pool = await getPool();
-    const existingResult = await pool.request().query<{
-      id: string;
-      fieldKey: string;
-      isSystem: boolean;
-      fieldType: string;
-    }>(`
-      SELECT id, field_key AS fieldKey, is_system AS isSystem, field_type AS fieldType
-      FROM dbo.field_definitions
-    `);
-    const existingMap = new Map(existingResult.recordset.map((entry) => [entry.fieldKey, entry]));
-
-    let updated = 0;
-    let created = 0;
-    for (const field of payload.fields) {
-      const existing = existingMap.get(field.fieldKey);
-      const optionsJson = normalizeImportOptions(field.options);
-      if (existing) {
-        const fieldTypeForUpdate = existing.isSystem ? existing.fieldType : field.fieldType;
-        await pool.request()
-          .input("id", sql.UniqueIdentifier, existing.id)
-          .input("label", sql.NVarChar(200), field.label)
-          .input("section", sql.NVarChar(50), field.section)
-          .input("isActive", sql.Bit, field.isActive)
-          .input("showInPublic", sql.Bit, field.showInPublic)
-          .input("showInGuard", sql.Bit, field.showInGuard)
-          .input("showInSibe", sql.Bit, field.showInSibe)
-          .input("showOnBadge", sql.Bit, field.showOnBadge)
-          .input("requiredPublic", sql.Bit, field.showInPublic ? field.requiredPublic : false)
-          .input("requiredGuardCheckin", sql.Bit, field.showInGuard ? field.requiredGuardCheckin : false)
-          .input("requiredBeforePrint", sql.Bit, field.showInGuard ? field.requiredBeforePrint : false)
-          .input("sortOrder", sql.Int, field.sortOrder)
-          .input("helpText", sql.NVarChar(500), field.helpText || null)
-          .input("optionsJson", sql.NVarChar(sql.MAX), optionsJson)
-          .input("fieldType", sql.NVarChar(50), fieldTypeForUpdate)
-          .query(`
-            UPDATE dbo.field_definitions
-            SET
-              label = @label,
-              section = @section,
-              is_active = @isActive,
-              show_in_public = @showInPublic,
-              show_in_guard = @showInGuard,
-              show_in_sibe = @showInSibe,
-              show_on_badge = @showOnBadge,
-              required_public = @requiredPublic,
-              required_guard_checkin = @requiredGuardCheckin,
-              required_before_print = @requiredBeforePrint,
-              sort_order = @sortOrder,
-              help_text = @helpText,
-              options_json = @optionsJson,
-              field_type = @fieldType,
-              updated_at = SYSUTCDATETIME()
-            WHERE id = @id
-          `);
-        updated += 1;
-      } else {
-        await pool.request()
-          .input("id", sql.UniqueIdentifier, crypto.randomUUID())
-          .input("fieldKey", sql.NVarChar(100), field.fieldKey)
-          .input("label", sql.NVarChar(200), field.label)
-          .input("fieldType", sql.NVarChar(50), field.fieldType)
-          .input("section", sql.NVarChar(50), field.section)
-          .input("isActive", sql.Bit, field.isActive)
-          .input("showInPublic", sql.Bit, field.showInPublic)
-          .input("showInGuard", sql.Bit, field.showInGuard)
-          .input("showInSibe", sql.Bit, field.showInSibe)
-          .input("showOnBadge", sql.Bit, field.showOnBadge)
-          .input("requiredPublic", sql.Bit, field.showInPublic ? field.requiredPublic : false)
-          .input("requiredGuardCheckin", sql.Bit, field.showInGuard ? field.requiredGuardCheckin : false)
-          .input("requiredBeforePrint", sql.Bit, field.showInGuard ? field.requiredBeforePrint : false)
-          .input("sortOrder", sql.Int, field.sortOrder)
-          .input("helpText", sql.NVarChar(500), field.helpText || null)
-          .input("optionsJson", sql.NVarChar(sql.MAX), optionsJson)
-          .query(`
-            INSERT INTO dbo.field_definitions (
-              id, field_key, label, field_type, section, is_system, is_active,
-              show_in_public, show_in_guard, show_in_sibe, show_on_badge,
-              required_public, required_guard_checkin, required_before_print,
-              sort_order, help_text, options_json
-            )
-            VALUES (
-              @id, @fieldKey, @label, @fieldType, @section, 0, @isActive,
-              @showInPublic, @showInGuard, @showInSibe, @showOnBadge,
-              @requiredPublic, @requiredGuardCheckin, @requiredBeforePrint,
-              @sortOrder, @helpText, @optionsJson
-            )
-          `);
-        created += 1;
-      }
-    }
-
-    await writeAuditLog({
-      user: user.username,
-      userId: user.id,
-      action: "FIELD_CONFIG_IMPORTED",
-      objectType: "field_definitions",
-      objectId: "all",
-      ipAddress: getRequestIp(request),
-      userAgent: getRequestUserAgent(request),
-      metadata: {
-        total: payload.fields.length,
-        updated,
-        created,
-        skipped: 0,
-        version: payload.version
-      }
-    });
-
-    return response.json({
-      imported: true,
-      summary: {
-        total: payload.fields.length,
-        updated,
-        created,
-        skipped: 0
-      }
-    });
-  } catch (error) {
-    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Feldkonfiguration konnte nicht importiert werden.");
-  }
-});
-
-adminRouter.put("/api/admin/field-definitions/:id", async (request, response) => {
-  const user = await requireRole(request, response, ["admin"]);
-  if (!user) {
-    return;
-  }
-
-  const parsed = adminFieldDefinitionUpdateSchema.safeParse(request.body);
-  if (!parsed.success) {
-    return sendValidationError(response, parsed.error.flatten());
-  }
-
-  try {
-    await updateFieldDefinition(request.params.id, {
-      ...parsed.data,
-      helpText: parsed.data.helpText?.trim() ? parsed.data.helpText.trim() : null,
-      optionsJson: parsed.data.optionsJson?.trim() ? parsed.data.optionsJson.trim() : null
-    });
-
-    await writeAuditLog({
-      user: user.username,
-      userId: user.id,
-      action: "ADMIN_FIELD_DEFINITION_UPDATED",
-      objectType: "field_definition",
-      objectId: request.params.id,
-      ipAddress: getRequestIp(request),
-      userAgent: getRequestUserAgent(request)
-    });
-
-    return response.json({ success: true });
-  } catch (error) {
-    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Felddefinition konnte nicht gespeichert werden.");
-  }
-});
 
 adminRouter.get("/api/admin/bootstrap", async (request, response) => {
-  const user = await requireRole(request, response, ["admin"]);
+  const user = await requireAnyPermission(request, response, ["admin.users", "admin.guards", "admin.texts", "admin.map", "admin.fields", "admin.system", "logs.audit", "logs.errors"]);
 
   if (!user) {
     return;
@@ -872,7 +504,7 @@ adminRouter.get("/api/admin/bootstrap", async (request, response) => {
 });
 
 adminRouter.get("/api/admin/gates", async (request, response) => {
-  const user = await requireRole(request, response, ["admin"]);
+  const user = await requirePermission(request, response, "admin.guards");
   if (!user) return;
 
   try {
@@ -897,7 +529,7 @@ adminRouter.get("/api/admin/gates", async (request, response) => {
 });
 
 adminRouter.post("/api/admin/gates", async (request, response) => {
-  const user = await requireRole(request, response, ["admin"]);
+  const user = await requirePermission(request, response, "admin.guards");
   if (!user) return;
   const parsed = gateCreateSchema.safeParse(request.body);
   if (!parsed.success) return sendValidationError(response, parsed.error.flatten());
@@ -925,7 +557,7 @@ adminRouter.post("/api/admin/gates", async (request, response) => {
 });
 
 adminRouter.put("/api/admin/gates/:id", async (request, response) => {
-  const user = await requireRole(request, response, ["admin"]);
+  const user = await requirePermission(request, response, "admin.guards");
   if (!user) return;
   const parsed = gateUpdateSchema.safeParse(request.body);
   if (!parsed.success) return sendValidationError(response, parsed.error.flatten());
@@ -978,7 +610,7 @@ adminRouter.put("/api/admin/gates/:id", async (request, response) => {
 });
 
 adminRouter.post("/api/admin/gates/:id/deactivate", async (request, response) => {
-  const user = await requireRole(request, response, ["admin"]);
+  const user = await requirePermission(request, response, "admin.guards");
   if (!user) return;
 
   try {
@@ -1036,7 +668,7 @@ adminRouter.post("/api/admin/gates/:id/deactivate", async (request, response) =>
 });
 
 adminRouter.post("/api/admin/gates/:id/reactivate", async (request, response) => {
-  const user = await requireRole(request, response, ["admin"]);
+  const user = await requirePermission(request, response, "admin.guards");
   if (!user) return;
 
   try {
@@ -1061,7 +693,7 @@ adminRouter.post("/api/admin/gates/:id/reactivate", async (request, response) =>
 });
 
 adminRouter.get("/api/admin/users", async (request, response) => {
-  const user = await requireRole(request, response, ["admin"]);
+  const user = await requirePermission(request, response, "admin.users");
   if (!user) return;
   try {
     const pool = await getPool();
@@ -1069,29 +701,41 @@ adminRouter.get("/api/admin/users", async (request, response) => {
       id: string;
       username: string;
       displayName: string;
-      role: "admin" | "guard" | "sibe" | "kaskdt";
+      email: string | null;
+      role: "admin" | "guard" | "sibe" | "kaskdt" | "custom";
       gateId: string | null;
       isActive: boolean;
       lastLoginAt: string | null;
+      permissionsJson: string | null;
     }>(`
       SELECT
         id,
         username,
         display_name AS displayName,
+        user_email AS email,
         role,
         gate_id AS gateId,
         is_active AS isActive,
-        CONVERT(NVARCHAR(30), last_login_at, 127) AS lastLoginAt
+        CONVERT(NVARCHAR(30), last_login_at, 127) AS lastLoginAt,
+        permissions_json AS permissionsJson
       FROM dbo.users
       ORDER BY username ASC
     `);
     const { groupsByUserId, menuAccessByUserId } = await loadUserGroupsAndMenuAccess(result.recordset.map((entry) => entry.id));
     response.json({
-      users: result.recordset.map((entry) => ({
-        ...entry,
-        groups: groupsByUserId[entry.id] ?? [],
-        menuAccess: menuAccessByUserId[entry.id]?.length ? menuAccessByUserId[entry.id] : getDefaultMenuAccessForRole(entry.role)
-      }))
+      users: result.recordset.map((entry) => {
+        const effectiveMenuAccess = normalizeMenuAccess(
+          entry.role,
+          menuAccessByUserId[entry.id]?.length ? menuAccessByUserId[entry.id] : getDefaultMenuAccessForRole(entry.role)
+        );
+
+        return {
+          ...entry,
+          groups: groupsByUserId[entry.id] ?? [],
+          menuAccess: effectiveMenuAccess,
+          permissions: serializePermissions(entry.role, entry.permissionsJson, effectiveMenuAccess)
+        };
+      })
     });
   } catch (error) {
     return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Benutzer konnten nicht geladen werden.");
@@ -1099,7 +743,7 @@ adminRouter.get("/api/admin/users", async (request, response) => {
 });
 
 adminRouter.post("/api/admin/users", async (request, response) => {
-  const admin = await requireRole(request, response, ["admin"]);
+  const admin = await requirePermission(request, response, "admin.users");
   if (!admin) return;
   const parsed = userCreateSchema.safeParse(request.body);
   if (!parsed.success) return sendValidationError(response, parsed.error.flatten());
@@ -1118,24 +762,29 @@ adminRouter.post("/api/admin/users", async (request, response) => {
     const transaction = new sql.Transaction(pool);
     await transaction.begin();
 
+    const normalizedMenuAccess = normalizeMenuAccess(data.role, data.menuAccess);
+    const permissionsJson = normalizePermissionsPayload(data.role, data.permissions, normalizedMenuAccess);
+
     const created = await new sql.Request(transaction)
       .input("username", sql.NVarChar(120), data.username)
       .input("displayName", sql.NVarChar(255), data.displayName?.trim() || data.username)
+      .input("email", sql.NVarChar(255), data.role === "guard" ? null : (data.email?.trim().toLowerCase() || null))
       .input("passwordHash", passwordHash)
       .input("role", data.role)
       .input("gateId", sql.UniqueIdentifier, null)
       .input("isActive", data.isActive ?? true)
+      .input("permissionsJson", sql.NVarChar(sql.MAX), permissionsJson)
       .query<{ id: string }>(`
-        INSERT INTO dbo.users(username, password_hash, display_name, role, gate_id, is_active)
+        INSERT INTO dbo.users(username, password_hash, display_name, user_email, role, gate_id, is_active, permissions_json)
         OUTPUT inserted.id
-        VALUES(@username, @passwordHash, @displayName, @role, @gateId, @isActive)
+        VALUES(@username, @passwordHash, @displayName, @email, @role, @gateId, @isActive, @permissionsJson)
       `);
 
     await replaceUserGroupsAndMenuAccess(
       created.recordset[0].id,
       data.role,
       data.groups,
-      data.menuAccess,
+      normalizedMenuAccess,
       transaction
     );
 
@@ -1149,7 +798,7 @@ adminRouter.post("/api/admin/users", async (request, response) => {
 });
 
 adminRouter.put("/api/admin/users/:id", async (request, response) => {
-  const admin = await requireRole(request, response, ["admin"]);
+  const admin = await requirePermission(request, response, "admin.users");
   if (!admin) return;
   const parsed = userUpdateSchema.safeParse(request.body);
   if (!parsed.success) return sendValidationError(response, parsed.error.flatten());
@@ -1158,7 +807,7 @@ adminRouter.put("/api/admin/users/:id", async (request, response) => {
     const pool = await getPool();
     const existing = await pool.request()
       .input("id", sql.UniqueIdentifier, request.params.id)
-      .query<{ username: string; role: "admin" | "guard" | "sibe" | "kaskdt"; isActive: boolean; gateId: string | null }>("SELECT username, role, is_active AS isActive, gate_id AS gateId FROM dbo.users WHERE id = @id");
+      .query<{ username: string; email: string | null; role: "admin" | "guard" | "sibe" | "kaskdt" | "custom"; isActive: boolean; gateId: string | null; permissionsJson: string | null }>("SELECT username, user_email AS email, role, is_active AS isActive, gate_id AS gateId, permissions_json AS permissionsJson FROM dbo.users WHERE id = @id");
 
     const currentUser = existing.recordset[0];
     if (!currentUser) {
@@ -1169,12 +818,34 @@ adminRouter.put("/api/admin/users/:id", async (request, response) => {
     const nextActive = data.isActive ?? currentUser.isActive;
     const nextGateId = null;
     const nextUsername = data.username ?? currentUser.username;
+    const { menuAccessByUserId } = await loadUserGroupsAndMenuAccess([request.params.id]);
+    const currentMenuAccess = normalizeMenuAccess(
+      currentUser.role,
+      menuAccessByUserId[request.params.id]?.length
+        ? menuAccessByUserId[request.params.id]
+        : getDefaultMenuAccessForRole(currentUser.role)
+    );
     const nextDisplayName = data.displayName?.trim() || nextUsername;
+    const nextEmail = nextRole === "guard" ? null : (data.email?.trim().toLowerCase() || currentUser.email?.trim().toLowerCase() || null);
     const allowedMenuAccess = new Set(getAllowedMenuAccessForRole(nextRole));
     const requestedMenuAccess = (data.menuAccess ?? []).filter((entry) => allowedMenuAccess.has(entry));
+    const nextMenuAccess = data.menuAccess
+      ? requestedMenuAccess
+      : currentUser.role === nextRole
+        ? currentMenuAccess
+        : getDefaultMenuAccessForRole(nextRole);
+    const permissionsJson = normalizePermissionsPayload(
+      nextRole,
+      data.permissions ?? parsePermissionsJson(currentUser.permissionsJson) ?? undefined,
+      nextMenuAccess
+    );
 
     if (data.menuAccess && requestedMenuAccess.length !== data.menuAccess.length) {
       return sendError(response, 400, "VALIDATION_ERROR", "Mindestens ein Menuepunkt passt nicht zur ausgewaehlten Rolle.");
+    }
+
+    if (nextRole !== "guard" && !nextEmail) {
+      return sendError(response, 400, "VALIDATION_ERROR", "Fuer diese Rolle ist eine E-Mail-Adresse erforderlich.");
     }
 
     if (admin.id === request.params.id && (!nextActive || nextRole !== "admin")) {
@@ -1211,19 +882,23 @@ adminRouter.put("/api/admin/users/:id", async (request, response) => {
       .input("id", sql.UniqueIdentifier, request.params.id)
       .input("username", sql.NVarChar(120), nextUsername)
       .input("displayName", sql.NVarChar(255), nextDisplayName)
+      .input("email", sql.NVarChar(255), nextEmail)
       .input("passwordHash", passwordHash)
       .input("role", nextRole)
       .input("gateId", sql.UniqueIdentifier, nextGateId)
       .input("isActive", nextActive)
       .input("deactivatedBy", sql.UniqueIdentifier, admin.id)
+      .input("permissionsJson", sql.NVarChar(sql.MAX), permissionsJson)
       .query(`
         UPDATE dbo.users
         SET
           username = @username,
           display_name = @displayName,
+          user_email = @email,
           password_hash = COALESCE(@passwordHash, password_hash),
           role = @role,
           gate_id = @gateId,
+          permissions_json = @permissionsJson,
           is_active = @isActive,
           deactivated_at = CASE
             WHEN @isActive = 0 THEN COALESCE(deactivated_at, SYSUTCDATETIME())
@@ -1243,7 +918,7 @@ adminRouter.put("/api/admin/users/:id", async (request, response) => {
       request.params.id,
       nextRole,
       data.groups,
-      data.menuAccess,
+      data.menuAccess ? requestedMenuAccess : nextMenuAccess,
       transaction
     );
 
@@ -1257,7 +932,7 @@ adminRouter.put("/api/admin/users/:id", async (request, response) => {
 });
 
 adminRouter.post("/api/admin/users/:id/deactivate", async (request, response) => {
-  const admin = await requireRole(request, response, ["admin"]);
+  const admin = await requirePermission(request, response, "admin.users");
   if (!admin) return;
 
   if (admin.id === request.params.id) {
@@ -1303,7 +978,7 @@ adminRouter.post("/api/admin/users/:id/deactivate", async (request, response) =>
 });
 
 adminRouter.post("/api/admin/users/:id/reactivate", async (request, response) => {
-  const admin = await requireRole(request, response, ["admin"]);
+  const admin = await requirePermission(request, response, "admin.users");
   if (!admin) return;
 
   try {
@@ -1328,7 +1003,7 @@ adminRouter.post("/api/admin/users/:id/reactivate", async (request, response) =>
 });
 
 adminRouter.delete("/api/admin/users/:id", async (request, response) => {
-  const admin = await requireRole(request, response, ["admin"]);
+  const admin = await requirePermission(request, response, "admin.users");
   if (!admin) return;
 
   if (admin.id === request.params.id) {
@@ -1414,7 +1089,7 @@ adminRouter.delete("/api/admin/users/:id", async (request, response) => {
 });
 
 adminRouter.put("/api/admin/badge-texts/:id", async (request, response) => {
-  const user = await requireRole(request, response, ["admin", "kaskdt"]);
+  const user = await requirePermission(request, response, "admin.texts");
   if (!user) return;
   const parsed = badgeTextUpdateSchema.safeParse(request.body);
   if (!parsed.success) return sendValidationError(response, parsed.error.flatten());
@@ -1450,7 +1125,7 @@ adminRouter.put("/api/admin/badge-texts/:id", async (request, response) => {
 });
 
 adminRouter.post("/api/admin/badge-texts/:id/deactivate", async (request, response) => {
-  const user = await requireRole(request, response, ["admin", "kaskdt"]);
+  const user = await requirePermission(request, response, "admin.texts");
   if (!user) return;
 
   try {
@@ -1484,7 +1159,7 @@ adminRouter.post("/api/admin/badge-texts/:id/deactivate", async (request, respon
 });
 
 adminRouter.post("/api/admin/badge-texts/:id/reactivate", async (request, response) => {
-  const user = await requireRole(request, response, ["admin", "kaskdt"]);
+  const user = await requirePermission(request, response, "admin.texts");
   if (!user) return;
 
   try {
@@ -1517,7 +1192,7 @@ adminRouter.post("/api/admin/badge-texts/:id/reactivate", async (request, respon
 });
 
 adminRouter.post("/api/admin/site-map/upload", async (request, response) => {
-  const user = await requireRole(request, response, ["admin"]);
+  const user = await requirePermission(request, response, "admin.map");
   if (!user) return;
 
   const file = await parseSingleSiteMapUpload(request, response);
@@ -1619,7 +1294,7 @@ adminRouter.post("/api/admin/site-map/upload", async (request, response) => {
     });
   } catch (error) {
     await fs.rm(targetPath, { force: true }).catch(() => undefined);
-    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der Gelaendeplan konnte nicht hochgeladen werden.");
+    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der Geländeplan konnte nicht hochgeladen werden.");
   }
 });
 
@@ -1631,24 +1306,24 @@ adminRouter.get("/api/admin/site-map/active", async (request, response) => {
     const siteMap = await getActiveSiteMap();
     return response.json({ siteMap });
   } catch (error) {
-    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der aktive Gelaendeplan konnte nicht geladen werden.");
+    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der aktive Geländeplan konnte nicht geladen werden.");
   }
 });
 
 adminRouter.get("/api/admin/site-map", async (request, response) => {
-  const user = await requireRole(request, response, ["admin"]);
+  const user = await requirePermission(request, response, "admin.map");
   if (!user) return;
 
   try {
     const siteMap = await getActiveSiteMap();
     return response.json({ siteMap });
   } catch (error) {
-    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der aktive Gelaendeplan konnte nicht geladen werden.");
+    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der aktive Geländeplan konnte nicht geladen werden.");
   }
 });
 
 adminRouter.get("/api/admin/site-maps", async (request, response) => {
-  const user = await requireRole(request, response, ["admin"]);
+  const user = await requirePermission(request, response, "admin.map");
   if (!user) return;
 
   try {
@@ -1660,7 +1335,7 @@ adminRouter.get("/api/admin/site-maps", async (request, response) => {
 });
 
 adminRouter.post("/api/admin/site-maps/:id/deactivate", async (request, response) => {
-  const user = await requireRole(request, response, ["admin"]);
+  const user = await requirePermission(request, response, "admin.map");
   if (!user) return;
 
   try {
@@ -1689,36 +1364,36 @@ adminRouter.post("/api/admin/site-maps/:id/deactivate", async (request, response
     });
     response.json({ success: true });
   } catch (error) {
-    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der Gelaendeplan konnte nicht deaktiviert werden.");
+    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der Geländeplan konnte nicht deaktiviert werden.");
   }
 });
 
 adminRouter.post("/api/admin/site-maps/:id/activate", async (request, response) => {
-  const user = await requireRole(request, response, ["admin"]);
+  const user = await requirePermission(request, response, "admin.map");
   if (!user) return;
 
   try {
     await activateSiteMapById(user, request, request.params.id);
     response.json({ success: true });
   } catch (error) {
-    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der Gelaendeplan konnte nicht aktiviert werden.");
+    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der Geländeplan konnte nicht aktiviert werden.");
   }
 });
 
 adminRouter.post("/api/admin/site-maps/:id/reactivate", async (request, response) => {
-  const user = await requireRole(request, response, ["admin"]);
+  const user = await requirePermission(request, response, "admin.map");
   if (!user) return;
 
   try {
     await activateSiteMapById(user, request, request.params.id);
     response.json({ success: true });
   } catch (error) {
-    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der Gelaendeplan konnte nicht aktiviert werden.");
+    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der Geländeplan konnte nicht aktiviert werden.");
   }
 });
 
 adminRouter.get("/api/admin/audit-logs", async (request, response) => {
-  const user = await requireRole(request, response, ["admin"]);
+  const user = await requirePermission(request, response, "logs.audit");
   if (!user) return;
   try {
     const pool = await getPool();
@@ -1793,7 +1468,7 @@ adminRouter.get("/api/admin/audit-logs", async (request, response) => {
 });
 
 adminRouter.get("/api/admin/error-logs", async (request, response) => {
-  const user = await requireRole(request, response, ["admin"]);
+  const user = await requirePermission(request, response, "logs.errors");
   if (!user) return;
   try {
     const pool = await getPool();
@@ -1869,12 +1544,12 @@ adminRouter.get("/api/admin/error-logs", async (request, response) => {
 });
 
 adminRouter.get("/api/admin/system-status", async (request, response) => {
-  const user = await requireRole(request, response, ["admin"]);
+  const user = await requirePermission(request, response, "admin.system");
   if (!user) return;
   try {
     const pool = await getPool();
     const retention = await getRetentionSettings();
-    const [activeVisits, configuredGates, staleVisits, openPreRegistrationsToday, signaturesPending, signaturesFollowUp, signaturesExceptions] = await Promise.all([
+    const [activeVisits, configuredGates, staleVisits, openPreRegistrationsToday, signaturesPending, signaturesFollowUp, signaturesExceptions, approvalsPending] = await Promise.all([
       pool.request().query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.visits WHERE status = 'checked_in'"),
       pool.request().query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.gates WHERE is_active = 1"),
       pool.request()
@@ -1892,7 +1567,8 @@ adminRouter.get("/api/admin/system-status", async (request, response) => {
       `),
       pool.request().query<{ count: number }>(`SELECT COUNT(*) AS count FROM dbo.visits WHERE ISNULL(host_signature_status, '${HOST_SIGNATURE_STATUS.PENDING}') = '${HOST_SIGNATURE_STATUS.PENDING}'`),
       pool.request().query<{ count: number }>(`SELECT COUNT(*) AS count FROM dbo.visits WHERE host_signature_status = '${HOST_SIGNATURE_STATUS.SIGNED_LATER}'`),
-      pool.request().query<{ count: number }>(`SELECT COUNT(*) AS count FROM dbo.visits WHERE host_signature_status = '${HOST_SIGNATURE_STATUS.MISSING_EXCEPTION}'`)
+      pool.request().query<{ count: number }>(`SELECT COUNT(*) AS count FROM dbo.visits WHERE host_signature_status = '${HOST_SIGNATURE_STATUS.MISSING_EXCEPTION}'`),
+      pool.request().query<{ count: number }>(`SELECT COUNT(*) AS count FROM dbo.visits WHERE ISNULL(approval_status, '${APPROVAL_STATUS.NOT_REQUIRED}') = '${APPROVAL_STATUS.PENDING}'`)
     ]);
     response.json({
       app: "ok",
@@ -1903,6 +1579,7 @@ adminRouter.get("/api/admin/system-status", async (request, response) => {
       signaturesPending: signaturesPending.recordset[0]?.count ?? 0,
       signaturesFollowUp: signaturesFollowUp.recordset[0]?.count ?? 0,
       signaturesExceptions: signaturesExceptions.recordset[0]?.count ?? 0,
+      approvalsPending: approvalsPending.recordset[0]?.count ?? 0,
       staleVisits: retention.enabled ? staleVisits.recordset[0]?.count ?? 0 : 0,
       retentionDays: retention.days,
       retentionEnabled: retention.enabled,
@@ -1914,8 +1591,120 @@ adminRouter.get("/api/admin/system-status", async (request, response) => {
   }
 });
 
+adminRouter.get("/api/admin/system-settings/workflow-email", async (request, response) => {
+  const user = await requirePermission(request, response, "admin.system");
+  if (!user) return;
+
+  try {
+    const settings = await loadWorkflowSettings();
+    return response.json({
+      approvalRequired: settings.approvalRequired,
+      emailRelay: {
+        source: settings.emailRelay.source,
+        configPath: settings.emailRelay.configPath,
+        isReadOnly: settings.emailRelay.isReadOnly,
+        enabled: settings.emailRelay.enabled,
+        host: settings.emailRelay.host,
+        port: settings.emailRelay.port,
+        secure: settings.emailRelay.secure,
+        username: settings.emailRelay.username,
+        fromAddress: settings.emailRelay.fromAddress,
+        approvalRecipients: settings.emailRelay.approvalRecipients,
+        hasPassword: settings.emailRelay.hasPassword
+      }
+    });
+  } catch (error) {
+    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Workflow-Einstellungen konnten nicht geladen werden.");
+  }
+});
+
+adminRouter.put("/api/admin/system-settings/workflow-email", async (request, response) => {
+  const user = await requirePermission(request, response, "admin.system");
+  if (!user) return;
+
+  const parsed = workflowSettingsUpdateSchema.safeParse(request.body ?? {});
+  if (!parsed.success) {
+    return sendValidationError(response, parsed.error.flatten());
+  }
+
+  try {
+    const currentSettings = await loadWorkflowSettings({ includeSecrets: true });
+    const settingsToPersist: Record<string, string> = {
+      [WORKFLOW_SETTING_KEYS.approvalRequired]: String(parsed.data.approvalRequired)
+    };
+
+    if (currentSettings.emailRelay.source !== "yml") {
+      const nextPassword = parsed.data.emailRelay.password?.trim()
+        ? parsed.data.emailRelay.password.trim()
+        : currentSettings.emailRelay.password;
+
+      Object.assign(settingsToPersist, {
+        [WORKFLOW_SETTING_KEYS.relayEnabled]: String(parsed.data.emailRelay.enabled),
+        [WORKFLOW_SETTING_KEYS.relayHost]: parsed.data.emailRelay.host.trim(),
+        [WORKFLOW_SETTING_KEYS.relayPort]: String(parsed.data.emailRelay.port),
+        [WORKFLOW_SETTING_KEYS.relaySecure]: String(parsed.data.emailRelay.secure),
+        [WORKFLOW_SETTING_KEYS.relayUsername]: parsed.data.emailRelay.username?.trim() || "",
+        [WORKFLOW_SETTING_KEYS.relayPassword]: nextPassword,
+        [WORKFLOW_SETTING_KEYS.relayFrom]: parsed.data.emailRelay.fromAddress?.trim() || "",
+        [WORKFLOW_SETTING_KEYS.relayApprovalTo]: parsed.data.emailRelay.approvalRecipients.join(", ")
+      });
+    }
+
+    await upsertSystemSettings(settingsToPersist);
+
+    await writeAuditLog({
+      user: user.username,
+      userId: user.id,
+      action: "SYSTEM_WORKFLOW_SETTINGS_UPDATED",
+      objectType: "system_setting",
+      objectId: "workflow_email",
+      ipAddress: getRequestIp(request),
+      userAgent: getRequestUserAgent(request)
+    });
+
+    return response.json({
+      success: true,
+      emailRelaySource: currentSettings.emailRelay.source
+    });
+  } catch (error) {
+    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Workflow-Einstellungen konnten nicht gespeichert werden.");
+  }
+});
+
+adminRouter.post("/api/admin/system-settings/workflow-email/test", async (request, response) => {
+  const user = await requirePermission(request, response, "admin.system");
+  if (!user) return;
+
+  const parsed = mailRelayTestSchema.safeParse(request.body ?? {});
+  if (!parsed.success) {
+    return sendValidationError(response, parsed.error.flatten());
+  }
+
+  try {
+    await verifyMailRelayConnection(parsed.data.recipient?.trim() || undefined);
+    await writeAuditLog({
+      user: user.username,
+      userId: user.id,
+      action: "SYSTEM_MAIL_RELAY_TESTED",
+      objectType: "system_setting",
+      objectId: "workflow_email",
+      ipAddress: getRequestIp(request),
+      userAgent: getRequestUserAgent(request)
+    });
+    return response.json({ success: true, message: "Testmail erfolgreich versendet." });
+  } catch (error) {
+    if (error instanceof Error && error.message === "mail_relay_incomplete") {
+      return sendError(response, 400, "VALIDATION_ERROR", "Bitte Host und Absenderadresse fuer das Relay hinterlegen.");
+    }
+    if (error instanceof Error && error.message === "mail_relay_missing_test_recipient") {
+      return sendError(response, 400, "VALIDATION_ERROR", "Bitte mindestens einen Empfaenger oder eine Testadresse hinterlegen.");
+    }
+    return handleUnexpectedError(response, error, "MAIL_RELAY_TEST_FAILED", "Die Testmail konnte nicht versendet werden.");
+  }
+});
+
 adminRouter.put("/api/admin/system-settings/retention", async (request, response) => {
-  const user = await requireRole(request, response, ["admin"]);
+  const user = await requirePermission(request, response, "admin.system");
   if (!user) return;
   const parsed = retentionSettingsSchema.safeParse(request.body);
   if (!parsed.success) return sendValidationError(response, parsed.error.flatten());
@@ -1952,7 +1741,7 @@ adminRouter.put("/api/admin/system-settings/retention", async (request, response
 });
 
 adminRouter.post("/api/admin/visitors/:id/archive", async (request, response) => {
-  const user = await requireRole(request, response, ["admin"]);
+  const user = await requirePermission(request, response, "admin.system");
   if (!user) return;
 
   try {
@@ -1988,7 +1777,7 @@ adminRouter.post("/api/admin/visitors/:id/archive", async (request, response) =>
 });
 
 adminRouter.post("/api/admin/retention/cleanup", async (request, response) => {
-  const user = await requireRole(request, response, ["admin"]);
+  const user = await requirePermission(request, response, "admin.system");
   if (!user) return;
 
   try {

@@ -17,6 +17,7 @@ import {
   getRequestIp,
   getRequestUserAgent,
   handleUnexpectedError,
+  requirePermission,
   requireRole,
   sendError,
   sendForbidden,
@@ -32,7 +33,7 @@ const hostSignatureStatusSchema = z.enum([
 ]);
 const checkOutSchema = z.object({
   signed_by_host_confirmed: z.literal(true, {
-    errorMap: () => ({ message: "Bitte bestaetigen Sie die Ansprechpartner-Unterschrift." })
+    errorMap: () => ({ message: "Bitte bestätigen Sie die Ansprechpartner-Unterschrift." })
   }),
   returned_badge_number: z.string().trim().min(1, "Bitte geben Sie die Besuchsnummer vom Besucherschein ein.").transform((value) => value.toUpperCase())
 });
@@ -71,8 +72,8 @@ const guardVisitUpdateSchema = z.object({
   hostDepartment: z.string().trim().max(255).optional().or(z.literal("")),
   purpose: z.string().trim().min(1).max(500),
   gateId: z.string().uuid().optional().or(z.literal("")),
-  validFrom: z.string().trim().min(1, "Gueltig von ist erforderlich."),
-  validUntil: z.string().trim().min(1, "Gueltig bis ist erforderlich."),
+  validFrom: z.string().trim().min(1, "Gültig von ist erforderlich."),
+  validUntil: z.string().trim().min(1, "Gültig bis ist erforderlich."),
   notes: z.string().trim().optional().or(z.literal("")),
   visitorStreet: z.string().trim().max(255).optional().or(z.literal("")),
   visitorHouseNumber: z.string().trim().max(40).optional().or(z.literal("")),
@@ -107,7 +108,7 @@ const guardVisitUpdateSchema = z.object({
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["validUntil"],
-      message: "Gueltig bis darf nicht vor Gueltig von liegen."
+      message: "Gültig bis darf nicht vor Gültig von liegen."
     });
   }
   if (value.birthDate) {
@@ -208,7 +209,7 @@ const guardCalendarQuerySchema = z.object({
 export const guardRouter = Router();
 
 guardRouter.get("/api/guard/visits/today", async (request, response) => {
-  const user = await requireRole(request, response, ["admin", "guard"]);
+  const user = await requirePermission(request, response, "visits.read");
 
   if (!user) {
     return;
@@ -228,7 +229,7 @@ guardRouter.get("/api/guard/visits/today", async (request, response) => {
 });
 
 guardRouter.get("/api/guard/visits/calendar", async (request, response) => {
-  const user = await requireRole(request, response, ["admin", "guard"]);
+  const user = await requirePermission(request, response, "visits.read");
   if (!user) return;
 
   const parsed = guardCalendarQuerySchema.safeParse({
@@ -258,7 +259,7 @@ guardRouter.get("/api/guard/visits/calendar", async (request, response) => {
 });
 
 guardRouter.get("/api/guard/visits/:id", async (request, response) => {
-  const user = await requireRole(request, response, ["admin", "guard"]);
+  const user = await requirePermission(request, response, "visits.read");
 
   if (!user) {
     return;
@@ -281,7 +282,7 @@ guardRouter.get("/api/guard/visits/:id", async (request, response) => {
 });
 
 guardRouter.post("/api/guard/visits/:id/check-in", async (request, response) => {
-  const user = await requireRole(request, response, ["admin", "guard"]);
+  const user = await requirePermission(request, response, "visits.checkIn");
 
   if (!user) {
     return;
@@ -326,6 +327,24 @@ guardRouter.post("/api/guard/visits/:id/check-in", async (request, response) => 
         );
       }
 
+      if (error.message === "visit_approval_pending") {
+        return sendError(
+          response,
+          409,
+          "VISIT_APPROVAL_PENDING",
+          "Der Besuch ist noch nicht durch SiBe freigegeben."
+        );
+      }
+
+      if (error.message === "visit_approval_rejected") {
+        return sendError(
+          response,
+          409,
+          "VISIT_APPROVAL_REJECTED",
+          "Der Besuch wurde durch SiBe abgelehnt."
+        );
+      }
+
     }
 
     return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der Check-in konnte nicht gespeichert werden.");
@@ -333,7 +352,7 @@ guardRouter.post("/api/guard/visits/:id/check-in", async (request, response) => 
 });
 
 guardRouter.put("/api/guard/visits/:id", async (request, response) => {
-  const user = await requireRole(request, response, ["admin", "guard"]);
+  const user = await requirePermission(request, response, "visits.update");
 
   if (!user) {
     return;
@@ -367,7 +386,7 @@ guardRouter.put("/api/guard/visits/:id", async (request, response) => {
 });
 
 guardRouter.post("/api/guard/visits/:id/check-out", async (request, response) => {
-  const user = await requireRole(request, response, ["admin", "guard"]);
+  const user = await requirePermission(request, response, "visits.checkOut");
 
   if (!user) {
     return;
@@ -420,7 +439,7 @@ guardRouter.post("/api/guard/visits/:id/check-out", async (request, response) =>
 });
 
 guardRouter.put("/api/guard/visits/:id/signature", async (request, response) => {
-  const user = await requireRole(request, response, ["admin", "guard"]);
+  const user = await requirePermission(request, response, "visits.update");
 
   if (!user) {
     return;
@@ -478,7 +497,7 @@ guardRouter.put("/api/guard/visits/:id/signature", async (request, response) => 
 });
 
 guardRouter.post("/api/guard/visits/:id/print-log", async (request, response) => {
-  const user = await requireRole(request, response, ["admin", "guard"]);
+  const user = await requirePermission(request, response, "visits.printBadge");
 
   if (!user) {
     return;
@@ -498,7 +517,7 @@ guardRouter.post("/api/guard/visits/:id/print-log", async (request, response) =>
 });
 
 guardRouter.post("/api/guard/visits/:id/cancel", async (request, response) => {
-  const user = await requireRole(request, response, ["admin", "guard"]);
+  const user = await requirePermission(request, response, "visits.delete");
   if (!user) return;
 
   const parsed = visitCancelSchema.safeParse(request.body);

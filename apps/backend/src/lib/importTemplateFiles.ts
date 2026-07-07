@@ -1,31 +1,13 @@
 import ExcelJS from "exceljs";
 import {
   getVisitorImportExcelTemplateColumns,
-  getVisitorImportTemplateHeaders,
-  getVisitorImportTemplateRows
-} from "./visitImport";
-
-function csvEscape(value: unknown): string {
-  const text = String(value ?? "");
-  if (/[;"\r\n]/.test(text)) {
-    return `"${text.replace(/"/g, "\"\"")}"`;
-  }
-  return text;
-}
-
-export function buildImportTemplateCsv(): string {
-  const headers = getVisitorImportTemplateHeaders();
-  const rows = getVisitorImportTemplateRows();
-
-  return [
-    headers.map(csvEscape).join(";"),
-    ...rows.map((row) => row.map(csvEscape).join(";"))
-  ].join("\r\n");
-}
+  getVisitorImportTemplateSampleRows
+} from "./visitImportDefinitions";
 
 export async function buildImportTemplateWorkbookBuffer(): Promise<Buffer> {
   const columns = getVisitorImportExcelTemplateColumns();
   const headers = columns.map((column) => column.header);
+  const sampleRows = getVisitorImportTemplateSampleRows();
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet("Importvorlage", {
     views: [{ state: "frozen", ySplit: 1 }]
@@ -121,6 +103,10 @@ export async function buildImportTemplateWorkbookBuffer(): Promise<Buffer> {
       }
     };
     cell.note = headerNotes[header] || "Importspalte";
+  });
+
+  sampleRows.forEach((rowValues) => {
+    worksheet.addRow(Object.fromEntries(headers.map((header, index) => [header, rowValues[index] ?? ""])));
   });
 
   const exampleRows = 150;

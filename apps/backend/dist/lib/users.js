@@ -4,13 +4,16 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.normalizeGroups = normalizeGroups;
+exports.normalizeUserEmail = normalizeUserEmail;
 exports.normalizeMenuAccess = normalizeMenuAccess;
+exports.normalizePermissions = normalizePermissions;
 exports.loadUserGroupsAndMenuAccess = loadUserGroupsAndMenuAccess;
 exports.replaceUserGroupsAndMenuAccess = replaceUserGroupsAndMenuAccess;
 exports.hashPassword = hashPassword;
 exports.verifyPassword = verifyPassword;
 exports.findUserForLogin = findUserForLogin;
 exports.findUserById = findUserById;
+exports.listNotificationEmailsByMenuAccess = listNotificationEmailsByMenuAccess;
 exports.createOrUpdateAdmin = createOrUpdateAdmin;
 exports.createOrUpdateUser = createOrUpdateUser;
 const mssql_1 = __importDefault(require("mssql"));
@@ -22,6 +25,13 @@ function normalizeGroups(groups) {
         .map((entry) => entry.trim())
         .filter(Boolean))).sort((left, right) => left.localeCompare(right, "de"));
 }
+function normalizeUserEmail(email) {
+    if (typeof email !== "string") {
+        return null;
+    }
+    const normalized = email.trim().toLowerCase();
+    return normalized ? normalized : null;
+}
 function normalizeMenuAccess(role, menuAccess) {
     const allowed = new Set((0, visitWorkflow_1.getAllowedMenuAccessForRole)(role));
     const requested = (menuAccess ?? [])
@@ -31,6 +41,9 @@ function normalizeMenuAccess(role, menuAccess) {
         return (0, visitWorkflow_1.getDefaultMenuAccessForRole)(role);
     }
     return Array.from(new Set(requested)).sort((left, right) => left.localeCompare(right, "de"));
+}
+function normalizePermissions(role, permissions, menuAccess) {
+    return (0, visitWorkflow_1.normalizeUserPermissions)(role, permissions, normalizeMenuAccess(role, menuAccess));
 }
 async function loadUserGroupsAndMenuAccess(userIds, transaction) {
     const uniqueUserIds = Array.from(new Set(userIds.filter(Boolean)));
@@ -113,7 +126,8 @@ async function findUserForLogin(username) {
       password_hash AS passwordHash,
       role,
       COALESCE(gate_id, default_gate_id) AS gateId,
-      is_active AS isActive
+      is_active AS isActive,
+      permissions_json AS permissionsJson
     FROM dbo.users
     WHERE username = @username
   `);
@@ -127,7 +141,8 @@ async function findUserById(id) {
       username,
       role,
       COALESCE(gate_id, default_gate_id) AS gateId,
-      is_active AS isActive
+      is_active AS isActive,
+      permissions_json AS permissionsJson
     FROM dbo.users
     WHERE id = @id
   `);
@@ -136,14 +151,43 @@ async function findUserById(id) {
         return null;
     }
     const { groupsByUserId, menuAccessByUserId } = await loadUserGroupsAndMenuAccess([user.id]);
+    const effectiveMenuAccess = normalizeMenuAccess(user.role, menuAccessByUserId[user.id]?.length ? menuAccessByUserId[user.id] : (0, visitWorkflow_1.getDefaultMenuAccessForRole)(user.role));
     return {
         id: user.id,
         username: user.username,
         role: user.role,
         gateId: user.gateId,
         groups: groupsByUserId[user.id] ?? [],
-        menuAccess: (menuAccessByUserId[user.id]?.length ? menuAccessByUserId[user.id] : (0, visitWorkflow_1.getDefaultMenuAccessForRole)(user.role))
+        menuAccess: effectiveMenuAccess,
+        permissions: normalizePermissions(user.role, (0, visitWorkflow_1.parsePermissionsJson)(user.permissionsJson), effectiveMenuAccess)
     };
+}
+async function listNotificationEmailsByMenuAccess(menuKey) {
+    const pool = await (0, db_1.getPool)();
+    const result = await pool.request().query(`
+    SELECT
+      id,
+      user_email AS email,
+      role
+    FROM dbo.users
+    WHERE is_active = 1
+      AND role <> 'guard'
+      AND user_email IS NOT NULL
+      AND LTRIM(RTRIM(user_email)) <> ''
+  `);
+    if (result.recordset.length === 0) {
+        return [];
+    }
+    const { menuAccessByUserId } = await loadUserGroupsAndMenuAccess(result.recordset.map((entry) => entry.id));
+    return Array.from(new Set(result.recordset
+        .filter((entry) => {
+        const effectiveMenuAccess = menuAccessByUserId[entry.id]?.length
+            ? normalizeMenuAccess(entry.role, menuAccessByUserId[entry.id])
+            : (0, visitWorkflow_1.getDefaultMenuAccessForRole)(entry.role);
+        return effectiveMenuAccess.includes(menuKey);
+    })
+        .map((entry) => normalizeUserEmail(entry.email))
+        .filter((entry) => Boolean(entry))));
 }
 async function createOrUpdateAdmin(input) {
     const pool = await (0, db_1.getPool)();

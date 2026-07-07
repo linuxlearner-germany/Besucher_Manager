@@ -16,6 +16,9 @@ export function createApp() {
   const frontendDist = resolveFrontendDist();
 
   app.disable("x-powered-by");
+  if (env.appTrustProxy !== undefined) {
+    app.set("trust proxy", env.appTrustProxy);
+  }
   app.use(
     helmet({
       contentSecurityPolicy: false

@@ -210,6 +210,20 @@ function getVisitCompleteness(visit, config) {
     for (const field of missingRequiredFields) {
         errors.push({ field, message: `${field} fehlt.`, severity: "error" });
     }
+    if ((visit.approvalStatus || visitWorkflow_1.APPROVAL_STATUS.NOT_REQUIRED) === visitWorkflow_1.APPROVAL_STATUS.PENDING) {
+        errors.push({
+            field: "approval_status",
+            message: "SiBe-Genehmigung steht noch aus.",
+            severity: "error"
+        });
+    }
+    if (visit.approvalStatus === visitWorkflow_1.APPROVAL_STATUS.REJECTED) {
+        errors.push({
+            field: "approval_status",
+            message: "Besuch wurde durch SiBe abgelehnt.",
+            severity: "error"
+        });
+    }
     const validFromDate = new Date(visit.validFrom);
     const validUntilDate = isDateOnlyValue(visit.validUntil)
         ? normalizeDateOnlyEnd(visit.validUntil)
@@ -284,6 +298,10 @@ async function getTodayVisitsForUser(user, options) {
     SELECT
       v.id,
       ${normalizedStatusSql} AS status,
+      ISNULL(v.approval_status, '${visitWorkflow_1.APPROVAL_STATUS.NOT_REQUIRED}') AS approvalStatus,
+      v.approval_note AS approvalNote,
+      approver.username AS approvalDecidedBy,
+      CONVERT(NVARCHAR(30), v.approval_decided_at, 127) AS approvalDecidedAt,
       CONVERT(NVARCHAR(30), v.valid_from, 127) AS validFrom,
       CONVERT(NVARCHAR(30), v.valid_until, 127) AS validUntil,
       CONVERT(NVARCHAR(30), v.check_in_at, 127) AS checkInAt,
@@ -342,6 +360,7 @@ async function getTodayVisitsForUser(user, options) {
     FROM dbo.visits v
     INNER JOIN dbo.visitors vis ON vis.id = v.visitor_id
     LEFT JOIN dbo.gates g ON g.id = v.gate_id
+    LEFT JOIN dbo.users approver ON approver.id = v.approval_decided_by
     LEFT JOIN dbo.users confirmer ON confirmer.id = v.host_signature_confirmed_by
     LEFT JOIN dbo.users returner ON returner.id = v.device_returned_by
     LEFT JOIN dbo.users checkinUser ON checkinUser.id = v.check_in_by
@@ -430,6 +449,10 @@ async function getVisitDetailForUser(user, visitId) {
     SELECT
       v.id,
       ${normalizedStatusSql} AS status,
+      ISNULL(v.approval_status, '${visitWorkflow_1.APPROVAL_STATUS.NOT_REQUIRED}') AS approvalStatus,
+      v.approval_note AS approvalNote,
+      approver.username AS approvalDecidedBy,
+      CONVERT(NVARCHAR(30), v.approval_decided_at, 127) AS approvalDecidedAt,
       CONVERT(NVARCHAR(30), v.valid_from, 127) AS validFrom,
       CONVERT(NVARCHAR(30), v.valid_until, 127) AS validUntil,
       CONVERT(NVARCHAR(30), v.check_in_at, 127) AS checkInAt,
@@ -491,6 +514,7 @@ async function getVisitDetailForUser(user, visitId) {
     FROM dbo.visits v
     INNER JOIN dbo.visitors vis ON vis.id = v.visitor_id
     LEFT JOIN dbo.gates g ON g.id = v.gate_id
+    LEFT JOIN dbo.users approver ON approver.id = v.approval_decided_by
     LEFT JOIN dbo.users confirmer ON confirmer.id = v.host_signature_confirmed_by
     LEFT JOIN dbo.users returner ON returner.id = v.device_returned_by
     LEFT JOIN dbo.users checkinUser ON checkinUser.id = v.check_in_by
@@ -535,6 +559,7 @@ async function loadVisitForUpdate(transaction, visitId) {
         id,
         gate_id AS gateId,
         badge_number AS badgeNumber,
+        approval_status AS approvalStatus,
         visitor_id AS visitorId,
         valid_from AS validFrom,
         host_signature_status AS hostSignatureStatus,
@@ -566,9 +591,10 @@ async function checkInVisit(user, visitId, ipAddress, userAgent) {
         const preCheckResult = await new mssql_1.default.Request(transaction)
             .input("visitId", mssql_1.default.UniqueIdentifier, visitId)
             .query(`
-        SELECT
-          ${normalizedStatusSql} AS status,
-          vis.first_name AS firstName,
+      SELECT
+        ${normalizedStatusSql} AS status,
+        ISNULL(v.approval_status, '${visitWorkflow_1.APPROVAL_STATUS.NOT_REQUIRED}') AS approvalStatus,
+        vis.first_name AS firstName,
           vis.last_name AS lastName,
           vis.company,
           v.host_name AS hostName,
@@ -607,6 +633,7 @@ async function checkInVisit(user, visitId, ipAddress, userAgent) {
             throw validationError;
         }
         (0, visitWorkflow_1.assertCanCheckIn)(visit.status);
+        (0, visitWorkflow_1.assertVisitApprovedForCheckIn)(visit.approvalStatus);
         await new mssql_1.default.Request(transaction)
             .input("visitId", mssql_1.default.UniqueIdentifier, visitId)
             .input("checkInBy", mssql_1.default.UniqueIdentifier, user.id)

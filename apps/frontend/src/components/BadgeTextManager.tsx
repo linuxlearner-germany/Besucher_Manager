@@ -488,7 +488,7 @@ export function BadgeTextManager({
                 <FormField label="Inhalt">
                   <textarea
                     className="text-editor-area"
-                    rows={14}
+                    rows={8}
                     value={selectedDraft.content}
                     onChange={(event) => updateSelectedText("content", event.target.value)}
                   />
@@ -508,7 +508,7 @@ export function BadgeTextManager({
                     Duplizieren
                   </button>
                   <button type="button" className="secondary-button" onClick={() => resetSelectedDraft()} disabled={!isDirty(selectedText, selectedDraft)}>
-                    Zuruecksetzen
+                    Zurücksetzen
                   </button>
                   <button type="button" className="danger-button" onClick={() => void toggleTextActive(selectedText)}>
                     {selectedText.isActive ? "Deaktivieren" : "Reaktivieren"}
@@ -518,7 +518,7 @@ export function BadgeTextManager({
             </>
           ) : (
             <div className="text-empty-state text-empty-state-large">
-              Links einen Text auswaehlen, um ihn zu bearbeiten.
+              Links einen Text auswählen, um ihn zu bearbeiten.
             </div>
           )}
         </Card>
@@ -538,7 +538,7 @@ export function BadgeTextManager({
             <div className="modal-header">
               <h4>Druckvorschau</h4>
               <button type="button" className="secondary-button modal-close-button" onClick={() => setPreviewText(null)}>
-                Schliessen
+                Schließen
               </button>
             </div>
             <div className="text-preview-sheet">
@@ -556,7 +556,7 @@ export function BadgeTextManager({
             </div>
             <div className="row-actions action-bar">
               <button type="button" onClick={() => openPrintPreview(previewText)}>Drucken</button>
-              <button type="button" className="secondary-button" onClick={() => setPreviewText(null)}>Schliessen</button>
+              <button type="button" className="secondary-button" onClick={() => setPreviewText(null)}>Schließen</button>
             </div>
           </div>
         </div>

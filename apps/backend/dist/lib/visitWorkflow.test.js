@@ -13,13 +13,20 @@ function makeUser(role, gateId) {
         role,
         gateId,
         groups: [],
-        menuAccess: (0, visitWorkflow_1.getDefaultMenuAccessForRole)(role)
+        menuAccess: (0, visitWorkflow_1.getDefaultMenuAccessForRole)(role),
+        permissions: (0, visitWorkflow_1.getDefaultPermissionsForRole)(role)
     };
 }
 (0, node_test_1.default)("check-in only allows pre-registered visits", () => {
     strict_1.default.doesNotThrow(() => (0, visitWorkflow_1.assertCanCheckIn)(visitWorkflow_1.VISIT_STATUS.PRE_REGISTERED));
     strict_1.default.throws(() => (0, visitWorkflow_1.assertCanCheckIn)(visitWorkflow_1.VISIT_STATUS.CHECKED_IN));
     strict_1.default.throws(() => (0, visitWorkflow_1.assertCanCheckIn)(visitWorkflow_1.VISIT_STATUS.CHECKED_OUT));
+});
+(0, node_test_1.default)("approval gate blocks pending and rejected visits before check-in", () => {
+    strict_1.default.doesNotThrow(() => (0, visitWorkflow_1.assertVisitApprovedForCheckIn)(visitWorkflow_1.APPROVAL_STATUS.APPROVED));
+    strict_1.default.doesNotThrow(() => (0, visitWorkflow_1.assertVisitApprovedForCheckIn)(visitWorkflow_1.APPROVAL_STATUS.NOT_REQUIRED));
+    strict_1.default.throws(() => (0, visitWorkflow_1.assertVisitApprovedForCheckIn)(visitWorkflow_1.APPROVAL_STATUS.PENDING));
+    strict_1.default.throws(() => (0, visitWorkflow_1.assertVisitApprovedForCheckIn)(visitWorkflow_1.APPROVAL_STATUS.REJECTED));
 });
 (0, node_test_1.default)("check-out requires host signature confirmation", () => {
     strict_1.default.throws(() => (0, visitWorkflow_1.assertCanCheckOut)(visitWorkflow_1.VISIT_STATUS.CHECKED_IN, { status: visitWorkflow_1.HOST_SIGNATURE_STATUS.PENDING }));
@@ -80,4 +87,12 @@ function makeUser(role, gateId) {
 (0, node_test_1.default)("unassigned visits remain blocked when the workflow requires an assigned gate", () => {
     const admin = makeUser("admin", null);
     strict_1.default.equal((0, visitWorkflow_1.canManageGuardScopedVisit)(admin, { gateId: null, status: visitWorkflow_1.VISIT_STATUS.PRE_REGISTERED }), false);
+});
+(0, node_test_1.default)("default menu access grants dedicated approval permission to sibe and admin", () => {
+    strict_1.default.equal((0, visitWorkflow_1.getDefaultMenuAccessForRole)("admin").includes("genehmigung"), true);
+    strict_1.default.equal((0, visitWorkflow_1.getDefaultMenuAccessForRole)("sibe").includes("genehmigung"), true);
+    strict_1.default.equal((0, visitWorkflow_1.getDefaultMenuAccessForRole)("guard").includes("genehmigung"), false);
+    strict_1.default.equal((0, visitWorkflow_1.getDefaultMenuAccessForRole)("kaskdt").includes("genehmigung"), false);
+    strict_1.default.equal((0, visitWorkflow_1.getDefaultMenuAccessForRole)("kaskdt").includes("import"), false);
+    strict_1.default.equal((0, visitWorkflow_1.getDefaultMenuAccessForRole)("kaskdt").includes("texte"), false);
 });

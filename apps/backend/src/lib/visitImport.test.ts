@@ -12,7 +12,7 @@ function loadVisitImportModule() {
 }
 
 test("visitor import template marks required and optional fields in headers", () => {
-  const { getVisitorImportTemplateHeaders } = loadVisitImportModule();
+  const { getVisitorImportTemplateHeaders } = require("./visitImportDefinitions") as typeof import("./visitImportDefinitions");
   const headers = getVisitorImportTemplateHeaders();
 
   assert.equal(headers.includes("Vorname [Pflicht]"), true);
@@ -24,7 +24,7 @@ test("visitor import template marks required and optional fields in headers", ()
 });
 
 test("excel template uses simplified grouped headers", () => {
-  const { getVisitorImportExcelTemplateHeaders } = loadVisitImportModule();
+  const { getVisitorImportExcelTemplateHeaders } = require("./visitImportDefinitions") as typeof import("./visitImportDefinitions");
   const headers = getVisitorImportExcelTemplateHeaders();
 
   assert.equal(headers.includes("Wache [Optional]"), false);
@@ -34,35 +34,14 @@ test("excel template uses simplified grouped headers", () => {
   assert.equal(headers.includes("Ansprechpartner Telefon [Pflicht]"), true);
 });
 
-test("csv import accepts annotated template headers", () => {
-  const {
-    getVisitorImportTemplateHeaders,
-    getVisitorImportTemplateRows,
-    parseCsvBuffer
-  } = loadVisitImportModule();
-  const headers = getVisitorImportTemplateHeaders();
-  const [firstRow] = getVisitorImportTemplateRows();
-  const csv = [headers.join(";"), firstRow.join(";")].join("\n");
-
-  const rows = parseCsvBuffer(Buffer.from(csv, "utf8"));
-
-  assert.equal(rows.length, 1);
-  assert.equal(rows[0]?.gateName, "Hauptwache");
-  assert.equal(rows[0]?.firstName, "Max");
-  assert.equal(rows[0]?.lastName, "Beispiel");
-  assert.equal(rows[0]?.company, "Musterfirma GmbH");
-  assert.equal(rows[0]?.hostName, "Maria Muster");
-  assert.equal(rows[0]?.purpose, "Projektbesprechung");
-});
-
 test("excel import accepts annotated template headers", () => {
   const {
     getVisitorImportTemplateHeaders,
-    getVisitorImportTemplateRows,
-    parseExcelBuffer
-  } = loadVisitImportModule();
+    getVisitorImportTemplateSampleRows
+  } = require("./visitImportDefinitions") as typeof import("./visitImportDefinitions");
+  const { parseExcelBuffer } = require("./visitImportParsing") as typeof import("./visitImportParsing");
   const headers = getVisitorImportTemplateHeaders();
-  const [firstRow] = getVisitorImportTemplateRows();
+  const [firstRow] = getVisitorImportTemplateSampleRows();
   const workbook = XLSX.utils.book_new();
   const worksheet = XLSX.utils.aoa_to_sheet([headers, firstRow]);
   XLSX.utils.book_append_sheet(workbook, worksheet, "Importvorlage");
@@ -71,8 +50,13 @@ test("excel import accepts annotated template headers", () => {
   const rows = parseExcelBuffer(buffer);
 
   assert.equal(rows.length, 1);
+  assert.equal(rows[0]?.firstName, "Max");
+  assert.equal(rows[0]?.lastName, "Muster");
+  assert.equal(rows[0]?.company, "Musterfirma GmbH");
+  assert.equal(rows[0]?.hostName, "Maria Muster");
+  assert.equal(rows[0]?.purpose, "Projektbesprechung");
   assert.equal(rows[0]?.idDocumentType, "Personalausweis");
   assert.equal(rows[0]?.idDocumentValidUntil, "31.12.2030");
   assert.equal(rows[0]?.idDocumentNumber, "L01X00ABC");
-  assert.equal(rows[0]?.notes, "Beispielimport mit vollständigen Daten");
+  assert.equal(rows[0]?.notes, "Lieferanteneinsatz am Vormittag");
 });

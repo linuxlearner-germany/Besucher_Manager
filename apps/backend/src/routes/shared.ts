@@ -6,7 +6,7 @@ import { clearSessionCookie, getSessionCookieName, readSessionToken } from "../l
 import { writeErrorLog } from "../lib/errorLogs";
 import { findActiveGateById } from "../lib/publicPreRegistrations";
 import { findUserById } from "../lib/users";
-import type { AuthenticatedUser } from "../lib/visitWorkflow";
+import { hasPermission, type AppPermission, type AuthenticatedUser } from "../lib/visitWorkflow";
 
 export const csrfCookieName = "visitor_manager_csrf";
 
@@ -176,6 +176,44 @@ export async function requireRole(
   }
 
   if (!allowedRoles.includes(user.role)) {
+    sendForbidden(response);
+    return null;
+  }
+
+  return user;
+}
+
+export async function requirePermission(
+  request: Request,
+  response: Response,
+  permission: AppPermission
+): Promise<AuthenticatedUser | null> {
+  const user = await requireAuthenticatedUser(request, response);
+
+  if (!user) {
+    return null;
+  }
+
+  if (!hasPermission(user, permission)) {
+    sendForbidden(response);
+    return null;
+  }
+
+  return user;
+}
+
+export async function requireAnyPermission(
+  request: Request,
+  response: Response,
+  permissions: AppPermission[]
+): Promise<AuthenticatedUser | null> {
+  const user = await requireAuthenticatedUser(request, response);
+
+  if (!user) {
+    return null;
+  }
+
+  if (!permissions.some((permission) => hasPermission(user, permission))) {
     sendForbidden(response);
     return null;
   }

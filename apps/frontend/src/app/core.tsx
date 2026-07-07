@@ -9,17 +9,99 @@ import {
 } from "react";
 import { Navigate, NavLink, useLocation, useNavigate } from "react-router-dom";
 
+export type AppRole = "admin" | "guard" | "sibe" | "kaskdt" | "custom";
+export type AppMenuKey = "voranmeldung" | "wache" | "import" | "admin" | "genehmigung" | "sibe" | "kaskdt" | "texte";
+export type AppPermission =
+  | "visits.read"
+  | "visits.create"
+  | "visits.update"
+  | "visits.delete"
+  | "visits.checkIn"
+  | "visits.checkOut"
+  | "visits.printBadge"
+  | "imports.execute"
+  | "approvals.read"
+  | "approvals.review"
+  | "approvals.approve"
+  | "approvals.reject"
+  | "dashboards.sibe"
+  | "dashboards.commander"
+  | "admin.users"
+  | "admin.guards"
+  | "admin.texts"
+  | "admin.map"
+  | "admin.fields"
+  | "admin.system"
+  | "logs.audit"
+  | "logs.errors";
+
+export type UserPermissions = {
+  menu: {
+    preRegistration: boolean;
+    guard: boolean;
+    import: boolean;
+    admin: boolean;
+    approvals: boolean;
+    sibe: boolean;
+    commander: boolean;
+    texts: boolean;
+  };
+  visits: {
+    read: boolean;
+    create: boolean;
+    update: boolean;
+    delete: boolean;
+    checkIn: boolean;
+    checkOut: boolean;
+    printBadge: boolean;
+  };
+  imports: {
+    execute: boolean;
+  };
+  approvals: {
+    read: boolean;
+    review: boolean;
+    approve: boolean;
+    reject: boolean;
+  };
+  dashboards: {
+    sibe: boolean;
+    commander: boolean;
+  };
+  admin: {
+    users: boolean;
+    guards: boolean;
+    texts: boolean;
+    map: boolean;
+    fields: boolean;
+    system: boolean;
+  };
+  logs: {
+    audit: boolean;
+    errors: boolean;
+  };
+};
+
+type UserPermissionsInput = {
+  menu?: Partial<UserPermissions["menu"]>;
+  visits?: Partial<UserPermissions["visits"]>;
+  imports?: Partial<UserPermissions["imports"]>;
+  approvals?: Partial<UserPermissions["approvals"]>;
+  dashboards?: Partial<UserPermissions["dashboards"]>;
+  admin?: Partial<UserPermissions["admin"]>;
+  logs?: Partial<UserPermissions["logs"]>;
+};
+
 export type User = {
   id: string;
   username: string;
-  role: "admin" | "guard" | "sibe" | "kaskdt";
+  role: AppRole;
   gateId: string | null;
   gateName?: string | null;
   groups: string[];
   menuAccess: AppMenuKey[];
+  permissions: UserPermissions;
 };
-
-export type AppMenuKey = "wache" | "import" | "admin" | "sibe" | "kaskdt" | "texte";
 
 export type Gate = {
   id: string;
@@ -33,12 +115,14 @@ export type AdminUser = {
   id: string;
   username: string;
   displayName: string;
-  role: "admin" | "guard" | "sibe" | "kaskdt";
+  email: string | null;
+  role: AppRole;
   gateId: string | null;
   isActive: boolean;
   lastLoginAt?: string | null;
   groups: string[];
   menuAccess: AppMenuKey[];
+  permissions: UserPermissions;
 };
 export type EditableAdminUser = AdminUser & { password?: string };
 
@@ -142,6 +226,10 @@ export type NewFieldDefinitionForm = {
 export type VisitRow = {
   id: string;
   status: string;
+  approvalStatus: "not_required" | "pending" | "approved" | "rejected";
+  approvalNote: string | null;
+  approvalDecidedBy: string | null;
+  approvalDecidedAt: string | null;
   validFrom: string;
   validUntil: string;
   checkInAt: string | null;
@@ -255,11 +343,123 @@ export type AuthContextValue = {
 };
 
 const defaultMenuAccessByRole: Record<User["role"], AppMenuKey[]> = {
-  admin: ["wache", "import", "admin", "sibe", "kaskdt", "texte"],
-  guard: ["wache", "import"],
-  sibe: ["sibe", "import"],
-  kaskdt: ["kaskdt", "import", "texte"]
+  admin: ["voranmeldung", "wache", "import", "admin", "genehmigung", "sibe", "kaskdt", "texte"],
+  guard: ["voranmeldung", "wache", "import"],
+  sibe: ["genehmigung", "sibe", "import"],
+  kaskdt: ["kaskdt"],
+  custom: []
 };
+
+const allowedMenuAccessByRole: Record<User["role"], AppMenuKey[]> = {
+  admin: ["voranmeldung", "wache", "import", "admin", "genehmigung", "sibe", "kaskdt", "texte"],
+  guard: ["voranmeldung", "wache", "import"],
+  sibe: ["genehmigung", "sibe", "import"],
+  kaskdt: ["kaskdt"],
+  custom: ["voranmeldung", "wache", "import", "admin", "genehmigung", "sibe", "kaskdt", "texte"]
+};
+
+function createEmptyPermissions(): UserPermissions {
+  return {
+    menu: {
+      preRegistration: false,
+      guard: false,
+      import: false,
+      admin: false,
+      approvals: false,
+      sibe: false,
+      commander: false,
+      texts: false
+    },
+    visits: {
+      read: false,
+      create: false,
+      update: false,
+      delete: false,
+      checkIn: false,
+      checkOut: false,
+      printBadge: false
+    },
+    imports: {
+      execute: false
+    },
+    approvals: {
+      read: false,
+      review: false,
+      approve: false,
+      reject: false
+    },
+    dashboards: {
+      sibe: false,
+      commander: false
+    },
+    admin: {
+      users: false,
+      guards: false,
+      texts: false,
+      map: false,
+      fields: false,
+      system: false
+    },
+    logs: {
+      audit: false,
+      errors: false
+    }
+  };
+}
+
+function mergePermissions(base: UserPermissions, override?: UserPermissionsInput | null): UserPermissions {
+  if (!override) {
+    return base;
+  }
+
+  return {
+    menu: { ...base.menu, ...(override.menu ?? {}) },
+    visits: { ...base.visits, ...(override.visits ?? {}) },
+    imports: { ...base.imports, ...(override.imports ?? {}) },
+    approvals: { ...base.approvals, ...(override.approvals ?? {}) },
+    dashboards: { ...base.dashboards, ...(override.dashboards ?? {}) },
+    admin: { ...base.admin, ...(override.admin ?? {}) },
+    logs: { ...base.logs, ...(override.logs ?? {}) }
+  };
+}
+
+export function getDefaultPermissionsForRole(role: User["role"]): UserPermissions {
+  switch (role) {
+    case "admin":
+      return mergePermissions(createEmptyPermissions(), {
+        menu: { preRegistration: true, guard: true, import: true, admin: true, approvals: true, sibe: true, commander: true, texts: true },
+        visits: { read: true, create: true, update: true, delete: true, checkIn: true, checkOut: true, printBadge: true },
+        imports: { execute: true },
+        approvals: { read: true, review: true, approve: true, reject: true },
+        dashboards: { sibe: true, commander: true },
+        admin: { users: true, guards: true, texts: true, map: true, fields: true, system: true },
+        logs: { audit: true, errors: true }
+      });
+    case "guard":
+      return mergePermissions(createEmptyPermissions(), {
+        menu: { preRegistration: true, guard: true, import: true, admin: false, approvals: false, sibe: false, commander: false, texts: false },
+        visits: { read: true, create: true, update: true, delete: false, checkIn: true, checkOut: true, printBadge: true },
+        imports: { execute: true }
+      });
+    case "sibe":
+      return mergePermissions(createEmptyPermissions(), {
+        menu: { preRegistration: false, guard: false, import: true, admin: false, approvals: true, sibe: true, commander: false, texts: false },
+        visits: { read: true, create: true, update: true, delete: false, checkIn: false, checkOut: false, printBadge: false },
+        imports: { execute: true },
+        approvals: { read: true, review: true, approve: true, reject: true },
+        dashboards: { sibe: true, commander: false }
+      });
+    case "kaskdt":
+      return mergePermissions(createEmptyPermissions(), {
+        menu: { preRegistration: false, guard: false, import: false, admin: false, approvals: false, sibe: false, commander: true, texts: false },
+        visits: { read: true, create: false, update: false, delete: false, checkIn: false, checkOut: false, printBadge: false },
+        approvals: { read: true, review: false, approve: false, reject: false },
+        dashboards: { sibe: false, commander: true }
+      });
+    case "custom":
+      return createEmptyPermissions();
+  }
+}
 
 export type SubmitState =
   | { kind: "idle" }
@@ -342,6 +542,7 @@ export type SibeSummary = {
   signaturesPending: number;
   signaturesFollowUp: number;
   signaturesExceptions: number;
+  approvalsPending: number;
 };
 
 export type SibeVisitStatistics = {
@@ -370,6 +571,24 @@ export type SibeVisitRow = {
   checkInAt: string | null;
   checkOutAt: string | null;
   hostSignatureStatus: string;
+  approvalStatus: "not_required" | "pending" | "approved" | "rejected";
+};
+
+export type AdminWorkflowSettings = {
+  approvalRequired: boolean;
+  emailRelay: {
+    source: "database" | "yml";
+    configPath: string | null;
+    isReadOnly: boolean;
+    enabled: boolean;
+    host: string;
+    port: number;
+    secure: boolean;
+    username: string;
+    fromAddress: string;
+    approvalRecipients: string[];
+    hasPassword: boolean;
+  };
 };
 
 export type SibeVisitorRow = {
@@ -426,8 +645,11 @@ export function formatDateTime(value: string | null): string {
   }
 
   return new Intl.DateTimeFormat("de-DE", {
-    dateStyle: "short",
-    timeStyle: "short"
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
   }).format(new Date(value));
 }
 
@@ -437,7 +659,9 @@ export function formatDateOnly(value: string | null): string {
   }
 
   return new Intl.DateTimeFormat("de-DE", {
-    dateStyle: "medium"
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric"
   }).format(new Date(value));
 }
 
@@ -473,19 +697,80 @@ export function formatSignatureStatus(status: VisitRow["hostSignatureStatus"] | 
   }
 }
 
+export function formatApprovalStatus(status: VisitRow["approvalStatus"] | string): string {
+  switch (status) {
+    case "pending":
+      return "Freigabe offen";
+    case "approved":
+      return "Freigegeben";
+    case "rejected":
+      return "Abgelehnt";
+    case "not_required":
+      return "Keine Freigabe";
+    default:
+      return status;
+  }
+}
+
+export function formatRoleLabel(role: User["role"] | AdminUser["role"]): string {
+  switch (role) {
+    case "admin":
+      return "Admin";
+    case "guard":
+      return "Wache";
+    case "sibe":
+      return "SiBe";
+    case "kaskdt":
+      return "Kasernenkommandant";
+    case "custom":
+      return "Benutzerdefiniert";
+    default:
+      return role;
+  }
+}
+
+export function formatAuditAction(action: string): string {
+  switch (action) {
+    case "VISIT_CHECKED_OUT":
+      return "Besucher ausgecheckt";
+    case "VISIT_CHECKED_IN":
+      return "Besucher eingecheckt";
+    case "VISIT_APPROVED":
+      return "Besuch freigegeben";
+    case "VISIT_REJECTED":
+      return "Besuch abgelehnt";
+    case "PUBLIC_PRE_REGISTRATION_CREATED":
+      return "Voranmeldung erstellt";
+    case "SIBE_VISIT_NOTES_UPDATED":
+      return "Besuchsanmerkung aktualisiert";
+    case "SIBE_VISITOR_SEARCH":
+      return "Besucher gesucht";
+    case "SIBE_USER_SEARCH":
+      return "Benutzer gesucht";
+    default:
+      return action;
+  }
+}
+
 export function getNextStepHint(visit: VisitDetail): string {
   if (visit.status === "pre_registered") {
+    if (visit.approvalStatus === "pending") {
+      return "Nächster Schritt: SiBe-Freigabe abwarten";
+    }
+    if (visit.approvalStatus === "rejected") {
+      return "Nächster Schritt: Ablehnung prüfen und Besuch korrigieren";
+    }
     return visit.completeness.canCheckIn
-      ? "Naechster Schritt: Daten pruefen und einchecken"
-      : "Naechster Schritt: Fehlende Pflichtdaten ergaenzen";
+      ? "Nächster Schritt: Daten prüfen und einchecken"
+      : "Nächster Schritt: Fehlende Pflichtdaten ergänzen";
   }
   if (visit.status === "checked_in") {
-    return "Naechster Schritt: Besucherschein drucken und danach auschecken";
+    return "Nächster Schritt: Besucherausweis drucken und danach auschecken";
   }
   if (visit.status === "checked_out") {
     return "Besuch abgeschlossen";
   }
-  return "Keine operative Aktion verfuegbar";
+  return "Keine operative Aktion verfügbar";
 }
 
 export function formatUserAgent(value: string | null | undefined): string {
@@ -542,7 +827,7 @@ export function formatTextType(textType: AdminBadgeText["textType"]): string {
 }
 
 export function getAllowedMenuAccessForRole(role: User["role"]): AppMenuKey[] {
-  return [...defaultMenuAccessByRole[role]];
+  return [...allowedMenuAccessByRole[role]];
 }
 
 export function getEffectiveMenuAccess(user: User | AdminUser | null | undefined): AppMenuKey[] {
@@ -557,27 +842,55 @@ export function getEffectiveMenuAccess(user: User | AdminUser | null | undefined
   return getAllowedMenuAccessForRole(user.role);
 }
 
+export function getEffectivePermissions(user: User | AdminUser | null | undefined): UserPermissions {
+  if (!user) {
+    return createEmptyPermissions();
+  }
+
+  return user.permissions ?? getDefaultPermissionsForRole(user.role);
+}
+
+export function hasPermission(user: User | AdminUser | null | undefined, permission: AppPermission): boolean {
+  if (!user) {
+    return false;
+  }
+
+  if (user.role === "admin") {
+    return true;
+  }
+
+  const [section, key] = permission.split(".") as [keyof UserPermissions, string];
+  const sectionValue = getEffectivePermissions(user)[section] as Record<string, boolean>;
+  return Boolean(sectionValue[key]);
+}
+
 export function hasMenuAccess(user: User | AdminUser | null | undefined, menuKey: AppMenuKey): boolean {
   return getEffectiveMenuAccess(user).includes(menuKey);
 }
 
 export function getDefaultRouteForUser(user: User): string {
-  if (hasMenuAccess(user, "admin")) {
+  if (hasMenuAccess(user, "admin") && (hasPermission(user, "admin.users") || hasPermission(user, "admin.guards") || hasPermission(user, "admin.fields") || hasPermission(user, "admin.map") || hasPermission(user, "admin.system") || hasPermission(user, "logs.audit") || hasPermission(user, "logs.errors"))) {
     return "/admin";
   }
-  if (hasMenuAccess(user, "wache")) {
+  if (hasMenuAccess(user, "wache") && hasPermission(user, "visits.read")) {
     return "/wache";
   }
-  if (hasMenuAccess(user, "sibe")) {
+  if (hasMenuAccess(user, "genehmigung") && hasPermission(user, "approvals.read")) {
+    return "/genehmigungen";
+  }
+  if (hasMenuAccess(user, "sibe") && hasPermission(user, "dashboards.sibe")) {
     return "/sibe";
   }
-  if (hasMenuAccess(user, "kaskdt")) {
+  if (hasMenuAccess(user, "kaskdt") && hasPermission(user, "dashboards.commander")) {
     return "/kaskdt";
   }
-  if (hasMenuAccess(user, "texte")) {
-    return "/kaskdt/texte";
+  if (hasMenuAccess(user, "texte") && hasPermission(user, "admin.texts")) {
+    return "/texte";
   }
-  return "/import";
+  if (hasMenuAccess(user, "voranmeldung")) {
+    return "/";
+  }
+  return "/";
 }
 
 export function extractFieldErrors(error: ApiError): Record<string, string> {
@@ -835,6 +1148,17 @@ export function AppLayout({ children }: PropsWithChildren) {
   const { user, logout } = useAuth();
   const { mode, toggle } = useThemeMode();
   const navigate = useNavigate();
+  const menuItems: Array<{ to: string; label: string; visible: boolean }> = [
+    { to: "/", label: "Voranmeldung", visible: !user || Boolean(user && hasMenuAccess(user, "voranmeldung")) },
+    { to: "/wache", label: "Wache", visible: Boolean(user && hasMenuAccess(user, "wache") && hasPermission(user, "visits.read")) },
+    { to: "/import", label: "Import", visible: Boolean(!user || (user && hasMenuAccess(user, "import") && hasPermission(user, "imports.execute"))) },
+    { to: "/admin", label: "Admin", visible: Boolean(user && hasMenuAccess(user, "admin") && (hasPermission(user, "admin.users") || hasPermission(user, "admin.guards") || hasPermission(user, "admin.fields") || hasPermission(user, "admin.map") || hasPermission(user, "admin.system") || hasPermission(user, "logs.audit") || hasPermission(user, "logs.errors"))) },
+    { to: "/genehmigungen", label: "Genehmigungen", visible: Boolean(user && hasMenuAccess(user, "genehmigung") && hasPermission(user, "approvals.read")) },
+    { to: "/sibe", label: "SiBe", visible: Boolean(user && hasMenuAccess(user, "sibe") && hasPermission(user, "dashboards.sibe")) },
+    { to: "/kaskdt", label: "Kasernenkommandant", visible: Boolean(user && hasMenuAccess(user, "kaskdt") && hasPermission(user, "dashboards.commander")) },
+    { to: "/texte", label: "Texte", visible: Boolean(user && hasMenuAccess(user, "texte") && hasPermission(user, "admin.texts")) },
+    { to: "/login", label: "Login", visible: !user }
+  ];
 
   async function handleLogout() {
     await logout();
@@ -845,28 +1169,26 @@ export function AppLayout({ children }: PropsWithChildren) {
     <div className="shell app-shell">
       <div className="content-container">
         <header className="topbar app-header">
-          <div className="brand-wrap">
-            <img className="brand-logo" src={BRANDING.logo} alt="WIWeB" />
-          </div>
+          <div className="topbar-branding">
+            <div className="brand-wrap">
+              <img className="brand-logo" src={BRANDING.logo} alt="WIWeB" />
+            </div>
 
-          <div className="title-wrap">
-            <h1>Besucher Manager</h1>
-            {user?.role === "guard" && user.gateName ? <p className="topbar-subtitle">Aktive Wache: {user.gateName}</p> : null}
+            <div className="title-wrap">
+              <h1>Besucher Manager</h1>
+            </div>
           </div>
 
           <div className="topbar-actions">
             <nav className="nav-links">
-              <NavLink to="/" className={({ isActive }) => (isActive ? "active-link" : "")}>Voranmeldung</NavLink>
-              {user && hasMenuAccess(user, "wache") ? <NavLink to="/wache" className={({ isActive }) => (isActive ? "active-link" : "")}>Wache</NavLink> : null}
-              <NavLink to="/import" className={({ isActive }) => (isActive ? "active-link" : "")}>Import</NavLink>
-              {user && hasMenuAccess(user, "admin") ? <NavLink to="/admin" className={({ isActive }) => (isActive ? "active-link" : "")}>Admin</NavLink> : null}
-              {user && hasMenuAccess(user, "sibe") ? <NavLink to="/sibe" className={({ isActive }) => (isActive ? "active-link" : "")}>SiBe</NavLink> : null}
-              {user && hasMenuAccess(user, "kaskdt") ? <NavLink to="/kaskdt" className={({ isActive }) => (isActive ? "active-link" : "")}>KasKdt</NavLink> : null}
-              {user && hasMenuAccess(user, "texte") ? <NavLink to="/kaskdt/texte" className={({ isActive }) => (isActive ? "active-link" : "")}>Texte</NavLink> : null}
-              {!user ? <NavLink to="/login" className={({ isActive }) => (isActive ? "active-link" : "")}>Login</NavLink> : null}
+              {menuItems.filter((item) => item.visible).map((item) => (
+                <NavLink key={item.to} to={item.to} className={({ isActive }) => (isActive ? "active-link" : "")}>
+                  {item.label}
+                </NavLink>
+              ))}
             </nav>
             <button className="secondary-button" type="button" onClick={toggle}>
-              {mode === "dark" ? "Light" : "Dark"}
+              {mode === "dark" ? "Hell" : "Dunkel"}
             </button>
             {user ? (
               <button className="secondary-button" type="button" onClick={handleLogout}>
@@ -885,8 +1207,10 @@ export function RequireRoles({
   children,
   allowedRoles,
   redirectTo = "/login",
-  requiredMenuKey
-}: PropsWithChildren<{ allowedRoles: User["role"][]; redirectTo?: string; requiredMenuKey?: AppMenuKey }>) {
+  requiredMenuKey,
+  requiredMenuKeys,
+  requiredPermissions
+}: PropsWithChildren<{ allowedRoles: User["role"][]; redirectTo?: string; requiredMenuKey?: AppMenuKey; requiredMenuKeys?: AppMenuKey[]; requiredPermissions?: AppPermission[] }>) {
   const { loading, user } = useAuth();
   const location = useLocation();
 
@@ -898,11 +1222,23 @@ export function RequireRoles({
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
 
-  if (!allowedRoles.includes(user.role)) {
+  const allowCustomByPermission = user.role === "custom" && Boolean(requiredPermissions?.length);
+
+  if (!allowedRoles.includes(user.role) && !allowCustomByPermission) {
     return <Navigate to={redirectTo} replace />;
   }
 
-  if (requiredMenuKey && !hasMenuAccess(user, requiredMenuKey)) {
+  const neededMenuKeys = requiredMenuKeys?.length
+    ? requiredMenuKeys
+    : requiredMenuKey
+      ? [requiredMenuKey]
+      : [];
+
+  if (neededMenuKeys.length > 0 && !neededMenuKeys.some((menuKey) => hasMenuAccess(user, menuKey))) {
+    return <Navigate to={redirectTo} replace />;
+  }
+
+  if (requiredPermissions?.length && !requiredPermissions.some((permission) => hasPermission(user, permission))) {
     return <Navigate to={redirectTo} replace />;
   }
 

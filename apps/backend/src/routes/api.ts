@@ -1,13 +1,11 @@
 import { Router } from "express";
-import multer, { MulterError } from "multer";
 import { z } from "zod";
 import { clearSessionCookie, setSessionCookie } from "../lib/authSession";
-import { buildImportTemplateCsv, buildImportTemplateWorkbookBuffer } from "../lib/importTemplateFiles";
 import { createPreRegistration, findActiveGateById, listActiveGates } from "../lib/publicPreRegistrations";
 import { publicPreRegistrationSchema } from "../lib/publicPreRegistrationSchema";
 import { checkRateLimit } from "../lib/rateLimit";
 import { findUserById, findUserForLogin, verifyPassword } from "../lib/users";
-import { createImportedPreRegistrations, parseCsvBuffer, parseExcelBuffer } from "../lib/visitImport";
+import { createImportedPreRegistrations } from "../lib/visitImport";
 import {
   handleUnexpectedError,
   issueCsrfToken,
@@ -15,6 +13,7 @@ import {
   sendError,
   sendValidationError
 } from "./shared";
+import { handleVisitorImportUpload, sendVisitorImportTemplateWorkbook } from "./visitorImport";
 import { adminRouter } from "./admin";
 import { guardRouter } from "./guard";
 import { sibeRouter } from "./sibe";
@@ -49,13 +48,6 @@ const publicGroupPreRegistrationSchema = z.object({
 });
 
 export const apiRouter = Router();
-const publicVisitorImportUpload = multer({
-  storage: multer.memoryStorage(),
-  limits: {
-    fileSize: 5 * 1024 * 1024,
-    files: 1
-  }
-});
 
 apiRouter.get("/api/meta", (_request, response) => {
   response.json({
@@ -151,13 +143,13 @@ apiRouter.post("/api/auth/login", async (request, response) => {
       ? "/admin"
       : menuAccess.includes("wache")
         ? "/wache"
+        : menuAccess.includes("genehmigung")
+          ? "/genehmigungen"
         : menuAccess.includes("sibe")
           ? "/sibe"
           : menuAccess.includes("kaskdt")
             ? "/kaskdt"
-            : menuAccess.includes("texte")
-              ? "/kaskdt/texte"
-              : "/import";
+            : "/";
 
     return response.json({
       user: {
@@ -216,7 +208,7 @@ apiRouter.post("/api/public/pre-registrations/group", async (request, response) 
     );
 
     return response.status(201).json({
-      message: `${created.imported} Besucher wurden als Voranmeldung gespeichert.`,
+      message: `${created.imported} Besucher wurden als Voranmeldung gespeichert und zur SiBe-Freigabe eingereicht.`,
       ...created
     });
   } catch (error) {
@@ -235,64 +227,14 @@ apiRouter.post("/api/public/visits/import", async (request, response) => {
     });
   }
 
-  return publicVisitorImportUpload.single("file")(request, response, async (error) => {
-    if (error) {
-      if (error instanceof MulterError && error.code === "LIMIT_FILE_SIZE") {
-        return sendError(response, 400, "FILE_TOO_LARGE", "Die Importdatei ist groesser als 5 MB.");
-      }
-      return sendError(response, 400, "UPLOAD_ERROR", "Die Importdatei konnte nicht gelesen werden.");
-    }
-
-    const file = request.file;
-    if (!file) {
-      return sendValidationError(response, { fieldErrors: { file: ["Bitte CSV- oder Excel-Datei auswaehlen."] } });
-    }
-
-    try {
-      const extension = file.originalname.toLowerCase().split(".").pop() || "";
-      const rows = extension === "xlsx" || extension === "xls"
-        ? parseExcelBuffer(file.buffer)
-        : parseCsvBuffer(file.buffer);
-
-      if (rows.length === 0) {
-        return sendValidationError(response, { fieldErrors: { file: ["Keine importierbaren Zeilen gefunden."] } });
-      }
-      if (rows.length > 250) {
-        return sendError(response, 400, "VALIDATION_ERROR", "Bitte maximal 250 Besucher pro Datei importieren.");
-      }
-
-      const imported = await createImportedPreRegistrations(rows, {
-        source: "file_import",
-        createdBy: null,
-        submittedIpAddress: request.ip || request.socket.remoteAddress || null,
-        userAgent: typeof request.headers["user-agent"] === "string" ? request.headers["user-agent"] : null,
-        fallbackGateId: null
-      });
-
-      return response.status(201).json({
-        message: `${imported.imported} Besucher importiert.`,
-        ...imported
-      });
-    } catch (importError) {
-      return handleUnexpectedError(response, importError, "IMPORT_ERROR", "Der Besucherimport konnte nicht verarbeitet werden.");
-    }
+  return handleVisitorImportUpload(request, response, {
+    createdBy: null,
+    fallbackGateId: null
   });
 });
 
-apiRouter.get("/api/public/visits/import-template.csv", (_request, response) => {
-  const csv = `\uFEFF${buildImportTemplateCsv()}`;
-
-  response.setHeader("Content-Type", "text/csv; charset=utf-8");
-  response.setHeader("Content-Disposition", 'attachment; filename="besucher-import-vorlage.csv"');
-  return response.status(200).send(csv);
-});
-
 apiRouter.get("/api/public/visits/import-template.xlsx", async (_request, response) => {
-  const workbookBuffer = await buildImportTemplateWorkbookBuffer();
-
-  response.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-  response.setHeader("Content-Disposition", 'attachment; filename="besucher-import-vorlage.xlsx"');
-  return response.status(200).send(workbookBuffer);
+  return sendVisitorImportTemplateWorkbook(response);
 });
 
 apiRouter.post("/api/auth/logout", async (_request, response) => {
@@ -339,10 +281,13 @@ apiRouter.post("/api/public/pre-registrations", async (request, response) => {
       userAgent: typeof request.headers["user-agent"] === "string" ? request.headers["user-agent"] : null
     });
     return response.status(201).json({
-      message: "Voranmeldung erfolgreich gespeichert.",
+      message: created.approvalStatus === "pending"
+        ? "Voranmeldung gespeichert und zur SiBe-Freigabe eingereicht."
+        : "Voranmeldung erfolgreich gespeichert.",
       visitId: created.visitId,
       visitorId: created.visitorId,
-      status: created.status
+      status: created.status,
+      approvalStatus: created.approvalStatus
     });
   } catch (error) {
     return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Voranmeldung konnte nicht gespeichert werden.");

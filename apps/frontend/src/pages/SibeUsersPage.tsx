@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Alert, DataTable } from "../components/ui";
-import { AppLayout, type ApiError, fetchJson, formatDateTime, type SibeUserRow } from "../app/core";
+import { AppLayout, type ApiError, fetchJson, formatDateTime, formatRoleLabel, type SibeUserRow } from "../app/core";
 
 export function SibeUsersPage() {
   const [users, setUsers] = useState<SibeUserRow[]>([]);
@@ -41,7 +41,7 @@ export function SibeUsersPage() {
         <div className="section-header">
           <div>
             <h2>SiBe Benutzer</h2>
-            <p className="section-copy">Anwendungskonten lesen, filtern und Rollen zuordnen nachvollziehen.</p>
+            <p className="section-copy">Anwendungskonten filtern und Rollen nachvollziehen.</p>
           </div>
         </div>
 
@@ -49,10 +49,10 @@ export function SibeUsersPage() {
           <input placeholder="Benutzername suchen" value={search} onChange={(event) => setSearch(event.target.value)} />
           <select value={role} onChange={(event) => setRole(event.target.value)}>
             <option value="all">Alle Rollen</option>
-            <option value="admin">admin</option>
-            <option value="guard">guard</option>
-            <option value="sibe">sibe</option>
-            <option value="kaskdt">kaskdt</option>
+            <option value="admin">Admin</option>
+            <option value="guard">Wache</option>
+            <option value="sibe">SiBe</option>
+            <option value="kaskdt">Kasernenkommandant</option>
           </select>
           <select value={active} onChange={(event) => setActive(event.target.value)}>
             <option value="all">Alle Stati</option>
@@ -81,7 +81,7 @@ export function SibeUsersPage() {
             {users.map((entry) => (
               <tr key={entry.id}>
                 <td>{entry.username}</td>
-                <td>{entry.role}</td>
+                <td>{formatRoleLabel(entry.role)}</td>
                 <td>{entry.gateName || "-"}</td>
                 <td>{entry.isActive ? "Aktiv" : "Inaktiv"}</td>
                 <td>{formatDateTime(entry.createdAt)}</td>

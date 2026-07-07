@@ -31,6 +31,8 @@ cp .env.example .env
 
 ## 2) `.env` pflegen
 
+### 2a) Standard ohne Reverse Proxy
+
 Beispielwerte (Platzhalter):
 
 ```env
@@ -39,6 +41,7 @@ APP_HOST=0.0.0.0
 PUBLIC_BASE_URL=http://deb-srv-docker:3030
 PORT=3030
 APP_SECURE_COOKIES=false
+APP_TRUST_PROXY=
 
 MSSQL_HOST=sqlserver
 MSSQL_PORT=1433
@@ -59,15 +62,59 @@ AUDIT_TRUST_REMOTE_USER_HEADER=false
 AUDIT_REMOTE_USER_HEADER=x-auth-user
 ```
 
-Optional fuer Installationen hinter einem Netzwerk-Proxy:
+### 2b) Installation hinter Reverse Proxy mit HTTPS
+
+Wenn ein interner Reverse Proxy oder WAF vor der App terminiert, muessen URL, Cookies und Proxy-Vertrauen angepasst werden:
+
+```env
+NODE_ENV=production
+APP_HOST=0.0.0.0
+PORT=3030
+PUBLIC_BASE_URL=https://besucher.example.intern
+APP_SECURE_COOKIES=true
+APP_TRUST_PROXY=true
+
+MSSQL_HOST=sqlserver
+MSSQL_PORT=1433
+MSSQL_DATABASE=Besuchermngmt
+MSSQL_USER=dockerBesuchermngmt
+MSSQL_PASSWORD=CHANGE_ME
+MSSQL_ENCRYPT=false
+MSSQL_TRUST_SERVER_CERTIFICATE=true
+
+UPLOAD_DIR=/app/uploads
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=CHANGE_ME
+APP_SECRET=CHANGE_ME
+
+MAIL_RELAY_CONFIG_PATH=/app/config/mail-relay.yml
+AUDIT_REVERSE_DNS_ENABLED=false
+AUDIT_TRUST_REMOTE_USER_HEADER=false
+AUDIT_REMOTE_USER_HEADER=x-auth-user
+```
+
+Hinweise zu den Proxy-relevanten Variablen:
+
+- `PUBLIC_BASE_URL` muss die externe Zieladresse der Benutzer enthalten, also normalerweise `https://...`.
+- `APP_SECURE_COOKIES=true` ist bei HTTPS hinter Proxy Pflicht, damit Session- und CSRF-Cookies nur verschluesselt ausgeliefert werden.
+- `APP_TRUST_PROXY=true` aktiviert im Backend die Auswertung der Forwarded-/Proxy-Kette fuer `request.ip`.
+- Alternativ kann `APP_TRUST_PROXY` enger gesetzt werden, z. B.:
+  - `APP_TRUST_PROXY=loopback`
+  - `APP_TRUST_PROXY=10.0.0.0/8`
+  - `APP_TRUST_PROXY=1`
+- Fuer produktive Netze ist eine konkrete Proxy-IP, CIDR oder Hop-Anzahl besser als pauschal `true`, wenn mehrere Zwischenstationen beteiligt sind.
+
+### 2c) Firmen-Proxy fuer Build und Runtime nach aussen
+
+Wenn der Docker-Host fuer `git clone`, `npm install`, Paket-Downloads oder SMTP-Ziele nur ueber einen Firmenproxy ins Internet kommt:
 
 ```env
 HTTP_PROXY=http://proxy.firma.local:3128
 HTTPS_PROXY=http://proxy.firma.local:3128
-NO_PROXY=localhost,127.0.0.1,sqlserver,deb-srv-docker
+NO_PROXY=localhost,127.0.0.1,sqlserver,deb-srv-docker,besucher.example.intern
 http_proxy=http://proxy.firma.local:3128
 https_proxy=http://proxy.firma.local:3128
-no_proxy=localhost,127.0.0.1,sqlserver,deb-srv-docker
+no_proxy=localhost,127.0.0.1,sqlserver,deb-srv-docker,besucher.example.intern
 ```
 
 Hinweise:
@@ -75,6 +122,7 @@ Hinweise:
 - Die Proxy-Variablen werden beim Docker-Build an `npm install` und `npm run build` durchgereicht.
 - Die gleichen Variablen werden auch an den laufenden `app`-Container weitergegeben.
 - `NO_PROXY` bzw. `no_proxy` muss interne Ziele wie `sqlserver`, `localhost`, `127.0.0.1` und den Docker-Host enthalten.
+- Falls die Reverse-Proxy-Adresse intern direkt erreichbar ist, sollte auch der interne FQDN in `NO_PROXY` stehen.
 
 ## 3) Build und Start
 
@@ -94,7 +142,7 @@ Ohne Datenbank-Backup:
 npm run ops:update -- --skip-backup
 ```
 
-## 3a) Docker hinter Netzwerk-Proxy
+## 3a) Docker-Daemon hinter Firmenproxy
 
 Wenn der Docker-Host selbst nur ueber einen Firmenproxy ins Internet kommt, reicht `.env` fuer den App-Build meist aus. Falls auch Docker selbst den Proxy kennen muss:
 
@@ -119,6 +167,53 @@ docker compose build app
 
 Wenn der Proxy Authentifizierung verlangt, Benutzername/Passwort nur in der lokalen Server-Konfiguration oder in der lokalen `.env` hinterlegen, nie im Repository.
 
+## 3b) Reverse Proxy davor schalten
+
+Empfehlung:
+
+- App weiter nur intern auf `3030`
+- Reverse Proxy terminiert HTTPS auf `443`
+- Reverse Proxy leitet an `http://127.0.0.1:3030` oder an den internen Docker-Hostnamen weiter
+- Port `3030` nach aussen per Firewall sperren, wenn der Zugriff ausschliesslich ueber den Reverse Proxy laufen soll
+
+Beispiel `nginx`:
+
+```nginx
+server {
+    listen 80;
+    server_name besucher.example.intern;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name besucher.example.intern;
+
+    ssl_certificate     /etc/nginx/tls/besucher.example.intern/fullchain.pem;
+    ssl_certificate_key /etc/nginx/tls/besucher.example.intern/privkey.pem;
+
+    client_max_body_size 25m;
+
+    location / {
+        proxy_pass http://127.0.0.1:3030;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+    }
+}
+```
+
+Wichtig fuer diesen Aufbau:
+
+- In `.env` muss `PUBLIC_BASE_URL=https://besucher.example.intern` gesetzt sein.
+- In `.env` muss `APP_SECURE_COOKIES=true` gesetzt sein.
+- In `.env` muss `APP_TRUST_PROXY=true` oder enger gesetzt sein.
+- Nach Aenderung von `.env` die App neu starten oder neu deployen.
+
 ## 4) Health und Erreichbarkeit
 
 ```bash
@@ -131,6 +226,19 @@ Browser:
 
 ```text
 http://deb-srv-docker:3030
+```
+
+Hinter Reverse Proxy:
+
+```text
+https://besucher.example.intern
+```
+
+Zusatzpruefungen hinter Reverse Proxy:
+
+```bash
+curl -Ik https://besucher.example.intern
+curl -s https://besucher.example.intern/health
 ```
 
 ## 5) Betriebsnotizen
@@ -151,6 +259,7 @@ http://deb-srv-docker:3030
   - `/wache/besuche/:id`
   - `/wache/besuche/:id/druck`
   - `/import`
+  - `/genehmigungen`
   - `/sibe`
   - `/kaskdt`
   - `/kaskdt/texte`
@@ -176,12 +285,19 @@ http://deb-srv-docker:3030
   - `visitors` = externe Besucher
   - `visits` = konkrete Besuchsvorgaenge
 - Operativer Ablauf:
-  - Voranmeldung/Gruppenformular/Import -> Wache -> Check-in -> Druck -> Check-out mit Unterschrift -> Auditlog
+  - Voranmeldung/Gruppenformular/Import -> SiBe-Freigabe -> Wache -> Check-in -> Druck -> Check-out mit Unterschrift -> Auditlog
 - Wache kann Voranmeldedaten vor dem Check-in in der Detailansicht korrigieren oder ergaenzen.
 - Guard-Benutzer waehlen bei jeder Anmeldung ihre aktive Wache neu aus.
 - Oeffentliche Voranmeldungen koennen eine Wache bereits mitgeben.
 - Besucher-Import ist auch ohne Anmeldung moeglich.
-- Fuer den Import stehen CSV- und Excel-Vorlagen direkt in der App bereit; Excel ist die empfohlene Vorlage.
+- Fuer den Import steht eine Excel-Vorlage direkt in der App bereit.
+- `Genehmigung` ist ein eigener Menuepunkt und kann pro Benutzer separat vergeben werden.
+- Neue Voranmeldungen und oeffentliche/Guard-Importe koennen vor dem Check-in eine SiBe-Freigabe verlangen.
+- SMTP-/E-Mail-Relay kann im Admin unter `System` getestet werden.
+- Fuer den Betriebsmodus hinter Proxy oder Relay-Infrastruktur sollte das SMTP-Outbound-Relay als YML-Datei gepflegt werden.
+- Standardpfad im Container: `/app/config/mail-relay.yml`
+- Standard-Mount in Compose: `./config:/app/config:ro`
+- Wenn die Datei vorhanden ist, ueberschreibt sie die SMTP-Felder aus der Datenbank.
 - Wache-Kalenderansicht in `/wache` zeigt Tages-/Monatsueberblick inkl. unzugeordneter Voranmeldungen.
 - `admin` und `kaskdt` duerfen Texte mit Vorschau und Druckvorschau bearbeiten.
 
@@ -245,6 +361,7 @@ Der Wrapper fuehrt das Seed im Docker-Betrieb direkt im laufenden `app`-Containe
 Es prueft:
 
 - Voranmeldung
+- SiBe-Freigabe
 - Wache-Sichtbarkeit
 - Guard-Bearbeitung
 - Check-in
@@ -275,11 +392,9 @@ npm run verify:ops
 
 - Route: `/import`
 - Oeffentlicher Import ohne Login sowie interner Import mit Rollenfreigabe
-- Formate: `CSV`, `XLSX`, `XLS`
+- Formate: `XLSX`, `XLS`
 - Vorlagen:
-  - `/api/public/visits/import-template.csv`
   - `/api/public/visits/import-template.xlsx`
-  - `/api/sibe/visits/import-template.csv`
   - `/api/sibe/visits/import-template.xlsx`
 - Die Excel-Vorlage ist die bevorzugte Vorlage fuer Anwender.
 - Fehlende Daten werden im Import-Ergebnis sichtbar markiert und koennen danach in der Wache ergaenzt werden.

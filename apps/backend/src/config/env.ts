@@ -48,6 +48,32 @@ const optionalBooleanish = z.preprocess((value) => {
   return value;
 }, z.boolean().optional());
 
+function parseTrustProxy(value: string | undefined): boolean | number | string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const normalized = trimmed.toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+
+  if (["0", "false", "no", "off"].includes(normalized)) {
+    return false;
+  }
+
+  if (/^\d+$/.test(trimmed)) {
+    return Number.parseInt(trimmed, 10);
+  }
+
+  return trimmed;
+}
+
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   APP_HOST: z.string().default("0.0.0.0"),
@@ -59,6 +85,7 @@ const envSchema = z.object({
   INITIAL_ADMIN_PASSWORD: z.string().min(8).optional(),
   PUBLIC_BASE_URL: z.string().url().default("http://localhost:3030"),
   APP_SECURE_COOKIES: optionalBooleanish,
+  APP_TRUST_PROXY: z.string().trim().optional(),
   MSSQL_HOST: z.string().min(1, "MSSQL_HOST is required"),
   MSSQL_PORT: z.coerce.number().int().positive().default(1433),
   MSSQL_DATABASE: z.string().min(1, "MSSQL_DATABASE is required"),
@@ -69,7 +96,8 @@ const envSchema = z.object({
   UPLOAD_DIR: z.string().default("./uploads"),
   VISITOR_RETENTION_DAYS: z.coerce.number().int().positive().default(90),
   PUBLIC_FORM_RATE_LIMIT: z.coerce.number().int().positive().default(10),
-  PUBLIC_FORM_RATE_WINDOW_SECONDS: z.coerce.number().int().positive().default(900)
+  PUBLIC_FORM_RATE_WINDOW_SECONDS: z.coerce.number().int().positive().default(900),
+  MAIL_RELAY_CONFIG_PATH: z.string().trim().optional()
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -82,5 +110,7 @@ if (!parsed.success) {
 export const env = {
   ...parsed.data,
   APP_SECURE_COOKIES: parsed.data.APP_SECURE_COOKIES ?? parsed.data.PUBLIC_BASE_URL.startsWith("https://"),
-  uploadDir: path.resolve(parsed.data.UPLOAD_DIR)
+  appTrustProxy: parseTrustProxy(parsed.data.APP_TRUST_PROXY),
+  uploadDir: path.resolve(parsed.data.UPLOAD_DIR),
+  mailRelayConfigPath: parsed.data.MAIL_RELAY_CONFIG_PATH ? path.resolve(parsed.data.MAIL_RELAY_CONFIG_PATH) : null
 };

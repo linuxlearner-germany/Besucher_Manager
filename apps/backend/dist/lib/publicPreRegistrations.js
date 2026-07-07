@@ -7,9 +7,11 @@ exports.listActiveGates = listActiveGates;
 exports.findActiveGateById = findActiveGateById;
 exports.createPreRegistration = createPreRegistration;
 const mssql_1 = __importDefault(require("mssql"));
+const mailRelay_1 = require("./mailRelay");
 const auditLog_1 = require("./auditLog");
 const db_1 = require("./db");
 const badgeNumber_1 = require("./badgeNumber");
+const systemSettings_1 = require("./systemSettings");
 const visitWorkflow_1 = require("./visitWorkflow");
 async function generateUniqueBadgeNumber(transaction) {
     for (let attempt = 0; attempt < 20; attempt += 1) {
@@ -86,6 +88,11 @@ async function createPreRegistration(input) {
     const transaction = new mssql_1.default.Transaction(pool);
     await transaction.begin();
     try {
+        const workflowSettings = await (0, systemSettings_1.loadWorkflowSettings)({ transaction });
+        const approvalStatus = workflowSettings.approvalRequired
+            ? visitWorkflow_1.APPROVAL_STATUS.PENDING
+            : visitWorkflow_1.APPROVAL_STATUS.NOT_REQUIRED;
+        const gateId = cleanOptional(input.gateId);
         const badgeNumber = await generateUniqueBadgeNumber(transaction);
         const visitorInsert = await new mssql_1.default.Request(transaction)
             .input("firstName", mssql_1.default.NVarChar(120), input.firstName.trim())
@@ -128,7 +135,7 @@ async function createPreRegistration(input) {
         }
         const visitInsert = await new mssql_1.default.Request(transaction)
             .input("visitorId", mssql_1.default.UniqueIdentifier, visitorId)
-            .input("gateId", mssql_1.default.UniqueIdentifier, cleanOptional(input.gateId))
+            .input("gateId", mssql_1.default.UniqueIdentifier, gateId)
             .input("hostName", mssql_1.default.NVarChar(255), input.hostName.trim())
             .input("hostEmail", mssql_1.default.NVarChar(255), cleanOptional(input.hostEmail))
             .input("hostPhone", mssql_1.default.NVarChar(80), cleanOptional(input.hostPhone))
@@ -139,6 +146,7 @@ async function createPreRegistration(input) {
             .input("licensePlate", mssql_1.default.NVarChar(40), cleanOptional(input.licensePlate))
             .input("badgeNumber", mssql_1.default.NVarChar(64), badgeNumber)
             .input("notes", mssql_1.default.NVarChar(mssql_1.default.MAX), cleanOptional(input.notes))
+            .input("approvalStatus", mssql_1.default.NVarChar(32), approvalStatus)
             .input("submittedIpAddress", mssql_1.default.NVarChar(64), cleanOptional(input.submittedIpAddress ?? undefined))
             .query(`
         INSERT INTO dbo.visits (
@@ -154,11 +162,12 @@ async function createPreRegistration(input) {
           license_plate,
           badge_number,
           status,
+          approval_status,
           created_via_public_form,
           submitted_ip_address,
           notes
         )
-        OUTPUT inserted.id, inserted.status
+        OUTPUT inserted.id, inserted.status, inserted.approval_status AS approvalStatus
         VALUES (
           @visitorId,
           @gateId,
@@ -172,6 +181,7 @@ async function createPreRegistration(input) {
           @licensePlate,
           @badgeNumber,
           '${visitWorkflow_1.VISIT_STATUS.PRE_REGISTERED}',
+          @approvalStatus,
           1,
           @submittedIpAddress,
           @notes
@@ -194,10 +204,23 @@ async function createPreRegistration(input) {
             }
         }, transaction);
         await transaction.commit();
+        if (visit.approvalStatus === visitWorkflow_1.APPROVAL_STATUS.PENDING) {
+            const gate = gateId ? await findActiveGateById(gateId) : null;
+            void (0, mailRelay_1.notifyApprovalRequested)({
+                visitId: visit.id,
+                visitorName: `${input.firstName.trim()} ${input.lastName.trim()}`,
+                company: input.company.trim(),
+                hostName: input.hostName.trim(),
+                validFrom: input.validFrom,
+                validUntil: input.validUntil,
+                gateName: gate?.name ?? null
+            });
+        }
         return {
             visitId: visit.id,
             visitorId,
-            status: visit.status
+            status: visit.status,
+            approvalStatus: visit.approvalStatus
         };
     }
     catch (error) {

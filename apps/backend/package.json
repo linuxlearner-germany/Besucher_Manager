@@ -13,7 +13,7 @@
     "create-admin:compiled": "node dist/scripts/createAdmin.js",
     "seed:sample": "DOTENV_CONFIG_PATH=../../.env node -r dotenv/config --import tsx src/scripts/seedSampleData.ts",
     "seed:sample:compiled": "DOTENV_CONFIG_PATH=../../.env node -r dotenv/config dist/scripts/seedSampleData.js",
-    "test": "node --import tsx --test src/**/*.test.ts",
+    "test": "bash ../../scripts/ops/fix_node_permissions.sh && node --import tsx --test src/**/*.test.ts",
     "typecheck": "node ../../node_modules/typescript/bin/tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
@@ -26,7 +26,9 @@
     "helmet": "^8.1.0",
     "mssql": "^11.0.1",
     "multer": "^2.1.1",
+    "nodemailer": "^6.10.1",
     "xlsx": "^0.18.5",
+    "yaml": "^2.9.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {
@@ -35,6 +37,7 @@
     "@types/express": "^4.17.21",
     "@types/mssql": "^9.1.8",
     "@types/node": "^22.10.1",
+    "@types/nodemailer": "^6.4.17",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }

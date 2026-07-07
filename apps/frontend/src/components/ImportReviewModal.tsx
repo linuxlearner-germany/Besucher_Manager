@@ -47,19 +47,17 @@ export function ImportReviewModal({
       <div className="modal-card panel import-review-modal">
         <div className="modal-header">
           <h4>{title}</h4>
-          <button type="button" className="secondary-button modal-close-button" onClick={onClose}>
-            Schliessen
-          </button>
+          <button type="button" className="secondary-button modal-close-button" onClick={onClose}>Schließen</button>
         </div>
 
         <div className="import-review-stack">
           <p className="section-copy">
-            {reviewRows.length} Eintraege brauchen noch Ergaenzungen oder Pruefung.
+            {reviewRows.length} Einträge brauchen noch Ergänzungen oder Prüfung.
           </p>
 
           {showLoginHint ? (
             <AlertNote>
-              Fuer die direkte Nachbearbeitung ist eine Anmeldung an der Wache, im SiBe- oder Admin-Bereich erforderlich.
+              Für die direkte Nachbearbeitung ist eine Anmeldung an der Wache, im SiBe- oder Admin-Bereich erforderlich.
             </AlertNote>
           ) : null}
 
@@ -77,7 +75,7 @@ export function ImportReviewModal({
                 {detailBasePath ? (
                   <div className="row-actions import-review-actions">
                     <Link className="button-link" to={`${detailBasePath}/${row.visitId}`}>
-                      Besuch oeffnen
+                      Besuch öffnen
                     </Link>
                   </div>
                 ) : null}
@@ -89,11 +87,11 @@ export function ImportReviewModal({
         <div className="row-actions action-bar modal-actions">
           {detailBasePath && firstReviewRow ? (
             <Link className="button-link" to={`${detailBasePath}/${firstReviewRow.visitId}`}>
-              Erste Nachbearbeitung oeffnen
+              Erste Nachbearbeitung öffnen
             </Link>
           ) : null}
           <button type="button" className="secondary-button" onClick={onClose}>
-            Schliessen
+            Schließen
           </button>
         </div>
       </div>
