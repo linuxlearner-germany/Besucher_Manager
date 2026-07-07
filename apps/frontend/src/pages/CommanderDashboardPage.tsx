@@ -96,9 +96,6 @@ export function CommanderDashboardPage() {
           <div className="page-hero-grid dashboard-hero-grid">
             <div className="page-hero-content">
               <h2>Kasernenkommandant-Übersicht</h2>
-              <p className="section-copy">
-                Aktuelle Besuchslage, offene Nachreichungen und wichtige Kennzahlen in einer lesenden Übersicht.
-              </p>
             </div>
             <div className="hero-stat-grid">
               <div className="hero-stat-card"><span className="hero-stat-label">Besucher gesamt</span><strong className="hero-stat-value">{summary?.visitorsTotal ?? "-"}</strong></div>
@@ -121,7 +118,6 @@ export function CommanderDashboardPage() {
             <div className="section-header">
               <div>
                 <h3>Aktuelle Besuchslage</h3>
-                <p className="section-copy">Laufende und bevorstehende Besuche in reiner Lesesicht.</p>
               </div>
               <Link className="button-link" to="/kaskdt/besucher">Besucherübersicht öffnen</Link>
             </div>
@@ -161,7 +157,6 @@ export function CommanderDashboardPage() {
             <div className="section-header">
               <div>
                 <h3>Offene Nachreichungen / Unterschriften</h3>
-                <p className="section-copy">Einträge mit offener Unterschrift oder dokumentierter Ausnahme.</p>
               </div>
               <Link className="button-link" to="/kaskdt/besucher">Besucherübersicht öffnen</Link>
             </div>
@@ -200,7 +195,6 @@ export function CommanderDashboardPage() {
           <div className="section-header">
             <div>
               <h3>Übersicht nach Wache</h3>
-              <p className="section-copy">Heutige Lage nach Standort verdichtet dargestellt.</p>
             </div>
           </div>
           <DataTable>

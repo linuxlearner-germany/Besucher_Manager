@@ -48,7 +48,6 @@ export function SibeDashboardPage() {
           <div className="page-hero-grid dashboard-hero-grid">
             <div className="page-hero-content">
               <h2>SiBe-Übersicht</h2>
-              <p className="section-copy">Freigaben, offene Nachreichungen und aktuelle Besuchslage in einer Arbeitsübersicht.</p>
             </div>
             <div className="hero-stat-grid">
               <div className="hero-stat-card">
