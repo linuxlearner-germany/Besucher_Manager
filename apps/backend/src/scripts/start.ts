@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { createApp } from "../app";
 import { env } from "../config/env";
 import { closePool, getPool } from "../lib/db";
-import { createOrUpdateAdmin } from "../lib/users";
+import { createOrUpdateAdmin, findUserForLogin } from "../lib/users";
 import { runMigrations } from "./migrate";
 
 async function verifyDatabaseConnection() {
@@ -31,11 +31,17 @@ async function main() {
   }
 
   if (adminUsername && adminPassword) {
-    const adminResult = await createOrUpdateAdmin({
-      username: adminUsername,
-      password: adminPassword
-    });
-    console.log(adminResult.created ? `Created startup admin user ${adminUsername}.` : `Updated startup admin user ${adminUsername}.`);
+    const existingStartupAdmin = await findUserForLogin(adminUsername);
+
+    if (existingStartupAdmin) {
+      console.log(`Startup admin user ${adminUsername} already exists. Keeping stored credentials and profile data.`);
+    } else {
+      const adminResult = await createOrUpdateAdmin({
+        username: adminUsername,
+        password: adminPassword
+      });
+      console.log(adminResult.created ? `Created startup admin user ${adminUsername}.` : `Updated startup admin user ${adminUsername}.`);
+    }
   }
 
   await closePool();
