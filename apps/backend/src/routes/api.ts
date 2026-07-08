@@ -6,6 +6,7 @@ import { publicPreRegistrationSchema } from "../lib/publicPreRegistrationSchema"
 import { checkRateLimit } from "../lib/rateLimit";
 import { findUserById, findUserForLogin, verifyPassword } from "../lib/users";
 import { createImportedPreRegistrations } from "../lib/visitImport";
+import { loadWorkflowSettings } from "../lib/systemSettings";
 import {
   handleUnexpectedError,
   issueCsrfToken,
@@ -54,6 +55,17 @@ apiRouter.get("/api/meta", (_request, response) => {
     modules: ["public-pre-registration", "guard-dashboard", "admin-panel"],
     status: "active"
   });
+});
+
+apiRouter.get("/api/ui-settings", async (_request, response) => {
+  try {
+    const settings = await loadWorkflowSettings();
+    return response.json({
+      backgroundMode: settings.backgroundMode
+    });
+  } catch (error) {
+    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Oberflaecheneinstellungen konnten nicht geladen werden.");
+  }
 });
 
 apiRouter.get("/api/auth/me", async (request, response) => {

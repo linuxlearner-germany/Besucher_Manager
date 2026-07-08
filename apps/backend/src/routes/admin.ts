@@ -26,7 +26,8 @@ import {
 import { loadWorkflowSettings, upsertSystemSettings, WORKFLOW_SETTING_KEYS } from "../lib/systemSettings";
 import { writeAuditLog } from "../lib/auditLog";
 import { env } from "../config/env";
-import { verifyMailRelayConnection } from "../lib/mailRelay";
+import { sendMailRelayPreview, verifyMailRelayConnection, type MailRelayTestKind } from "../lib/mailRelay";
+import { buildUserImportTemplateCsv, parseUserImportCsv, type UserCsvImportRawRow } from "../lib/userCsvImport";
 import { adminFieldDefinitionsRouter } from "./adminFieldDefinitions";
 import {
   APPROVAL_STATUS,
@@ -173,6 +174,7 @@ const retentionSettingsSchema = z.object({
 });
 const workflowSettingsUpdateSchema = z.object({
   approvalRequired: z.boolean(),
+  backgroundMode: z.enum(["image", "subtle", "plain"]),
   emailRelay: z.object({
     enabled: z.boolean(),
     host: z.string().trim().max(255),
@@ -185,7 +187,8 @@ const workflowSettingsUpdateSchema = z.object({
   })
 });
 const mailRelayTestSchema = z.object({
-  recipient: z.string().trim().email("Ungueltige Testadresse.").optional().or(z.literal(""))
+  recipient: z.string().trim().email("Ungueltige Testadresse.").optional().or(z.literal("")),
+  kind: z.enum(["relay", "approval_request", "approval_approved", "approval_rejected"]).optional()
 });
 
 export const apiRouter = Router();
@@ -233,6 +236,50 @@ const siteMapUpload = multer({
     callback(null, true);
   }
 });
+
+const userCsvUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 2 * 1024 * 1024,
+    files: 1
+  }
+});
+
+type UserImportIssue = {
+  lineNumber: number;
+  username: string | null;
+  message: string;
+};
+
+function parseBooleanText(value: string | undefined, fallback: boolean): boolean {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) {
+    return fallback;
+  }
+
+  if (["1", "true", "ja", "yes", "aktiv"].includes(normalized)) {
+    return true;
+  }
+
+  if (["0", "false", "nein", "no", "inaktiv"].includes(normalized)) {
+    return false;
+  }
+
+  return fallback;
+}
+
+function splitMultiValueField(value: string): string[] {
+  return value
+    .split(/[|;]+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function sendUserImportTemplate(response: Response) {
+  response.setHeader("Content-Type", "text/csv; charset=utf-8");
+  response.setHeader("Content-Disposition", 'attachment; filename="benutzer-import-vorlage.csv"');
+  return response.status(200).send(buildUserImportTemplateCsv());
+}
 
 async function parseSingleSiteMapUpload(request: Request, response: Response): Promise<Express.Multer.File | null> {
   return await new Promise((resolve) => {
@@ -740,6 +787,289 @@ adminRouter.get("/api/admin/users", async (request, response) => {
   } catch (error) {
     return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Benutzer konnten nicht geladen werden.");
   }
+});
+
+adminRouter.get("/api/admin/users/import-template.csv", async (request, response) => {
+  const user = await requirePermission(request, response, "admin.users");
+  if (!user) return;
+  return sendUserImportTemplate(response);
+});
+
+adminRouter.post("/api/admin/users/import-csv", async (request, response) => {
+  const admin = await requirePermission(request, response, "admin.users");
+  if (!admin) return;
+
+  return userCsvUpload.single("file")(request, response, async (error) => {
+    if (error) {
+      if (error instanceof MulterError && error.code === "LIMIT_FILE_SIZE") {
+        return sendError(response, 400, "FILE_TOO_LARGE", "Die CSV-Datei ist groesser als 2 MB.");
+      }
+      return sendError(response, 400, "UPLOAD_ERROR", "Die CSV-Datei konnte nicht gelesen werden.");
+    }
+
+    const file = request.file;
+
+    if (!file) {
+      return sendValidationError(response, { fieldErrors: { file: ["Bitte eine CSV-Datei auswaehlen."] } });
+    }
+
+    if (!file.originalname.toLowerCase().endsWith(".csv")) {
+      return sendValidationError(response, { fieldErrors: { file: ["Es werden nur CSV-Dateien unterstuetzt."] } });
+    }
+
+    let rows: UserCsvImportRawRow[];
+    try {
+      rows = parseUserImportCsv(file.buffer);
+    } catch (parseError) {
+      if (parseError instanceof Error && parseError.message === "user_import_missing_headers") {
+        return sendValidationError(response, {
+          fieldErrors: {
+            file: ["Pflichtspalten fehlen. Erwartet werden mindestens username und role."]
+          }
+        });
+      }
+      return handleUnexpectedError(response, parseError, "USER_IMPORT_PARSE_FAILED", "Die CSV-Datei konnte nicht verarbeitet werden.");
+    }
+
+    if (rows.length === 0) {
+      return sendValidationError(response, { fieldErrors: { file: ["Keine importierbaren Benutzerzeilen gefunden."] } });
+    }
+
+    if (rows.length > 250) {
+      return sendError(response, 400, "VALIDATION_ERROR", "Bitte maximal 250 Benutzer pro Import verarbeiten.");
+    }
+
+    try {
+      const pool = await getPool();
+      const existingUsersResult = await pool.request().query<{
+        id: string;
+        username: string;
+        displayName: string;
+        email: string | null;
+        role: "admin" | "guard" | "sibe" | "kaskdt" | "custom";
+        isActive: boolean;
+        permissionsJson: string | null;
+      }>(`
+        SELECT
+          id,
+          username,
+          display_name AS displayName,
+          user_email AS email,
+          role,
+          is_active AS isActive,
+          permissions_json AS permissionsJson
+        FROM dbo.users
+      `);
+
+      const existingUsersByUsername = new Map(existingUsersResult.recordset.map((entry) => [entry.username.toLowerCase(), entry]));
+      const { groupsByUserId, menuAccessByUserId } = await loadUserGroupsAndMenuAccess(existingUsersResult.recordset.map((entry) => entry.id));
+      const issues: UserImportIssue[] = [];
+      const seenUsernames = new Set<string>();
+      const resultingActiveAdminUsernames = new Set(
+        existingUsersResult.recordset
+          .filter((entry) => entry.role === "admin" && entry.isActive)
+          .map((entry) => entry.username.toLowerCase())
+      );
+
+      for (const row of rows) {
+        const username = row.username.trim();
+        const role = row.role.trim() as AuthenticatedUser["role"];
+        const normalizedUserName = username.toLowerCase();
+        const existingUser = existingUsersByUsername.get(normalizedUserName);
+
+        if (!username) {
+          issues.push({ lineNumber: row.lineNumber, username: null, message: "Benutzername fehlt." });
+          continue;
+        }
+
+        if (seenUsernames.has(normalizedUserName)) {
+          issues.push({ lineNumber: row.lineNumber, username, message: "Benutzername ist in der Datei doppelt vorhanden." });
+          continue;
+        }
+        seenUsernames.add(normalizedUserName);
+
+        if (!["admin", "guard", "sibe", "kaskdt", "custom"].includes(role)) {
+          issues.push({ lineNumber: row.lineNumber, username, message: "Rolle ist ungueltig." });
+          continue;
+        }
+
+        const nextIsActive = parseBooleanText(row.isActive, existingUser?.isActive ?? true);
+
+        if (existingUser?.id === admin.id && (!nextIsActive || role !== "admin")) {
+          issues.push({ lineNumber: row.lineNumber, username, message: "Der aktuell angemeldete Admin darf nicht per Import seine eigene Admin-Berechtigung verlieren." });
+          continue;
+        }
+
+        const nextEmail = role === "guard"
+          ? null
+          : (row.email.trim().toLowerCase() || existingUser?.email?.trim().toLowerCase() || null);
+
+        if (role !== "guard" && !nextEmail) {
+          issues.push({ lineNumber: row.lineNumber, username, message: "Fuer diese Rolle ist eine E-Mail-Adresse erforderlich." });
+          continue;
+        }
+
+        const nextPassword = row.password.trim();
+        if (!existingUser && nextPassword.length < 8) {
+          issues.push({ lineNumber: row.lineNumber, username, message: "Neue Benutzer brauchen ein Passwort mit mindestens 8 Zeichen." });
+          continue;
+        }
+
+        if (nextPassword && nextPassword.length < 8) {
+          issues.push({ lineNumber: row.lineNumber, username, message: "Passwort ist kuerzer als 8 Zeichen." });
+          continue;
+        }
+
+        const requestedMenuAccess = row.menuAccess.trim()
+          ? splitMultiValueField(row.menuAccess).map((entry) => entry as AppMenuKey)
+          : existingUser
+            ? normalizeMenuAccess(existingUser.role, menuAccessByUserId[existingUser.id] ?? getDefaultMenuAccessForRole(existingUser.role))
+            : getDefaultMenuAccessForRole(role);
+        const allowedMenuAccess = new Set(getAllowedMenuAccessForRole(role));
+        const invalidMenuAccess = requestedMenuAccess.filter((entry) => !allowedMenuAccess.has(entry));
+
+        if (invalidMenuAccess.length > 0) {
+          issues.push({
+            lineNumber: row.lineNumber,
+            username,
+            message: `Ungueltige Menuezugriffe fuer Rolle ${role}: ${invalidMenuAccess.join(", ")}`
+          });
+          continue;
+        }
+
+        resultingActiveAdminUsernames.delete(normalizedUserName);
+        if (role === "admin" && nextIsActive) {
+          resultingActiveAdminUsernames.add(normalizedUserName);
+        }
+      }
+
+      if (resultingActiveAdminUsernames.size === 0) {
+        issues.push({ lineNumber: 0, username: null, message: "Mindestens ein aktiver Admin muss nach dem Import erhalten bleiben." });
+      }
+
+      if (issues.length > 0) {
+        return sendError(response, 400, "VALIDATION_ERROR", "Die CSV-Datei enthaelt fehlerhafte Benutzerzeilen.", {
+          errors: issues
+        });
+      }
+
+      const transaction = new sql.Transaction(pool);
+      await transaction.begin();
+
+      let created = 0;
+      let updated = 0;
+
+      for (const row of rows) {
+        const username = row.username.trim();
+        const normalizedUserName = username.toLowerCase();
+        const role = row.role.trim() as AuthenticatedUser["role"];
+        const existingUser = existingUsersByUsername.get(normalizedUserName);
+        const requestedMenuAccess = row.menuAccess.trim()
+          ? splitMultiValueField(row.menuAccess).map((entry) => entry as AppMenuKey)
+          : existingUser
+            ? normalizeMenuAccess(existingUser.role, menuAccessByUserId[existingUser.id] ?? getDefaultMenuAccessForRole(existingUser.role))
+            : getDefaultMenuAccessForRole(role);
+        const normalizedMenuAccess = normalizeMenuAccess(role, requestedMenuAccess);
+        const permissionsJson = normalizePermissionsPayload(
+          role,
+          existingUser ? parsePermissionsJson(existingUser.permissionsJson) ?? undefined : undefined,
+          normalizedMenuAccess
+        );
+        const displayName = row.displayName.trim() || existingUser?.displayName || username;
+        const email = role === "guard"
+          ? null
+          : (row.email.trim().toLowerCase() || existingUser?.email?.trim().toLowerCase() || null);
+        const groups = row.groups.trim()
+          ? splitMultiValueField(row.groups)
+          : existingUser
+            ? (groupsByUserId[existingUser.id] ?? [])
+            : [];
+        const isActive = parseBooleanText(row.isActive, existingUser?.isActive ?? true);
+        const passwordHash = row.password.trim() ? await hashPassword(row.password.trim()) : null;
+
+        if (existingUser) {
+          await new sql.Request(transaction)
+            .input("id", sql.UniqueIdentifier, existingUser.id)
+            .input("displayName", sql.NVarChar(255), displayName)
+            .input("email", sql.NVarChar(255), email)
+            .input("role", sql.NVarChar(32), role)
+            .input("isActive", sql.Bit, isActive)
+            .input("passwordHash", sql.NVarChar(255), passwordHash)
+            .input("deactivatedBy", sql.UniqueIdentifier, admin.id)
+            .input("permissionsJson", sql.NVarChar(sql.MAX), permissionsJson)
+            .query(`
+              UPDATE dbo.users
+              SET
+                display_name = @displayName,
+                user_email = @email,
+                role = @role,
+                password_hash = COALESCE(@passwordHash, password_hash),
+                permissions_json = @permissionsJson,
+                is_active = @isActive,
+                deactivated_at = CASE
+                  WHEN @isActive = 0 THEN COALESCE(deactivated_at, SYSUTCDATETIME())
+                  ELSE NULL
+                END,
+                deactivated_by = CASE
+                  WHEN @isActive = 0 THEN COALESCE(deactivated_by, @deactivatedBy)
+                  ELSE NULL
+                END,
+                updated_at = SYSUTCDATETIME()
+              WHERE id = @id
+            `);
+
+          await replaceUserGroupsAndMenuAccess(existingUser.id, role, groups, normalizedMenuAccess, transaction);
+          updated += 1;
+          continue;
+        }
+
+        const createdResult = await new sql.Request(transaction)
+          .input("username", sql.NVarChar(120), username)
+          .input("displayName", sql.NVarChar(255), displayName)
+          .input("email", sql.NVarChar(255), email)
+          .input("passwordHash", sql.NVarChar(255), passwordHash)
+          .input("role", sql.NVarChar(32), role)
+          .input("isActive", sql.Bit, isActive)
+          .input("permissionsJson", sql.NVarChar(sql.MAX), permissionsJson)
+          .query<{ id: string }>(`
+            INSERT INTO dbo.users(username, password_hash, display_name, user_email, role, gate_id, is_active, permissions_json)
+            OUTPUT inserted.id
+            VALUES(@username, @passwordHash, @displayName, @email, @role, NULL, @isActive, @permissionsJson)
+          `);
+
+        await replaceUserGroupsAndMenuAccess(createdResult.recordset[0].id, role, groups, normalizedMenuAccess, transaction);
+        created += 1;
+      }
+
+      await transaction.commit();
+
+      await writeAuditLog({
+        user: admin.username,
+        userId: admin.id,
+        action: "ADMIN_USER_IMPORT_CSV",
+        objectType: "user_import",
+        objectId: "bulk_csv",
+        ipAddress: getRequestIp(request),
+        userAgent: getRequestUserAgent(request),
+        metadata: {
+          fileName: file.originalname,
+          created,
+          updated,
+          total: rows.length
+        }
+      });
+
+      return response.status(201).json({
+        success: true,
+        created,
+        updated,
+        total: rows.length,
+        message: `${rows.length} Benutzer verarbeitet. ${created} neu, ${updated} aktualisiert.`
+      });
+    } catch (importError) {
+      return handleUnexpectedError(response, importError, "USER_IMPORT_FAILED", "Der Benutzerimport konnte nicht verarbeitet werden.");
+    }
+  });
 });
 
 adminRouter.post("/api/admin/users", async (request, response) => {
@@ -1599,6 +1929,7 @@ adminRouter.get("/api/admin/system-settings/workflow-email", async (request, res
     const settings = await loadWorkflowSettings();
     return response.json({
       approvalRequired: settings.approvalRequired,
+      backgroundMode: settings.backgroundMode,
       emailRelay: {
         source: settings.emailRelay.source,
         configPath: settings.emailRelay.configPath,
@@ -1630,7 +1961,8 @@ adminRouter.put("/api/admin/system-settings/workflow-email", async (request, res
   try {
     const currentSettings = await loadWorkflowSettings({ includeSecrets: true });
     const settingsToPersist: Record<string, string> = {
-      [WORKFLOW_SETTING_KEYS.approvalRequired]: String(parsed.data.approvalRequired)
+      [WORKFLOW_SETTING_KEYS.approvalRequired]: String(parsed.data.approvalRequired),
+      [WORKFLOW_SETTING_KEYS.uiBackgroundMode]: parsed.data.backgroundMode
     };
 
     if (currentSettings.emailRelay.source !== "yml") {
@@ -1681,7 +2013,14 @@ adminRouter.post("/api/admin/system-settings/workflow-email/test", async (reques
   }
 
   try {
-    await verifyMailRelayConnection(parsed.data.recipient?.trim() || undefined);
+    const selectedKind = (parsed.data.kind ?? "relay") as MailRelayTestKind;
+
+    if (selectedKind === "relay") {
+      await verifyMailRelayConnection(parsed.data.recipient?.trim() || undefined);
+    } else {
+      await sendMailRelayPreview(selectedKind, parsed.data.recipient?.trim() || "");
+    }
+
     await writeAuditLog({
       user: user.username,
       userId: user.id,
@@ -1689,9 +2028,18 @@ adminRouter.post("/api/admin/system-settings/workflow-email/test", async (reques
       objectType: "system_setting",
       objectId: "workflow_email",
       ipAddress: getRequestIp(request),
-      userAgent: getRequestUserAgent(request)
+      userAgent: getRequestUserAgent(request),
+      metadata: {
+        kind: selectedKind,
+        recipient: parsed.data.recipient?.trim() || null
+      }
     });
-    return response.json({ success: true, message: "Testmail erfolgreich versendet." });
+    return response.json({
+      success: true,
+      message: selectedKind === "relay"
+        ? "Testmail erfolgreich versendet."
+        : "Beispielmail erfolgreich versendet."
+    });
   } catch (error) {
     if (error instanceof Error && error.message === "mail_relay_incomplete") {
       return sendError(response, 400, "VALIDATION_ERROR", "Bitte Host und Absenderadresse fuer das Relay hinterlegen.");

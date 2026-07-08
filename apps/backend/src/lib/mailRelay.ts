@@ -10,6 +10,12 @@ type MailRequest = {
   text: string;
 };
 
+export type MailRelayTestKind =
+  | "relay"
+  | "approval_request"
+  | "approval_approved"
+  | "approval_rejected";
+
 type ApprovalRequestNotification = {
   visitId: string;
   visitorName: string;
@@ -110,6 +116,99 @@ export async function verifyMailRelayConnection(testRecipient?: string): Promise
     to: recipients.join(", "),
     subject: "Besucher Manager: Test E-Mail Relay",
     text: `Das E-Mail-Relay des Besucher Managers wurde erfolgreich getestet.\n\nZeitpunkt: ${new Date().toISOString()}`
+  });
+}
+
+function buildMailRelayPreviewContent(kind: MailRelayTestKind) {
+  const detailUrl = buildVisitDetailUrl("00000000-0000-0000-0000-000000000000");
+
+  if (kind === "approval_request") {
+    return {
+      subject: "Besucherfreigabe erforderlich: Max Mustermann",
+      text: [
+        "Eine neue Besuchervoranmeldung wartet auf SiBe-Freigabe.",
+        "",
+        "Besucher: Max Mustermann",
+        "Firma: Musterfirma GmbH",
+        "Ansprechpartner: Sabine Beispiel",
+        "Wache: Hauptwache",
+        "Gültig von: 07.07.2026, 08:00",
+        "Gültig bis: 07.07.2026, 17:00",
+        "",
+        `Details: ${detailUrl}`
+      ].join("\n")
+    };
+  }
+
+  if (kind === "approval_approved") {
+    return {
+      subject: "Besucher freigegeben: Max Mustermann",
+      text: [
+        "Die Besuchervoranmeldung wurde freigegeben.",
+        "",
+        "Besucher: Max Mustermann",
+        "Firma: Musterfirma GmbH",
+        "Ansprechpartner: Sabine Beispiel",
+        "Vorgang: 00000000-0000-0000-0000-000000000000"
+      ].join("\n")
+    };
+  }
+
+  if (kind === "approval_rejected") {
+    return {
+      subject: "Besucher abgelehnt: Max Mustermann",
+      text: [
+        "Die Besuchervoranmeldung wurde abgelehnt.",
+        "",
+        "Besucher: Max Mustermann",
+        "Firma: Musterfirma GmbH",
+        "Ansprechpartner: Sabine Beispiel",
+        "Vorgang: 00000000-0000-0000-0000-000000000000",
+        "Hinweis: Testablehnung durch Administration."
+      ].join("\n")
+    };
+  }
+
+  return {
+    subject: "Besucher Manager: Test E-Mail Relay",
+    text: `Das E-Mail-Relay des Besucher Managers wurde erfolgreich getestet.\n\nZeitpunkt: ${new Date().toISOString()}`
+  };
+}
+
+export async function sendMailRelayPreview(kind: MailRelayTestKind, recipient: string): Promise<void> {
+  const settings = await loadWorkflowSettings({ includeSecrets: true });
+  const relay = settings.emailRelay;
+  const normalizedRecipient = normalizeUserEmail(recipient);
+
+  if (!relay.host || !relay.fromAddress) {
+    throw new Error("mail_relay_incomplete");
+  }
+
+  if (!normalizedRecipient) {
+    throw new Error("mail_relay_missing_test_recipient");
+  }
+
+  const transport = nodemailer.createTransport({
+    host: relay.host,
+    port: relay.port,
+    secure: relay.secure,
+    auth: relay.username
+      ? {
+          user: relay.username,
+          pass: relay.password
+        }
+      : undefined
+  });
+
+  await transport.verify();
+
+  const preview = buildMailRelayPreviewContent(kind);
+
+  await transport.sendMail({
+    from: relay.fromAddress,
+    to: normalizedRecipient,
+    subject: preview.subject,
+    text: preview.text
   });
 }
 

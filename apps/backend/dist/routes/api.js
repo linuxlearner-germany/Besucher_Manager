@@ -9,6 +9,7 @@ const publicPreRegistrationSchema_1 = require("../lib/publicPreRegistrationSchem
 const rateLimit_1 = require("../lib/rateLimit");
 const users_1 = require("../lib/users");
 const visitImport_1 = require("../lib/visitImport");
+const systemSettings_1 = require("../lib/systemSettings");
 const shared_1 = require("./shared");
 const visitorImport_1 = require("./visitorImport");
 const admin_1 = require("./admin");
@@ -48,6 +49,17 @@ exports.apiRouter.get("/api/meta", (_request, response) => {
         modules: ["public-pre-registration", "guard-dashboard", "admin-panel"],
         status: "active"
     });
+});
+exports.apiRouter.get("/api/ui-settings", async (_request, response) => {
+    try {
+        const settings = await (0, systemSettings_1.loadWorkflowSettings)();
+        return response.json({
+            backgroundMode: settings.backgroundMode
+        });
+    }
+    catch (error) {
+        return (0, shared_1.handleUnexpectedError)(response, error, "DATABASE_ERROR", "Die Oberflaecheneinstellungen konnten nicht geladen werden.");
+    }
 });
 exports.apiRouter.get("/api/auth/me", async (request, response) => {
     const user = await (0, shared_1.resolveAuthenticatedUser)(request);

@@ -12,6 +12,8 @@
   --surface-subtle: rgba(246, 249, 252, 0.94);
   --panel-shadow: 0 18px 44px rgba(15, 31, 48, 0.12);
   --topbar-bg: rgba(255, 255, 255, 0.9);
+  --body-background-image: url("/branding/background.png");
+  --body-background-color: #dfe7ef;
   color: var(--text);
   background: var(--page-bg);
 }
@@ -27,6 +29,23 @@
   --surface-subtle: rgba(23, 38, 55, 0.9);
   --panel-shadow: 0 20px 48px rgba(0, 0, 0, 0.34);
   --topbar-bg: rgba(12, 22, 33, 0.9);
+  --body-background-color: #0f1822;
+}
+
+:root[data-background="subtle"] {
+  --body-background-image:
+    linear-gradient(rgba(244, 247, 251, 0.9), rgba(244, 247, 251, 0.9)),
+    url("/branding/background.png");
+}
+
+:root[data-theme="dark"][data-background="subtle"] {
+  --body-background-image:
+    linear-gradient(rgba(15, 24, 34, 0.86), rgba(15, 24, 34, 0.86)),
+    url("/branding/background.png");
+}
+
+:root[data-background="plain"] {
+  --body-background-image: none;
 }
 
 * {
@@ -36,7 +55,8 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background-image: url("/branding/background.png");
+  background-color: var(--body-background-color);
+  background-image: var(--body-background-image);
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
@@ -829,6 +849,38 @@ textarea {
 
 .login-panel {
   width: min(460px, 100%);
+}
+
+.login-panel .section-header {
+  justify-content: center;
+  text-align: center;
+}
+
+.login-form {
+  width: min(360px, 100%);
+  margin: 0 auto;
+  display: grid;
+  gap: 16px;
+}
+
+.login-form label {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+}
+
+.login-form input {
+  width: 100%;
+}
+
+.login-form .form-actions {
+  align-items: stretch;
+}
+
+.login-form .form-actions button {
+  width: 100%;
+  min-width: 0;
 }
 
 .public-form-panel {
@@ -1722,6 +1774,10 @@ input[type="checkbox"] {
   border-top: 1px solid var(--panel-border);
 }
 
+.dropzone-selected-muted {
+  color: var(--muted);
+}
+
 .site-map-preview-card,
 .site-map-current,
 .site-map-history {
@@ -1904,6 +1960,58 @@ input[type="checkbox"] {
   min-width: 1120px;
 }
 
+.admin-users-table {
+  min-width: 1240px;
+  table-layout: fixed;
+}
+
+.admin-users-table th:nth-child(1),
+.admin-users-table td:nth-child(1) {
+  width: 140px;
+}
+
+.admin-users-table th:nth-child(2),
+.admin-users-table td:nth-child(2) {
+  width: 170px;
+}
+
+.admin-users-table th:nth-child(3),
+.admin-users-table td:nth-child(3) {
+  width: 200px;
+}
+
+.admin-users-table th:nth-child(4),
+.admin-users-table td:nth-child(4) {
+  width: 140px;
+}
+
+.admin-users-table th:nth-child(5),
+.admin-users-table td:nth-child(5) {
+  width: 100px;
+}
+
+.admin-users-table th:nth-child(6),
+.admin-users-table td:nth-child(6),
+.admin-users-table th:nth-child(7),
+.admin-users-table td:nth-child(7) {
+  width: 210px;
+}
+
+.admin-users-table th:last-child,
+.admin-users-table td:last-child {
+  width: 220px;
+  min-width: 220px;
+  position: sticky;
+  right: 0;
+  z-index: 1;
+  background: var(--surface-subtle);
+}
+
+:root[data-theme="dark"] .admin-users-table th:last-child,
+:root[data-theme="dark"] .admin-users-table td:last-child {
+  background: rgba(23, 38, 55, 0.98);
+}
+
 .admin-action-row {
   align-items: center;
 }
@@ -1912,6 +2020,57 @@ input[type="checkbox"] {
   display: grid;
   gap: 14px;
   padding: 18px;
+}
+
+.admin-import-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.import-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.import-step-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.import-step-row span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 4px 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  background: var(--surface-subtle);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.import-summary-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  background: var(--surface-subtle);
+}
+
+.import-issue-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.import-issue-list li {
+  color: var(--text);
 }
 
 .admin-user-create-grid {

@@ -107,7 +107,7 @@ export function LoginPage() {
             </div>
 
             {pendingLogin ? (
-              <form className="pre-registration-form" onSubmit={handleGateSelection}>
+              <form className="pre-registration-form login-form" onSubmit={handleGateSelection}>
                 <label>
                   Aktive Wache
                   <select value={selectedGateId} onChange={(event) => setSelectedGateId(event.target.value)}>
@@ -138,7 +138,7 @@ export function LoginPage() {
                 {error ? <Alert type="error">{error}</Alert> : null}
               </form>
             ) : (
-              <form className="pre-registration-form" onSubmit={handleSubmit}>
+              <form className="pre-registration-form login-form" onSubmit={handleSubmit}>
                 <label>
                   Benutzername
                   <input value={username} onChange={(event) => setUsername(event.target.value)} />

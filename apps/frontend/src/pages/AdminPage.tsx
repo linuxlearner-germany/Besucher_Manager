@@ -41,11 +41,13 @@ import {
   type NewFieldDefinitionForm,
   type SiteMapSummary,
   type UserPermissions,
-  useAuth
+  useAuth,
+  useThemeMode
 } from "../app/core";
 
 export function AdminPage() {
   const { user: currentUser } = useAuth();
+  const { setBackgroundMode } = useThemeMode();
   const menuOptions: Array<{ key: AppMenuKey; label: string }> = [
     { key: "voranmeldung", label: "Voranmeldung" },
     { key: "wache", label: "Wache" },
@@ -124,6 +126,11 @@ export function AdminPage() {
   const [workflowSettings, setWorkflowSettings] = useState<AdminWorkflowSettings | null>(null);
   const [workflowPassword, setWorkflowPassword] = useState("");
   const [workflowTestRecipient, setWorkflowTestRecipient] = useState("");
+  const [workflowTestKind, setWorkflowTestKind] = useState<"relay" | "approval_request" | "approval_approved" | "approval_rejected">("relay");
+  const [userImportFile, setUserImportFile] = useState<File | null>(null);
+  const [userImporting, setUserImporting] = useState(false);
+  const [userImportIssues, setUserImportIssues] = useState<Array<{ lineNumber: number; username: string | null; message: string }>>([]);
+  const [userImportSummary, setUserImportSummary] = useState<{ created: number; updated: number; total: number; fileName: string } | null>(null);
   const [activeSiteMap, setActiveSiteMap] = useState<SiteMapSummary>(null);
   const [siteMaps, setSiteMaps] = useState<NonNullable<SiteMapSummary>[]>([]);
   const [fieldDefinitions, setFieldDefinitions] = useState<AdminFieldDefinition[]>([]);
@@ -252,6 +259,7 @@ export function AdminPage() {
       setTexts(textPayload.texts);
       setSystemStatus(statusPayload);
       setWorkflowSettings(workflowPayload);
+      setBackgroundMode(workflowPayload.backgroundMode);
       setWorkflowPassword("");
       setActiveSiteMap(siteMapPayload.siteMap);
       setSiteMaps(siteMapsPayload.siteMaps);
@@ -363,6 +371,62 @@ export function AdminPage() {
       const payload = apiError as ApiError;
       setError(payload.message || "Benutzer konnte nicht angelegt werden.");
     }
+  }
+
+  async function importUsersCsv() {
+    if (!userImportFile) {
+      setError("Bitte zuerst eine CSV-Datei auswählen.");
+      setUserImportIssues([]);
+      return;
+    }
+
+    if (!/\.csv$/i.test(userImportFile.name)) {
+      setUserImportSummary(null);
+      setUserImportIssues([]);
+      setError("Bitte eine CSV-Datei auswählen.");
+      return;
+    }
+
+    if (userImportFile.size > 2 * 1024 * 1024) {
+      setUserImportSummary(null);
+      setUserImportIssues([]);
+      setError("Die CSV-Datei ist größer als 2 MB.");
+      return;
+    }
+
+    try {
+      setUserImporting(true);
+      const formData = new FormData();
+      formData.append("file", userImportFile);
+      const payload = await fetchJson<{ success: boolean; created: number; updated: number; total: number; message: string }>("/api/admin/users/import-csv", {
+        method: "POST",
+        body: formData
+      });
+      setUserImportIssues([]);
+      setUserImportSummary({
+        created: payload.created,
+        updated: payload.updated,
+        total: payload.total,
+        fileName: userImportFile.name
+      });
+      setUserImportFile(null);
+      setMessage(payload.message || "Benutzerimport erfolgreich abgeschlossen.");
+      setError(null);
+      await loadAll();
+    } catch (apiError) {
+      const payload = apiError as ApiError & {
+        details?: { errors?: Array<{ lineNumber: number; username: string | null; message: string }>; fieldErrors?: { file?: string[] } };
+      };
+      setUserImportSummary(null);
+      setUserImportIssues(payload.details?.errors ?? []);
+      setError(payload.details?.fieldErrors?.file?.[0] || payload.message || "Der Benutzerimport konnte nicht verarbeitet werden.");
+    } finally {
+      setUserImporting(false);
+    }
+  }
+
+  function downloadUserImportTemplate() {
+    window.location.assign("/api/admin/users/import-template.csv");
   }
 
   function resetSiteMapSelection() {
@@ -930,6 +994,7 @@ export function AdminPage() {
         method: "PUT",
         body: JSON.stringify({
           approvalRequired: workflowSettings.approvalRequired,
+          backgroundMode: workflowSettings.backgroundMode,
           emailRelay: {
             enabled: workflowSettings.emailRelay.enabled,
             host: workflowSettings.emailRelay.host,
@@ -943,6 +1008,7 @@ export function AdminPage() {
         })
       });
       setWorkflowPassword("");
+      setBackgroundMode(workflowSettings.backgroundMode);
       setMessage(
         payload.emailRelaySource === "yml"
           ? "Workflow gespeichert. Die SMTP-Relay-Daten kommen weiter aus der YML-Datei."
@@ -961,7 +1027,8 @@ export function AdminPage() {
       const payload = await fetchJson<{ message: string }>("/api/admin/system-settings/workflow-email/test", {
         method: "POST",
         body: JSON.stringify({
-          recipient: workflowTestRecipient
+          recipient: workflowTestRecipient,
+          kind: workflowTestKind
         })
       });
       setMessage(payload.message || "Testmail versendet.");
@@ -1054,6 +1121,13 @@ export function AdminPage() {
             toggleNewUserPermission={toggleNewUserPermission}
             toggleEditableUserMenuAccess={toggleEditableUserMenuAccess}
             toggleEditableUserPermission={toggleEditableUserPermission}
+            userImportFile={userImportFile}
+            setUserImportFile={setUserImportFile}
+            userImporting={userImporting}
+            userImportIssues={userImportIssues}
+            userImportSummary={userImportSummary}
+            downloadUserImportTemplate={downloadUserImportTemplate}
+            importUsersCsv={importUsersCsv}
             saveUser={saveUser}
             toggleUserActive={toggleUserActive}
             deleteUser={deleteUser}
@@ -1120,6 +1194,8 @@ export function AdminPage() {
             setWorkflowPassword={setWorkflowPassword}
             workflowTestRecipient={workflowTestRecipient}
             setWorkflowTestRecipient={setWorkflowTestRecipient}
+            workflowTestKind={workflowTestKind}
+            setWorkflowTestKind={setWorkflowTestKind}
             saveWorkflowSettings={saveWorkflowSettings}
             sendWorkflowTestMail={sendWorkflowTestMail}
           />

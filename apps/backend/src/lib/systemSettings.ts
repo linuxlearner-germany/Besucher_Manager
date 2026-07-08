@@ -11,11 +11,13 @@ export const WORKFLOW_SETTING_KEYS = {
   relayUsername: "mail_relay_username",
   relayPassword: "mail_relay_password",
   relayFrom: "mail_relay_from",
-  relayApprovalTo: "mail_relay_approval_to"
+  relayApprovalTo: "mail_relay_approval_to",
+  uiBackgroundMode: "ui_background_mode"
 } as const;
 
 export type WorkflowSettings = {
   approvalRequired: boolean;
+  backgroundMode: "image" | "subtle" | "plain";
   emailRelay: {
     source: "database" | "yml";
     configPath: string | null;
@@ -75,6 +77,14 @@ function splitRecipients(value: string | null | undefined): string[] {
   );
 }
 
+function toBackgroundMode(value: string | null | undefined, fallback: "image" | "subtle" | "plain"): "image" | "subtle" | "plain" {
+  const normalized = value?.trim().toLowerCase();
+  if (normalized === "image" || normalized === "subtle" || normalized === "plain") {
+    return normalized;
+  }
+  return fallback;
+}
+
 export async function loadSystemSettings(keys: string[], transaction?: sql.Transaction): Promise<Map<string, string>> {
   if (keys.length === 0) {
     return new Map();
@@ -115,6 +125,7 @@ export async function loadWorkflowSettings(options?: {
   if (fileRelayConfig) {
     return {
       approvalRequired: toBoolean(settingMap.get(WORKFLOW_SETTING_KEYS.approvalRequired), true),
+      backgroundMode: toBackgroundMode(settingMap.get(WORKFLOW_SETTING_KEYS.uiBackgroundMode), "image"),
       emailRelay: {
         source: "yml",
         configPath: fileRelayConfig.configPath,
@@ -134,6 +145,7 @@ export async function loadWorkflowSettings(options?: {
 
   return {
     approvalRequired: toBoolean(settingMap.get(WORKFLOW_SETTING_KEYS.approvalRequired), true),
+    backgroundMode: toBackgroundMode(settingMap.get(WORKFLOW_SETTING_KEYS.uiBackgroundMode), "image"),
     emailRelay: {
       source: "database",
       configPath: null,

@@ -576,6 +576,7 @@ export type SibeVisitRow = {
 
 export type AdminWorkflowSettings = {
   approvalRequired: boolean;
+  backgroundMode: "image" | "subtle" | "plain";
   emailRelay: {
     source: "database" | "yml";
     configPath: string | null;
@@ -631,7 +632,12 @@ export type GuardCalendarItem = {
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
-const ThemeContext = createContext<{ mode: "light" | "dark"; toggle: () => void } | null>(null);
+const ThemeContext = createContext<{
+  mode: "light" | "dark";
+  toggle: () => void;
+  backgroundMode: "image" | "subtle" | "plain";
+  setBackgroundMode: (mode: "image" | "subtle" | "plain") => void;
+} | null>(null);
 
 export const BRANDING = {
   logo: "/branding/wiweb-logo-kurz-blau_neu.png",
@@ -1114,17 +1120,41 @@ export function ThemeProvider({ children }: PropsWithChildren) {
 
     return "light";
   });
+  const [backgroundMode, setBackgroundMode] = useState<"image" | "subtle" | "plain">(() => {
+    return "image";
+  });
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", mode);
     window.localStorage.setItem("bm-theme", mode);
   }, [mode]);
 
+  useEffect(() => {
+    document.documentElement.setAttribute("data-background", backgroundMode);
+  }, [backgroundMode]);
+
+  useEffect(() => {
+    let active = true;
+
+    void fetchJson<{ backgroundMode: "image" | "subtle" | "plain" }>("/api/ui-settings", {
+      method: "GET",
+      headers: {}
+    }).then((payload) => {
+      if (!active) return;
+      setBackgroundMode(payload.backgroundMode);
+    }).catch(() => {
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const toggle = useCallback(() => {
     setMode((current) => (current === "light" ? "dark" : "light"));
   }, []);
 
-  return <ThemeContext.Provider value={{ mode, toggle }}>{children}</ThemeContext.Provider>;
+  return <ThemeContext.Provider value={{ mode, toggle, backgroundMode, setBackgroundMode }}>{children}</ThemeContext.Provider>;
 }
 
 export function LoadingScreen() {

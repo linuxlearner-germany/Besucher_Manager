@@ -28,11 +28,17 @@ async function main() {
         throw new Error("Set both ADMIN_USERNAME and ADMIN_PASSWORD (or INITIAL_ADMIN_USER and INITIAL_ADMIN_PASSWORD).");
     }
     if (adminUsername && adminPassword) {
-        const adminResult = await (0, users_1.createOrUpdateAdmin)({
-            username: adminUsername,
-            password: adminPassword
-        });
-        console.log(adminResult.created ? `Created startup admin user ${adminUsername}.` : `Updated startup admin user ${adminUsername}.`);
+        const existingStartupAdmin = await (0, users_1.findUserForLogin)(adminUsername);
+        if (existingStartupAdmin) {
+            console.log(`Startup admin user ${adminUsername} already exists. Keeping stored credentials and profile data.`);
+        }
+        else {
+            const adminResult = await (0, users_1.createOrUpdateAdmin)({
+                username: adminUsername,
+                password: adminPassword
+            });
+            console.log(adminResult.created ? `Created startup admin user ${adminUsername}.` : `Updated startup admin user ${adminUsername}.`);
+        }
     }
     await (0, db_1.closePool)();
     const app = (0, app_1.createApp)();

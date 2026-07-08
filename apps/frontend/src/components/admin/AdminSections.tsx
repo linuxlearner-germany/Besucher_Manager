@@ -55,6 +55,7 @@ export function AdminDashboardSection({
       <article className="panel mini-card"><h3>Hinweistexte</h3><p>{texts.filter((text) => text.isActive).length} aktive Texte</p><button type="button" className="secondary-button" onClick={() => onOpenSection("texte")}>Öffnen</button></article>
       <article className="panel mini-card"><h3>Geländeplan</h3><p title={activeSiteMap?.name || "Kein aktiver Plan"}>{activeSiteMap ? truncateLabel(activeSiteMap.name) : "Kein aktiver Plan"}</p><button type="button" className="secondary-button" onClick={() => onOpenSection("karte")}>Öffnen</button></article>
       <article className="panel mini-card"><h3>Feldkonfiguration</h3><p>{fieldDefinitions.filter((field) => field.isActive).length} aktive Felder</p><button type="button" className="secondary-button" onClick={() => onOpenSection("felder")}>Öffnen</button></article>
+      <article className="panel mini-card"><h3>Benutzerimport</h3><p>Konten gesammelt per CSV anlegen oder aktualisieren</p><button type="button" className="secondary-button" onClick={() => onOpenSection("benutzer")}>Öffnen</button></article>
       <article className="panel mini-card"><h3>Auditlog</h3><p>{logs.length} letzte Einträge</p><button type="button" className="secondary-button" onClick={() => onOpenSection("audit")}>Öffnen</button></article>
       <article className="panel mini-card"><h3>Fehlerlog</h3><p>{errorLogs.length} letzte Einträge</p><button type="button" className="secondary-button" onClick={() => onOpenSection("fehler")}>Öffnen</button></article>
       <article className="panel mini-card"><h3>Systemstatus</h3><p>{systemStatus ? `${systemStatus.activeVisits} aktiv, ${systemStatus.signaturesFollowUp} Nachreichungen` : "Lade..."}</p><button type="button" className="secondary-button" onClick={() => onOpenSection("system")}>Öffnen</button></article>
@@ -163,6 +164,13 @@ export function AdminUsersSection({
   toggleNewUserPermission,
   toggleEditableUserMenuAccess,
   toggleEditableUserPermission,
+  userImportFile,
+  setUserImportFile,
+  userImporting,
+  userImportIssues,
+  userImportSummary,
+  downloadUserImportTemplate,
+  importUsersCsv,
   saveUser,
   toggleUserActive,
   deleteUser,
@@ -206,6 +214,13 @@ export function AdminUsersSection({
   toggleNewUserPermission: (permission: AppPermission, checked: boolean) => void;
   toggleEditableUserMenuAccess: (userId: string, menuKey: AppMenuKey, checked: boolean) => void;
   toggleEditableUserPermission: (userId: string, permission: AppPermission, checked: boolean) => void;
+  userImportFile: File | null;
+  setUserImportFile: Dispatch<SetStateAction<File | null>>;
+  userImporting: boolean;
+  userImportIssues: Array<{ lineNumber: number; username: string | null; message: string }>;
+  userImportSummary: { created: number; updated: number; total: number; fileName: string } | null;
+  downloadUserImportTemplate: () => void;
+  importUsersCsv: () => Promise<void>;
   saveUser: (userId: string) => Promise<void>;
   toggleUserActive: (userId: string, active: boolean) => Promise<void>;
   deleteUser: (userEntry: AdminUser) => Promise<void>;
@@ -335,6 +350,75 @@ export function AdminUsersSection({
             <button type="submit">Benutzer speichern</button>
           </div>
         </form>
+      </div>
+      <div className="panel admin-user-card admin-import-panel">
+        <div className="table-section-header">
+          <div>
+            <h4>Benutzerimport</h4>
+            <p className="section-copy">Vorlage laden, Datei auswählen und Benutzer gesammelt anlegen oder aktualisieren.</p>
+          </div>
+        </div>
+        <div className="import-toolbar">
+          <button type="button" className="secondary-button" onClick={downloadUserImportTemplate}>CSV-Vorlage herunterladen</button>
+          <span className="section-copy">Pflichtspalten zuerst: username, password, role</span>
+        </div>
+        <div className="import-step-row" aria-hidden="true">
+          <span>1. Vorlage laden</span>
+          <span>2. Datei wählen</span>
+          <span>3. Prüfen</span>
+          <span>4. Importieren</span>
+        </div>
+        <label className="dropzone compact-dropzone">
+          <input
+            className="visually-hidden"
+            type="file"
+            accept=".csv,text/csv"
+            onChange={(event) => setUserImportFile(event.target.files?.[0] ?? null)}
+          />
+          <div className="dropzone-copy">
+            <strong>CSV-Datei auswählen</strong>
+            <span>Bestehende Benutzer werden über den Benutzernamen erkannt. Neue Benutzer brauchen ein Passwort.</span>
+          </div>
+          {userImportFile ? (
+            <div className="dropzone-selected">
+              <span>{userImportFile.name}</span>
+              <span>{Math.max(1, Math.round(userImportFile.size / 1024))} KB</span>
+            </div>
+          ) : (
+            <div className="dropzone-selected dropzone-selected-muted">
+              <span>Keine Datei ausgewählt</span>
+              <span>Nur CSV bis 2 MB</span>
+            </div>
+          )}
+        </label>
+        <div className="row-actions action-bar">
+          <button type="button" onClick={() => void importUsersCsv()} disabled={!userImportFile || userImporting}>
+            {userImporting ? "Import läuft..." : "Benutzer importieren"}
+          </button>
+          <button type="button" className="secondary-button" onClick={() => setUserImportFile(null)} disabled={!userImportFile || userImporting}>
+            Auswahl leeren
+          </button>
+        </div>
+        {!userImportFile ? <p className="section-copy">Der Import startet erst nach Dateiauswahl.</p> : null}
+        {userImportSummary ? (
+          <div className="import-summary-card">
+            <strong>Import erfolgreich</strong>
+            <span className="section-copy">{userImportSummary.fileName}</span>
+            <span>{userImportSummary.total} Zeilen verarbeitet, {userImportSummary.created} neu, {userImportSummary.updated} aktualisiert.</span>
+          </div>
+        ) : null}
+        {userImportIssues.length > 0 ? (
+          <Alert type="error">
+            <strong>Importfehler</strong>
+            <ul className="import-issue-list">
+              {userImportIssues.map((issue, index) => (
+                <li key={`${issue.lineNumber}-${issue.username || "row"}-${index}`}>
+                  Zeile {issue.lineNumber > 0 ? issue.lineNumber : "global"}{issue.username ? ` (${issue.username})` : ""}: {issue.message}
+                </li>
+              ))}
+            </ul>
+          </Alert>
+        ) : null}
       </div>
       <div className="table-section admin-table-shell">
         <div className="table-section-header">
@@ -633,6 +717,8 @@ export function AdminSystemSection({
   setWorkflowPassword,
   workflowTestRecipient,
   setWorkflowTestRecipient,
+  workflowTestKind,
+  setWorkflowTestKind,
   saveWorkflowSettings,
   sendWorkflowTestMail
 }: {
@@ -656,6 +742,8 @@ export function AdminSystemSection({
   setWorkflowPassword: Dispatch<SetStateAction<string>>;
   workflowTestRecipient: string;
   setWorkflowTestRecipient: Dispatch<SetStateAction<string>>;
+  workflowTestKind: "relay" | "approval_request" | "approval_approved" | "approval_rejected";
+  setWorkflowTestKind: Dispatch<SetStateAction<"relay" | "approval_request" | "approval_approved" | "approval_rejected">>;
   saveWorkflowSettings: () => Promise<void>;
   sendWorkflowTestMail: () => Promise<void>;
 }) {
@@ -673,14 +761,28 @@ export function AdminSystemSection({
         <article className="panel mini-card"><h3>Ausnahmen</h3><p>{systemStatus?.signaturesExceptions ?? "-"}</p></article>
       </div>
 
-      <div className="detail-grid">
-        <div><dt>Datenbank</dt><dd>{systemStatus?.dbHost || "-"} / {systemStatus?.dbName || "-"}</dd></div>
-        <div><dt>Aufbewahrung</dt><dd>{systemStatus?.retentionEnabled ? `${systemStatus?.retentionDays ?? "-"} Tage` : "deaktiviert"}</dd></div>
-      </div>
+        <div className="detail-grid">
+          <div><dt>Datenbank</dt><dd>{systemStatus?.dbHost || "-"} / {systemStatus?.dbName || "-"}</dd></div>
+          <div><dt>Aufbewahrung</dt><dd>{systemStatus?.retentionEnabled ? `${systemStatus?.retentionDays ?? "-"} Tage` : "deaktiviert"}</dd></div>
+        </div>
 
-      <div className="panel">
-        <h3>SiBe-Freigabe und E-Mail-Relay</h3>
+        <div className="panel">
+          <h3>SiBe-Freigabe und E-Mail-Relay</h3>
         <div className="form-grid two-columns">
+          <FormField label="Hintergrund">
+            <select
+              value={workflowSettings?.backgroundMode ?? "image"}
+              onChange={(event) => setWorkflowSettings((current) => current ? {
+                ...current,
+                backgroundMode: event.target.value as "image" | "subtle" | "plain"
+              } : current)}
+            >
+              <option value="image">Bild</option>
+              <option value="subtle">Dezent</option>
+              <option value="plain">Aus</option>
+            </select>
+          </FormField>
+          <div />
           {workflowSettings?.emailRelay.source === "yml" ? (
             <div className="detail-span-2">
               <div className="feedback info">
@@ -818,6 +920,14 @@ export function AdminSystemSection({
         </div>
 
         <div className="form-grid two-columns">
+          <FormField label="Testmail-Typ">
+            <select value={workflowTestKind} onChange={(event) => setWorkflowTestKind(event.target.value as "relay" | "approval_request" | "approval_approved" | "approval_rejected")}>
+              <option value="relay">Relay-Test</option>
+              <option value="approval_request">Freigabe anfordern</option>
+              <option value="approval_approved">Freigabe bestätigt</option>
+              <option value="approval_rejected">Freigabe abgelehnt</option>
+            </select>
+          </FormField>
           <FormField label="Testadresse">
             <input
               type="email"
