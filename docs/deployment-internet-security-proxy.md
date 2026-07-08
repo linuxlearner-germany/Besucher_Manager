@@ -1,20 +1,19 @@
 # Deployment hinter Internet Security Proxy
 
-Diese Anleitung beschreibt den produktiven Betrieb des Besucher Managers hinter einem Internet Security Proxy. Die Anwendung selbst läuft per Docker Compose lokal auf Port `3030`. Die öffentliche Adresse wird über `PUBLIC_BASE_URL` gesetzt.
+Diese Anleitung beschreibt den Betrieb des Besucher Managers mit einem Internet Security Proxy für ausgehende Verbindungen. Die Anwendung selbst läuft per Docker Compose lokal auf Port `3030`.
 
 Diese Anleitung ist für folgenden Aufbau gedacht:
 
 - Die App läuft als Docker-Container auf einem internen Host.
 - Ausgehender Internetzugriff läuft über einen Security- oder Firmen-Proxy.
 - Die Datenbank läuft entweder extern auf einem eigenen MSSQL-Server oder lokal über das Compose-Profil `local-db`.
-- Interne Ziele wie MSSQL, Reverse Proxy oder lokale Hostnamen dürfen nicht über den Internet-Proxy laufen.
+- Interne Ziele wie MSSQL oder lokale Hostnamen dürfen nicht über den Internet-Proxy laufen.
 
 ## 1. Voraussetzungen
 
 - Docker und Docker Compose Plugin sind installiert.
 - Das Repository liegt lokal auf dem Zielsystem.
 - Für den Produktivbetrieb existiert eine eigene `.env`.
-- Für HTTPS gibt es einen vorgeschalteten Reverse Proxy, WAF oder Load Balancer.
 
 Repository vorbereiten:
 
@@ -31,16 +30,15 @@ cp .env.example .env
 nano .env
 ```
 
-Beispiel für Betrieb mit externer MSSQL-Datenbank und vorgeschaltetem HTTPS-Endpunkt:
+Beispiel für Betrieb mit externer MSSQL-Datenbank:
 
 ```env
 NODE_ENV=production
 APP_HOST=0.0.0.0
 PORT=3030
 
-PUBLIC_BASE_URL=https://besucher.example.local
-APP_SECURE_COOKIES=true
-APP_TRUST_PROXY=true
+PUBLIC_BASE_URL=http://deb-srv-docker:3030
+APP_SECURE_COOKIES=false
 APP_SECRET=CHANGE_ME
 
 HTTP_PROXY=http://proxy.example.local:3128
@@ -67,9 +65,7 @@ ADMIN_PASSWORD=CHANGE_ME
 
 Wichtig:
 
-- `PUBLIC_BASE_URL` muss die echte externe Benutzer-URL enthalten.
-- `APP_SECURE_COOKIES=true` ist bei HTTPS Pflicht.
-- `APP_TRUST_PROXY=true` ist nötig, wenn ein Reverse Proxy davor steht und Forwarded-Header gesetzt werden.
+- `PUBLIC_BASE_URL` muss zur tatsächlichen Aufrufadresse passen.
 - `APP_SECRET` muss produktiv gesetzt werden und geheim bleiben.
 - `MSSQL_HOST` und interne IPs oder Hostnamen müssen in `NO_PROXY` und `no_proxy` stehen.
 
@@ -85,7 +81,6 @@ Nicht über den Proxy laufen dürfen:
 
 - MSSQL
 - lokale Docker-Service-Namen wie `sqlserver`
-- der lokale Reverse Proxy
 - `localhost` und interne Hostnamen
 
 Wenn interne Ziele über den Proxy geleitet werden, sind Login-, Datenbank- oder Mailprobleme sehr wahrscheinlich.
@@ -140,52 +135,7 @@ Das ist wichtig für den laufenden Betrieb:
 
 Wenn ein Admin-Passwort bewusst neu gesetzt werden soll, muss das gezielt über die Anwendung oder per Wartungsschritt erfolgen, nicht allein über einen Neustart.
 
-## 7. Reverse Proxy davor schalten
-
-Empfohlener Aufbau:
-
-- App bleibt intern auf `3030`
-- Reverse Proxy terminiert HTTPS auf `443`
-- Reverse Proxy leitet an `http://127.0.0.1:3030` weiter
-
-Beispiel mit `nginx`:
-
-```nginx
-server {
-    listen 80;
-    server_name besucher.example.local;
-    return 301 https://$host$request_uri;
-}
-
-server {
-    listen 443 ssl http2;
-    server_name besucher.example.local;
-
-    ssl_certificate     /etc/nginx/tls/besucher.example.local/fullchain.pem;
-    ssl_certificate_key /etc/nginx/tls/besucher.example.local/privkey.pem;
-
-    client_max_body_size 25m;
-
-    location / {
-        proxy_pass http://127.0.0.1:3030;
-        proxy_http_version 1.1;
-
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto https;
-        proxy_set_header X-Forwarded-Host $host;
-    }
-}
-```
-
-Dazu passend in `.env`:
-
-- `PUBLIC_BASE_URL=https://besucher.example.local`
-- `APP_SECURE_COOKIES=true`
-- `APP_TRUST_PROXY=true`
-
-## 8. Proxy im Container prüfen
+## 7. Proxy im Container prüfen
 
 ```bash
 docker compose exec app env | grep -i proxy
@@ -194,7 +144,7 @@ docker compose exec app node -e "console.log(process.env.HTTP_PROXY || process.e
 
 Wenn MSSQL extern ist, zusätzlich prüfen, dass der MSSQL-Host nicht über den Proxy läuft.
 
-## 9. Erreichbarkeit und Health prüfen
+## 8. Erreichbarkeit und Health prüfen
 
 Lokal auf dem Host:
 
@@ -203,18 +153,11 @@ curl -s http://127.0.0.1:3030/health
 docker compose ps
 ```
 
-Über die externe URL:
-
-```bash
-curl -Ik https://besucher.example.local
-curl -s https://besucher.example.local/health
-```
-
 Die aktuelle Health-Route ist:
 
 - `/health`
 
-## 10. Externen MSSQL-Server prüfen
+## 9. Externen MSSQL-Server prüfen
 
 Vom Docker-Host aus:
 
@@ -235,7 +178,7 @@ Zusätzlich sinnvoll:
 docker compose exec app getent hosts mssql-server.local
 ```
 
-## 11. Update und Neuaufbau
+## 10. Update und Neuaufbau
 
 Empfohlenes Update ohne Datenverlust:
 
@@ -261,7 +204,7 @@ Wichtig:
 - Upload- und SQL-Volumes bleiben erhalten, solange keine Volumes gelöscht werden.
 - Migrationen laufen automatisch beim App-Start.
 
-## 12. Typische Fehlerbilder
+## 11. Typische Fehlerbilder
 
 ### Build oder `npm install` im Docker-Build schlägt fehl
 
@@ -284,9 +227,8 @@ Mögliche Ursachen:
 
 Mögliche Ursachen:
 
-- `APP_SECURE_COOKIES=true`, aber die App wird per HTTP statt HTTPS aufgerufen.
 - `PUBLIC_BASE_URL` passt nicht zur echten Benutzer-URL.
-- Reverse Proxy setzt Header nicht korrekt weiter.
+- Cookies oder Browserdaten stammen noch von einer alten Konfiguration.
 
 ### Nach Neustart sind Admin-Änderungen weg
 
@@ -304,6 +246,4 @@ Prüfen:
 - keine echten Passwörter in Dokumentation oder Beispieldateien speichern
 - `APP_SECRET` produktiv immer individuell setzen
 - MSSQL nicht über den Internet Security Proxy leiten
-- Port `3030` nach außen sperren, wenn der Zugriff nur über den Reverse Proxy erfolgen soll
-- nur HTTPS produktiv freigeben
 - Logs nicht mit Zugangsdaten oder Proxy-Credentials füllen
