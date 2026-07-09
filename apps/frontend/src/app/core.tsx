@@ -568,6 +568,7 @@ export type SibeVisitRow = {
   hostDepartment: string;
   validFrom: string;
   validUntil: string;
+  idDocumentValidUntil: string | null;
   checkInAt: string | null;
   checkOutAt: string | null;
   hostSignatureStatus: string;
@@ -577,6 +578,9 @@ export type SibeVisitRow = {
 export type AdminWorkflowSettings = {
   approvalRequired: boolean;
   backgroundMode: "image" | "subtle" | "plain";
+  backgroundImageUrl: string;
+  backgroundImageName: string | null;
+  backgroundImageOriginalFileName: string | null;
   emailRelay: {
     source: "database" | "yml";
     configPath: string | null;
@@ -637,6 +641,7 @@ const ThemeContext = createContext<{
   toggle: () => void;
   backgroundMode: "image" | "subtle" | "plain";
   setBackgroundMode: (mode: "image" | "subtle" | "plain") => void;
+  setBackgroundImageUrl: (url: string) => void;
 } | null>(null);
 
 export const BRANDING = {
@@ -689,15 +694,15 @@ export function formatStatus(status: string): string {
 export function formatSignatureStatus(status: VisitRow["hostSignatureStatus"] | string): string {
   switch (status) {
     case "pending":
-      return "Offen";
+      return "Bestätigung fehlt";
     case "signed_same_day":
-      return "Unterschrift liegt vor";
+      return "Bestätigung liegt vor";
     case "signed_later":
-      return "Wird nachgereicht";
+      return "Nachreichung offen";
     case "missing_exception":
-      return "Fehlt mit Ausnahme";
+      return "Ohne Bestätigung dokumentiert";
     case "not_required":
-      return "Nicht erforderlich";
+      return "Nicht bestätigt";
     default:
       return status;
   }
@@ -771,7 +776,7 @@ export function getNextStepHint(visit: VisitDetail): string {
       : "Nächster Schritt: Fehlende Pflichtdaten ergänzen";
   }
   if (visit.status === "checked_in") {
-    return "Nächster Schritt: Besucherausweis drucken und danach auschecken";
+    return "Nächster Schritt: Ansprechpartner-Bestätigung einholen und danach auschecken";
   }
   if (visit.status === "checked_out") {
     return "Besuch abgeschlossen";
@@ -1123,6 +1128,7 @@ export function ThemeProvider({ children }: PropsWithChildren) {
   const [backgroundMode, setBackgroundMode] = useState<"image" | "subtle" | "plain">(() => {
     return "image";
   });
+  const [backgroundImageUrl, setBackgroundImageUrl] = useState<string>(BRANDING.background);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", mode);
@@ -1134,14 +1140,19 @@ export function ThemeProvider({ children }: PropsWithChildren) {
   }, [backgroundMode]);
 
   useEffect(() => {
+    document.documentElement.style.setProperty("--body-background-source", `url("${backgroundImageUrl}")`);
+  }, [backgroundImageUrl]);
+
+  useEffect(() => {
     let active = true;
 
-    void fetchJson<{ backgroundMode: "image" | "subtle" | "plain" }>("/api/ui-settings", {
+    void fetchJson<{ backgroundMode: "image" | "subtle" | "plain"; backgroundImageUrl: string }>("/api/ui-settings", {
       method: "GET",
       headers: {}
     }).then((payload) => {
       if (!active) return;
       setBackgroundMode(payload.backgroundMode);
+      setBackgroundImageUrl(payload.backgroundImageUrl || BRANDING.background);
     }).catch(() => {
     });
 
@@ -1154,7 +1165,7 @@ export function ThemeProvider({ children }: PropsWithChildren) {
     setMode((current) => (current === "light" ? "dark" : "light"));
   }, []);
 
-  return <ThemeContext.Provider value={{ mode, toggle, backgroundMode, setBackgroundMode }}>{children}</ThemeContext.Provider>;
+  return <ThemeContext.Provider value={{ mode, toggle, backgroundMode, setBackgroundMode, setBackgroundImageUrl }}>{children}</ThemeContext.Provider>;
 }
 
 export function LoadingScreen() {

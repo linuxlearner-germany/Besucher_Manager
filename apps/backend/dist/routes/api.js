@@ -54,7 +54,8 @@ exports.apiRouter.get("/api/ui-settings", async (_request, response) => {
     try {
         const settings = await (0, systemSettings_1.loadWorkflowSettings)();
         return response.json({
-            backgroundMode: settings.backgroundMode
+            backgroundMode: settings.backgroundMode,
+            backgroundImageUrl: settings.backgroundImageUrl
         });
     }
     catch (error) {

@@ -384,6 +384,7 @@ sibeRouter.get("/api/sibe/visits", async (request, response) => {
       hostDepartment: string;
       validFrom: string;
       validUntil: string;
+      idDocumentValidUntil: string | null;
       checkInAt: string | null;
       checkOutAt: string | null;
       hostSignatureStatus: string;
@@ -402,6 +403,7 @@ sibeRouter.get("/api/sibe/visits", async (request, response) => {
         vt.host_department AS hostDepartment,
         CONVERT(NVARCHAR(30), vt.valid_from, 127) AS validFrom,
         CONVERT(NVARCHAR(30), vt.valid_until, 127) AS validUntil,
+        CONVERT(NVARCHAR(10), vis.id_document_valid_until, 23) AS idDocumentValidUntil,
         CONVERT(NVARCHAR(30), vt.check_in_at, 127) AS checkInAt,
         CONVERT(NVARCHAR(30), vt.check_out_at, 127) AS checkOutAt,
         ISNULL(vt.host_signature_status, '${HOST_SIGNATURE_STATUS.PENDING}') AS hostSignatureStatus,

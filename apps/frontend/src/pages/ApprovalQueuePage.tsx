@@ -12,6 +12,15 @@ import {
   type SibeVisitRow
 } from "../app/core";
 
+function isExpiredDocument(value: string | null): boolean {
+  if (!value) {
+    return false;
+  }
+
+  const documentValidUntil = new Date(`${value}T23:59:59.999Z`);
+  return !Number.isNaN(documentValidUntil.getTime()) && documentValidUntil < new Date();
+}
+
 export function ApprovalQueuePage() {
   const [visits, setVisits] = useState<SibeVisitRow[]>([]);
   const [summary, setSummary] = useState<SibeSummary | null>(null);
@@ -58,6 +67,7 @@ export function ApprovalQueuePage() {
   }, [loadData]);
 
   const overdueCount = useMemo(() => visits.filter((visit) => new Date(visit.validUntil) < new Date()).length, [visits]);
+  const expiredDocumentCount = useMemo(() => visits.filter((visit) => isExpiredDocument(visit.idDocumentValidUntil)).length, [visits]);
 
   async function handleDecision(visitId: string, status: "approved" | "rejected") {
     const note = approvalNotes[visitId]?.trim() || "";
@@ -108,6 +118,7 @@ export function ApprovalQueuePage() {
           <article className="panel mini-card approval-mini-card"><h3>Offen</h3><p>{summary?.approvalsPending ?? "-"}</p></article>
           <article className="panel mini-card approval-mini-card"><h3>In Liste</h3><p>{visits.length}</p></article>
           <article className="panel mini-card approval-mini-card"><h3>Überfällig</h3><p>{overdueCount}</p></article>
+          <article className="panel mini-card approval-mini-card"><h3>Ausweis abgelaufen</h3><p>{expiredDocumentCount}</p></article>
         </div>
 
         <Card className="filter-panel">
@@ -173,6 +184,7 @@ export function ApprovalQueuePage() {
                   <th>Wache</th>
                   <th>Gültig von</th>
                   <th>Gültig bis</th>
+                  <th>Warnung</th>
                   <th>Hinweis</th>
                   <th>Aktionen</th>
                 </tr>
@@ -187,6 +199,13 @@ export function ApprovalQueuePage() {
                     <td className="cell-nowrap">{visit.gateName}</td>
                     <td className="cell-nowrap">{formatDateOnly(visit.validFrom)}</td>
                     <td className="cell-nowrap">{formatDateOnly(visit.validUntil)}</td>
+                    <td>
+                      {isExpiredDocument(visit.idDocumentValidUntil) ? (
+                        <span className="feedback warning compact-feedback">Ausweis abgelaufen</span>
+                      ) : (
+                        "-"
+                      )}
+                    </td>
                     <td>
                       <input
                         className="approval-note-input"
@@ -218,7 +237,7 @@ export function ApprovalQueuePage() {
                   </tr>
                 )) : (
                   <tr>
-                    <td colSpan={9}>Keine offenen Genehmigungen gefunden.</td>
+                    <td colSpan={10}>Keine offenen Genehmigungen gefunden.</td>
                   </tr>
                 )}
               </tbody>

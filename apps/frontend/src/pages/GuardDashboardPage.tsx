@@ -289,7 +289,7 @@ export function GuardDashboardPage() {
                   <th>Ansprechpartner</th>
                   <th>Abteilung</th>
                   <th className="cell-wrap">Besuchszweck</th>
-                  <th className="cell-nowrap">Unterschrift</th>
+                  <th className="cell-nowrap">Bestätigung</th>
                   <th className="cell-nowrap">Gültig bis</th>
                   <th className="actions-cell">Aktionen</th>
                 </tr>
@@ -348,7 +348,7 @@ export function GuardDashboardPage() {
                                   checked={checkoutForm.signedByHostConfirmed}
                                   onChange={(event) => updateCheckoutState(visit.id, { signedByHostConfirmed: event.target.checked })}
                                 />
-                                Unterschrift Ansprechpartner liegt vor
+                                Ansprechpartner-Bestätigung liegt vor
                               </label>
                               <button
                                 type="button"

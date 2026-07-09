@@ -21,7 +21,7 @@ import {
   type UserPermissions
 } from "../../app/core";
 
-export type AdminSectionKey = "dashboard" | "wachen" | "benutzer" | "texte" | "karte" | "felder" | "audit" | "fehler" | "system";
+export type AdminSectionKey = "dashboard" | "wachen" | "benutzer" | "texte" | "karte" | "hintergrund" | "felder" | "audit" | "fehler" | "system";
 
 function truncateLabel(value: string, maxLength = 36): string {
   return value.length > maxLength ? `${value.slice(0, maxLength - 1)}…` : value;
@@ -54,6 +54,7 @@ export function AdminDashboardSection({
       <article className="panel mini-card"><h3>Benutzer</h3><p>{users.filter((entry) => entry.isActive).length} aktive Benutzer</p><button type="button" className="secondary-button" onClick={() => onOpenSection("benutzer")}>Öffnen</button></article>
       <article className="panel mini-card"><h3>Hinweistexte</h3><p>{texts.filter((text) => text.isActive).length} aktive Texte</p><button type="button" className="secondary-button" onClick={() => onOpenSection("texte")}>Öffnen</button></article>
       <article className="panel mini-card"><h3>Geländeplan</h3><p title={activeSiteMap?.name || "Kein aktiver Plan"}>{activeSiteMap ? truncateLabel(activeSiteMap.name) : "Kein aktiver Plan"}</p><button type="button" className="secondary-button" onClick={() => onOpenSection("karte")}>Öffnen</button></article>
+      <article className="panel mini-card"><h3>Hintergrund</h3><p>Startbild der Anwendung verwalten</p><button type="button" className="secondary-button" onClick={() => onOpenSection("hintergrund")}>Öffnen</button></article>
       <article className="panel mini-card"><h3>Feldkonfiguration</h3><p>{fieldDefinitions.filter((field) => field.isActive).length} aktive Felder</p><button type="button" className="secondary-button" onClick={() => onOpenSection("felder")}>Öffnen</button></article>
       <article className="panel mini-card"><h3>Benutzerimport</h3><p>Konten gesammelt per CSV anlegen oder aktualisieren</p><button type="button" className="secondary-button" onClick={() => onOpenSection("benutzer")}>Öffnen</button></article>
       <article className="panel mini-card"><h3>Auditlog</h3><p>{logs.length} letzte Einträge</p><button type="button" className="secondary-button" onClick={() => onOpenSection("audit")}>Öffnen</button></article>
@@ -173,7 +174,6 @@ export function AdminUsersSection({
   importUsersCsv,
   saveUser,
   toggleUserActive,
-  deleteUser,
   currentUserId
 }: {
   newUser: {
@@ -223,7 +223,6 @@ export function AdminUsersSection({
   importUsersCsv: () => Promise<void>;
   saveUser: (userId: string) => Promise<void>;
   toggleUserActive: (userId: string, active: boolean) => Promise<void>;
-  deleteUser: (userEntry: AdminUser) => Promise<void>;
   currentUserId?: string;
 }) {
   const selectedUser = selectedUserId ? editableUsers[selectedUserId] : null;
@@ -253,7 +252,7 @@ export function AdminUsersSection({
       <div className="section-header">
         <div>
           <h3>Benutzer</h3>
-          <p className="section-copy">Neue Konten kompakt anlegen und bestehende Benutzer getrennt bearbeiten.</p>
+          <p className="section-copy">Neue Konten anlegen, vorhandene Benutzer bearbeiten und bei Bedarf nur deaktivieren.</p>
         </div>
       </div>
       <div className="panel admin-user-card">
@@ -354,8 +353,8 @@ export function AdminUsersSection({
       <div className="panel admin-user-card admin-import-panel">
         <div className="table-section-header">
           <div>
-            <h4>Benutzerimport</h4>
-            <p className="section-copy">Vorlage laden, Datei auswählen und Benutzer gesammelt anlegen oder aktualisieren.</p>
+            <h4>Benutzer per CSV importieren</h4>
+            <p className="section-copy">Vorlage laden, CSV-Datei prüfen und Benutzer gesammelt anlegen oder aktualisieren.</p>
           </div>
         </div>
         <div className="import-toolbar">
@@ -393,7 +392,7 @@ export function AdminUsersSection({
         </label>
         <div className="row-actions action-bar">
           <button type="button" onClick={() => void importUsersCsv()} disabled={!userImportFile || userImporting}>
-            {userImporting ? "Import läuft..." : "Benutzer importieren"}
+            {userImporting ? "CSV wird verarbeitet..." : "CSV jetzt importieren"}
           </button>
           <button type="button" className="secondary-button" onClick={() => setUserImportFile(null)} disabled={!userImportFile || userImporting}>
             Auswahl leeren
@@ -402,14 +401,14 @@ export function AdminUsersSection({
         {!userImportFile ? <p className="section-copy">Der Import startet erst nach Dateiauswahl.</p> : null}
         {userImportSummary ? (
           <div className="import-summary-card">
-            <strong>Import erfolgreich</strong>
+            <strong>Import abgeschlossen</strong>
             <span className="section-copy">{userImportSummary.fileName}</span>
-            <span>{userImportSummary.total} Zeilen verarbeitet, {userImportSummary.created} neu, {userImportSummary.updated} aktualisiert.</span>
+            <span>{userImportSummary.total} Zeilen verarbeitet, {userImportSummary.created} neu angelegt, {userImportSummary.updated} aktualisiert.</span>
           </div>
         ) : null}
         {userImportIssues.length > 0 ? (
           <Alert type="error">
-            <strong>Importfehler</strong>
+            <strong>Import konnte nicht abgeschlossen werden</strong>
             <ul className="import-issue-list">
               {userImportIssues.map((issue, index) => (
                 <li key={`${issue.lineNumber}-${issue.username || "row"}-${index}`}>
@@ -443,8 +442,9 @@ export function AdminUsersSection({
                 <td className="actions-cell">
                   <div className="action-row admin-action-row compact-action-row">
                     <button type="button" className="secondary-button" onClick={() => setSelectedUserId(entry.id)}>Bearbeiten</button>
-                    <button className="secondary-button" type="button" onClick={() => void toggleUserActive(entry.id, entry.isActive)}>{entry.isActive ? "Deaktivieren" : "Aktivieren"}</button>
-                    <button className="danger-button" type="button" onClick={() => void deleteUser(entry)} disabled={currentUserId === entry.id}>Löschen</button>
+                    <button className={entry.isActive ? "danger-button" : "secondary-button"} type="button" onClick={() => void toggleUserActive(entry.id, entry.isActive)} disabled={currentUserId === entry.id}>
+                      {entry.isActive ? "Zugang sperren" : "Zugang freigeben"}
+                    </button>
                   </div>
                 </td>
               </tr>
@@ -581,7 +581,7 @@ export function AdminSiteMapSection({
 }) {
   return (
     <Card>
-      <h3>Geländeplan hochladen</h3>
+      <h3>Geländeplan</h3>
       <form className="site-map-upload-stack" onSubmit={uploadSiteMap}>
         <FormField label="Bezeichnung">
           <input
@@ -654,7 +654,7 @@ export function AdminSiteMapSection({
                 <span><strong>Name:</strong> {activeSiteMap.name}</span>
                 <span><strong>Datei:</strong> {activeSiteMap.originalFileName || activeSiteMap.storedFileName || "-"}</span>
                 <span><strong>Typ:</strong> {activeSiteMap.mimeType || "-"}</span>
-                <span><strong>Groesse:</strong> {formatFileSize(activeSiteMap.fileSizeBytes)}</span>
+                <span><strong>Größe:</strong> {formatFileSize(activeSiteMap.fileSizeBytes)}</span>
                 <span><strong>Hochgeladen:</strong> {formatDateTime(activeSiteMap.createdAt)}</span>
               </div>
             </>
@@ -664,7 +664,7 @@ export function AdminSiteMapSection({
         </div>
 
         <div className="site-map-history">
-          <h4>Bisherige Gelaendeplaene</h4>
+          <h4>Bisherige Geländepläne</h4>
           <DataTable>
             <thead>
               <tr>
@@ -672,7 +672,7 @@ export function AdminSiteMapSection({
                 <th>Status</th>
                 <th>Datei</th>
                 <th>Typ</th>
-                <th>Groesse</th>
+                <th>Größe</th>
                 <th>Upload</th>
                 <th>Aktion</th>
               </tr>
@@ -698,13 +698,130 @@ export function AdminSiteMapSection({
                 </tr>
               )) : (
                 <tr>
-                  <td colSpan={7}>Noch keine Gelaendeplaene vorhanden.</td>
+                  <td colSpan={7}>Noch keine Geländepläne vorhanden.</td>
                 </tr>
               )}
             </tbody>
           </DataTable>
         </div>
       </div>
+    </Card>
+  );
+}
+
+export function AdminBackgroundSection({
+  workflowSettings,
+  setWorkflowSettings,
+  saveWorkflowSettings,
+  backgroundFile,
+  backgroundFieldError,
+  backgroundPreviewUrl,
+  backgroundUploading,
+  uploadBackgroundImage,
+  handleBackgroundFileInput,
+  resetBackgroundSelection
+}: {
+  workflowSettings: AdminWorkflowSettings | null;
+  setWorkflowSettings: Dispatch<SetStateAction<AdminWorkflowSettings | null>>;
+  saveWorkflowSettings: () => Promise<void>;
+  backgroundFile: File | null;
+  backgroundFieldError: string | null;
+  backgroundPreviewUrl: string | null;
+  backgroundUploading: boolean;
+  uploadBackgroundImage: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  handleBackgroundFileInput: (event: ChangeEvent<HTMLInputElement>) => void;
+  resetBackgroundSelection: () => void;
+}) {
+  return (
+    <Card className="admin-section-stack">
+      <div className="section-header">
+        <div>
+          <h3>Hintergrundbild</h3>
+          <p className="section-copy">Dieses Bild wird für die gesamte Anwendung verwendet.</p>
+        </div>
+      </div>
+
+      <div className="panel admin-user-card">
+        <div className="form-grid two-columns">
+          <FormField label="Darstellung">
+            <select
+              value={workflowSettings?.backgroundMode ?? "image"}
+              onChange={(event) => setWorkflowSettings((current) => current ? {
+                ...current,
+                backgroundMode: event.target.value as "image" | "subtle" | "plain"
+              } : current)}
+            >
+              <option value="image">Bild voll anzeigen</option>
+              <option value="subtle">Bild dezent abdunkeln</option>
+              <option value="plain">Kein Hintergrundbild</option>
+            </select>
+          </FormField>
+          <div className="meta-list">
+            <span><strong>Aktiver Name:</strong> {workflowSettings?.backgroundImageName || "Standardhintergrund"}</span>
+            <span><strong>Datei:</strong> {workflowSettings?.backgroundImageOriginalFileName || "background.png"}</span>
+          </div>
+        </div>
+        <div className="row-actions action-bar">
+          <button type="button" onClick={() => void saveWorkflowSettings()}>Darstellung speichern</button>
+        </div>
+      </div>
+
+      <form className="panel admin-user-card" onSubmit={uploadBackgroundImage}>
+        <div className="table-section-header">
+          <div>
+            <h4>Neues Hintergrundbild hochladen</h4>
+            <p className="section-copy">PNG, JPG oder WEBP bis 10 MB. Vorhandene Dateien bleiben erhalten.</p>
+          </div>
+        </div>
+        <label className="dropzone compact-dropzone">
+          <input
+            className="visually-hidden"
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            onChange={handleBackgroundFileInput}
+          />
+          <div className="dropzone-copy">
+            <strong>Bild auswählen</strong>
+            <span>Das neue Bild wird sofort als verfügbarer Anwendungshintergrund gesetzt.</span>
+          </div>
+          {backgroundFile ? (
+            <div className="dropzone-selected">
+              <span>{backgroundFile.name}</span>
+              <span>{formatFileSize(backgroundFile.size)}</span>
+            </div>
+          ) : (
+            <div className="dropzone-selected dropzone-selected-muted">
+              <span>Keine Bilddatei ausgewählt</span>
+              <span>Nur PNG, JPG oder WEBP</span>
+            </div>
+          )}
+        </label>
+        {backgroundFieldError ? <Alert type="error">{backgroundFieldError}</Alert> : null}
+        <div className="background-preview-grid">
+          <div className="site-map-preview-card">
+            <p className="section-copy">Aktiv</p>
+            <img
+              className="admin-site-map-preview"
+              src={workflowSettings?.backgroundImageUrl || "/branding/background.png"}
+              alt={workflowSettings?.backgroundImageName || "Aktiver Hintergrund"}
+            />
+          </div>
+          {backgroundPreviewUrl ? (
+            <div className="site-map-preview-card">
+              <p className="section-copy">Neue Vorschau</p>
+              <img className="admin-site-map-preview" src={backgroundPreviewUrl} alt="Neue Hintergrundvorschau" />
+            </div>
+          ) : null}
+        </div>
+        <div className="row-actions action-bar">
+          <button type="submit" disabled={backgroundUploading || !backgroundFile}>
+            {backgroundUploading ? "Upload läuft..." : "Hintergrundbild hochladen"}
+          </button>
+          <button type="button" className="secondary-button" onClick={resetBackgroundSelection} disabled={backgroundUploading}>
+            Auswahl leeren
+          </button>
+        </div>
+      </form>
     </Card>
   );
 }
@@ -731,8 +848,6 @@ export function AdminSystemSection({
     signaturesFollowUp: number;
     signaturesExceptions: number;
     approvalsPending?: number;
-    retentionDays?: number | null;
-    retentionEnabled?: boolean;
     dbHost?: string;
     dbName?: string;
   } | null;
@@ -763,26 +878,11 @@ export function AdminSystemSection({
 
         <div className="detail-grid">
           <div><dt>Datenbank</dt><dd>{systemStatus?.dbHost || "-"} / {systemStatus?.dbName || "-"}</dd></div>
-          <div><dt>Aufbewahrung</dt><dd>{systemStatus?.retentionEnabled ? `${systemStatus?.retentionDays ?? "-"} Tage` : "deaktiviert"}</dd></div>
         </div>
 
         <div className="panel">
           <h3>SiBe-Freigabe und E-Mail-Relay</h3>
         <div className="form-grid two-columns">
-          <FormField label="Hintergrund">
-            <select
-              value={workflowSettings?.backgroundMode ?? "image"}
-              onChange={(event) => setWorkflowSettings((current) => current ? {
-                ...current,
-                backgroundMode: event.target.value as "image" | "subtle" | "plain"
-              } : current)}
-            >
-              <option value="image">Bild</option>
-              <option value="subtle">Dezent</option>
-              <option value="plain">Aus</option>
-            </select>
-          </FormField>
-          <div />
           {workflowSettings?.emailRelay.source === "yml" ? (
             <div className="detail-span-2">
               <div className="feedback info">
@@ -896,7 +996,7 @@ export function AdminSystemSection({
               } : current)}
             />
           </FormField>
-          <FormField label="SiBe-Empfaenger">
+          <FormField label="SiBe-Empfänger">
             <textarea
               rows={3}
               disabled={workflowSettings?.emailRelay.isReadOnly ?? false}

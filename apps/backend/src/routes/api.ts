@@ -61,7 +61,8 @@ apiRouter.get("/api/ui-settings", async (_request, response) => {
   try {
     const settings = await loadWorkflowSettings();
     return response.json({
-      backgroundMode: settings.backgroundMode
+      backgroundMode: settings.backgroundMode,
+      backgroundImageUrl: settings.backgroundImageUrl
     });
   } catch (error) {
     return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Oberflaecheneinstellungen konnten nicht geladen werden.");

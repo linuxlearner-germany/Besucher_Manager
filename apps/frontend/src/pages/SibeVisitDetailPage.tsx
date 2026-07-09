@@ -3,6 +3,15 @@ import { Link, useParams } from "react-router-dom";
 import { Alert } from "../components/ui";
 import { AppLayout, type ApiError, extractFieldErrors, fetchJson, formatApprovalStatus, formatDateOnly, formatDateTime, formatSignatureStatus, formatStatus, type SibeVisitDetail, useAuth } from "../app/core";
 
+function isExpiredDocument(value: string | null): boolean {
+  if (!value) {
+    return false;
+  }
+
+  const documentValidUntil = new Date(`${value}T23:59:59.999Z`);
+  return !Number.isNaN(documentValidUntil.getTime()) && documentValidUntil < new Date();
+}
+
 export function SibeVisitDetailPage() {
   const { user } = useAuth();
   const { id } = useParams();
@@ -14,6 +23,7 @@ export function SibeVisitDetailPage() {
   const [approvalNoteDraft, setApprovalNoteDraft] = useState("");
   const [savingNotes, setSavingNotes] = useState(false);
   const [savingApproval, setSavingApproval] = useState(false);
+  const documentExpired = isExpiredDocument(visit?.idDocumentValidUntil ?? null);
 
   async function loadVisit() {
     try {
@@ -137,6 +147,7 @@ export function SibeVisitDetailPage() {
                 </section>
                 <section className="form-section">
                   <h3>SiBe-Freigabe</h3>
+                  {documentExpired ? <Alert type="warning">Warnung: Das Ausweisdokument ist zum Besuchstermin abgelaufen.</Alert> : null}
                   <div className="detail-grid">
                     <div><span className="detail-label">Freigabestatus</span><strong>{formatApprovalStatus(visit.approvalStatus)}</strong></div>
                     <div><span className="detail-label">Entscheidung durch</span><strong>{visit.approvalDecidedBy || "-"}</strong></div>

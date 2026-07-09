@@ -358,14 +358,8 @@ function assertCanCheckOut(status, signature) {
     if (normalized !== exports.VISIT_STATUS.CHECKED_IN) {
         throw new Error("invalid_check_out_status");
     }
-    if (signature.status === exports.HOST_SIGNATURE_STATUS.PENDING) {
-        throw new Error("host_signature_required");
-    }
-    if (signature.status === exports.HOST_SIGNATURE_STATUS.SIGNED_LATER && !signature.signatureDate) {
-        throw new Error("host_signature_date_required");
-    }
-    if (signature.status === exports.HOST_SIGNATURE_STATUS.MISSING_EXCEPTION && !signature.note?.trim()) {
-        throw new Error("host_signature_note_required");
+    if (signature.status !== exports.HOST_SIGNATURE_STATUS.SIGNED_SAME_DAY) {
+        throw new Error("host_signature_checkout_required");
     }
 }
 function assertReturnedBadgeNumberMatches(expectedBadgeNumber, returnedBadgeNumber) {

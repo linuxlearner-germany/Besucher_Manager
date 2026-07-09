@@ -5,21 +5,18 @@ import { Alert, Card, DataTable } from "../components/ui";
 
 export function SibeDashboardPage() {
   const [summary, setSummary] = useState<SibeSummary | null>(null);
-  const [pendingApprovals, setPendingApprovals] = useState<SibeVisitRow[]>([]);
   const [recentVisits, setRecentVisits] = useState<SibeVisitRow[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadDashboard() {
       try {
-        const [summaryPayload, pendingPayload, recentPayload] = await Promise.all([
+        const [summaryPayload, recentPayload] = await Promise.all([
           fetchJson<SibeSummary>("/api/sibe/summary", { method: "GET", headers: {} }),
-          fetchJson<{ visits: SibeVisitRow[] }>("/api/sibe/visits?approvalStatus=pending&status=pre_registered", { method: "GET", headers: {} }),
           fetchJson<{ visits: SibeVisitRow[] }>("/api/sibe/visits?status=all", { method: "GET", headers: {} })
         ]);
 
         setSummary(summaryPayload);
-        setPendingApprovals(pendingPayload.visits.slice(0, 8));
         setRecentVisits(recentPayload.visits.slice(0, 24));
       } catch (apiError) {
         const errorPayload = apiError as ApiError;
@@ -63,11 +60,11 @@ export function SibeDashboardPage() {
                 <strong className="hero-stat-value">{summary?.checkedInVisitors ?? "-"}</strong>
               </div>
               <div className="hero-stat-card">
-                <span className="hero-stat-label">Unterschriften offen</span>
+                <span className="hero-stat-label">Bestätigung fehlt</span>
                 <strong className="hero-stat-value">{summary?.signaturesPending ?? "-"}</strong>
               </div>
               <div className="hero-stat-card">
-                <span className="hero-stat-label">Nachreichungen</span>
+                <span className="hero-stat-label">Vergangene offen</span>
                 <strong className="hero-stat-value">{summary?.signaturesFollowUp ?? "-"}</strong>
               </div>
               <div className="hero-stat-card">
@@ -88,48 +85,8 @@ export function SibeDashboardPage() {
           <Card>
             <div className="section-header">
               <div>
-                <h3>Offene Freigaben</h3>
-                <p className="section-copy">Die wichtigsten offenen Voranmeldungen direkt im Zugriff.</p>
-              </div>
-              <Link className="button-link" to="/genehmigungen">Genehmigungen öffnen</Link>
-            </div>
-            <DataTable>
-              <thead>
-                <tr>
-                  <th>Besucher</th>
-                  <th>Firma</th>
-                  <th>Ansprechpartner</th>
-                  <th>Wache</th>
-                  <th>Gültig von</th>
-                  <th>Aktion</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pendingApprovals.length > 0 ? pendingApprovals.map((visit) => (
-                  <tr key={visit.id}>
-                    <td>{visit.visitorName}</td>
-                    <td>{visit.company}</td>
-                    <td>{visit.hostName}</td>
-                    <td>{visit.gateName}</td>
-                    <td>{formatDateTime(visit.validFrom)}</td>
-                    <td>
-                      <Link className="button-link" to={`/sibe/besucher/${visit.id}`}>Prüfen</Link>
-                    </td>
-                  </tr>
-                )) : (
-                  <tr>
-                    <td colSpan={6}>Keine offenen Freigaben vorhanden.</td>
-                  </tr>
-                )}
-              </tbody>
-            </DataTable>
-          </Card>
-
-          <Card>
-            <div className="section-header">
-              <div>
-                <h3>Nachreichungen und Unterschriften</h3>
-                <p className="section-copy">Einträge mit offener oder nachgereichter Ansprechpartner-Unterschrift.</p>
+                <h3>Besuche ohne Ansprechpartner-Bestätigung</h3>
+                <p className="section-copy">Vergangene oder laufende Besuche, bei denen die Bestätigung noch fehlt.</p>
               </div>
               <Link className="button-link" to="/sibe/besucher">Besucherübersicht</Link>
             </div>
@@ -139,7 +96,7 @@ export function SibeDashboardPage() {
                   <th>Besucher</th>
                   <th>Firma</th>
                   <th>Status</th>
-                  <th>Unterschrift</th>
+                  <th>Bestätigung</th>
                   <th>Gültig bis</th>
                   <th>Aktion</th>
                 </tr>

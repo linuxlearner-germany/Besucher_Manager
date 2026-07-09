@@ -386,7 +386,7 @@ export function VisitDetailPage() {
                     <div><span className="detail-label">Eingecheckt durch</span><strong>{visit.checkInBy || "-"}</strong></div>
                     <div><span className="detail-label">Ausgecheckt am</span><strong>{formatDateTime(visit.checkOutAt)}</strong></div>
                     <div><span className="detail-label">Ausgecheckt durch</span><strong>{visit.checkOutBy || "-"}</strong></div>
-                    <div><span className="detail-label">Unterschrift erledigt</span><strong>{visit.signedByHostConfirmed ? "Ja" : "Nein"}</strong></div>
+                    <div><span className="detail-label">Ansprechpartner-Bestätigung</span><strong>{visit.signedByHostConfirmed ? "Vorhanden" : "Fehlt"}</strong></div>
                   </div>
                 </Card>
 
@@ -424,7 +424,7 @@ export function VisitDetailPage() {
                         checked={checkoutState.signedByHostConfirmed}
                         onChange={(event) => setCheckoutState((current) => ({ ...current, signedByHostConfirmed: event.target.checked }))}
                       />
-                      Unterschrift vom Ansprechpartner erledigt
+                      Ansprechpartner-Bestätigung liegt vor
                     </label>
                   </div>
                   <div className="row-actions">

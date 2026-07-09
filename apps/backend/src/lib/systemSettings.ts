@@ -12,12 +12,18 @@ export const WORKFLOW_SETTING_KEYS = {
   relayPassword: "mail_relay_password",
   relayFrom: "mail_relay_from",
   relayApprovalTo: "mail_relay_approval_to",
-  uiBackgroundMode: "ui_background_mode"
+  uiBackgroundMode: "ui_background_mode",
+  uiBackgroundImageUrl: "ui_background_image_url",
+  uiBackgroundImageName: "ui_background_image_name",
+  uiBackgroundImageOriginalFileName: "ui_background_image_original_file_name"
 } as const;
 
 export type WorkflowSettings = {
   approvalRequired: boolean;
   backgroundMode: "image" | "subtle" | "plain";
+  backgroundImageUrl: string;
+  backgroundImageName: string | null;
+  backgroundImageOriginalFileName: string | null;
   emailRelay: {
     source: "database" | "yml";
     configPath: string | null;
@@ -126,6 +132,9 @@ export async function loadWorkflowSettings(options?: {
     return {
       approvalRequired: toBoolean(settingMap.get(WORKFLOW_SETTING_KEYS.approvalRequired), true),
       backgroundMode: toBackgroundMode(settingMap.get(WORKFLOW_SETTING_KEYS.uiBackgroundMode), "image"),
+      backgroundImageUrl: settingMap.get(WORKFLOW_SETTING_KEYS.uiBackgroundImageUrl)?.trim() || "/branding/background.png",
+      backgroundImageName: settingMap.get(WORKFLOW_SETTING_KEYS.uiBackgroundImageName)?.trim() || null,
+      backgroundImageOriginalFileName: settingMap.get(WORKFLOW_SETTING_KEYS.uiBackgroundImageOriginalFileName)?.trim() || null,
       emailRelay: {
         source: "yml",
         configPath: fileRelayConfig.configPath,
@@ -146,6 +155,9 @@ export async function loadWorkflowSettings(options?: {
   return {
     approvalRequired: toBoolean(settingMap.get(WORKFLOW_SETTING_KEYS.approvalRequired), true),
     backgroundMode: toBackgroundMode(settingMap.get(WORKFLOW_SETTING_KEYS.uiBackgroundMode), "image"),
+    backgroundImageUrl: settingMap.get(WORKFLOW_SETTING_KEYS.uiBackgroundImageUrl)?.trim() || "/branding/background.png",
+    backgroundImageName: settingMap.get(WORKFLOW_SETTING_KEYS.uiBackgroundImageName)?.trim() || null,
+    backgroundImageOriginalFileName: settingMap.get(WORKFLOW_SETTING_KEYS.uiBackgroundImageOriginalFileName)?.trim() || null,
     emailRelay: {
       source: "database",
       configPath: null,

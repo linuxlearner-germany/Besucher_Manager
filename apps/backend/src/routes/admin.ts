@@ -245,6 +245,68 @@ const userCsvUpload = multer({
   }
 });
 
+const UI_BACKGROUND_UPLOAD_SUBDIRECTORY = "ui-backgrounds";
+
+function buildStoredUiBackgroundFileName(extension: string): string {
+  return `ui-background-${Date.now()}-${crypto.randomUUID()}${extension}`;
+}
+
+function buildUiBackgroundPublicPath(storedFileName: string): string {
+  return `/uploads/${UI_BACKGROUND_UPLOAD_SUBDIRECTORY}/${storedFileName}`;
+}
+
+async function ensureUiBackgroundUploadDirectory(): Promise<string> {
+  const uploadDirectory = path.join(env.uploadDir, UI_BACKGROUND_UPLOAD_SUBDIRECTORY);
+  await fs.mkdir(uploadDirectory, { recursive: true });
+  return uploadDirectory;
+}
+
+async function parseSingleUiBackgroundUpload(request: Request, response: Response): Promise<Express.Multer.File | null> {
+  return await new Promise((resolve) => {
+    siteMapUpload.array("file", 1)(request, response, (error) => {
+      if (!error) {
+        const files = request.files;
+        if (!Array.isArray(files) || files.length === 0) {
+          sendValidationError(response, { fieldErrors: { file: ["Bitte wählen Sie eine Bilddatei aus."] } });
+          return resolve(null);
+        }
+
+        if (files.length > 1) {
+          sendValidationError(response, { fieldErrors: { file: ["Bitte nur eine Bilddatei hochladen."] } });
+          return resolve(null);
+        }
+
+        return resolve(files[0]);
+      }
+
+      if (error instanceof MulterError) {
+        if (error.code === "LIMIT_FILE_SIZE") {
+          sendError(response, 400, "FILE_TOO_LARGE", "Die Bilddatei ist größer als 10 MB.");
+          return resolve(null);
+        }
+
+        if (error.code === "LIMIT_FILE_COUNT" || error.code === "LIMIT_UNEXPECTED_FILE") {
+          sendValidationError(response, { fieldErrors: { file: ["Bitte nur eine Bilddatei hochladen."] } });
+          return resolve(null);
+        }
+      }
+
+      if (error instanceof Error && error.message === "invalid_site_map_file") {
+        sendValidationError(response, {
+          fieldErrors: {
+            file: ["Erlaubt sind nur PNG-, JPG- und WEBP-Dateien."]
+          }
+        });
+        return resolve(null);
+      }
+
+      console.error(error);
+      sendError(response, 500, "UPLOAD_ERROR", "Die Bilddatei konnte nicht verarbeitet werden.");
+      return resolve(null);
+    });
+  });
+}
+
 type UserImportIssue = {
   lineNumber: number;
   username: string | null;
@@ -266,6 +328,15 @@ function parseBooleanText(value: string | undefined, fallback: boolean): boolean
   }
 
   return fallback;
+}
+
+function isRecognizedBooleanText(value: string | undefined): boolean {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) {
+    return true;
+  }
+
+  return ["1", "true", "ja", "yes", "aktiv", "0", "false", "nein", "no", "inaktiv"].includes(normalized);
 }
 
 function splitMultiValueField(value: string): string[] {
@@ -810,11 +881,11 @@ adminRouter.post("/api/admin/users/import-csv", async (request, response) => {
     const file = request.file;
 
     if (!file) {
-      return sendValidationError(response, { fieldErrors: { file: ["Bitte eine CSV-Datei auswaehlen."] } });
+      return sendValidationError(response, { fieldErrors: { file: ["Bitte eine CSV-Datei auswählen."] } });
     }
 
     if (!file.originalname.toLowerCase().endsWith(".csv")) {
-      return sendValidationError(response, { fieldErrors: { file: ["Es werden nur CSV-Dateien unterstuetzt."] } });
+      return sendValidationError(response, { fieldErrors: { file: ["Es werden nur CSV-Dateien unterstützt."] } });
     }
 
     let rows: UserCsvImportRawRow[];
@@ -822,7 +893,7 @@ adminRouter.post("/api/admin/users/import-csv", async (request, response) => {
       rows = parseUserImportCsv(file.buffer);
     } catch (parseError) {
       if (parseError instanceof Error && parseError.message === "user_import_missing_headers") {
-        return sendValidationError(response, {
+      return sendValidationError(response, {
           fieldErrors: {
             file: ["Pflichtspalten fehlen. Erwartet werden mindestens username und role."]
           }
@@ -861,7 +932,7 @@ adminRouter.post("/api/admin/users/import-csv", async (request, response) => {
         FROM dbo.users
       `);
 
-      const existingUsersByUsername = new Map(existingUsersResult.recordset.map((entry) => [entry.username.toLowerCase(), entry]));
+      const existingUsersByUsername = new Map(existingUsersResult.recordset.map((entry) => [entry.username.trim().toLowerCase(), entry]));
       const { groupsByUserId, menuAccessByUserId } = await loadUserGroupsAndMenuAccess(existingUsersResult.recordset.map((entry) => entry.id));
       const issues: UserImportIssue[] = [];
       const seenUsernames = new Set<string>();
@@ -873,7 +944,7 @@ adminRouter.post("/api/admin/users/import-csv", async (request, response) => {
 
       for (const row of rows) {
         const username = row.username.trim();
-        const role = row.role.trim() as AuthenticatedUser["role"];
+        const role = row.role.trim().toLowerCase() as AuthenticatedUser["role"];
         const normalizedUserName = username.toLowerCase();
         const existingUser = existingUsersByUsername.get(normalizedUserName);
 
@@ -889,7 +960,12 @@ adminRouter.post("/api/admin/users/import-csv", async (request, response) => {
         seenUsernames.add(normalizedUserName);
 
         if (!["admin", "guard", "sibe", "kaskdt", "custom"].includes(role)) {
-          issues.push({ lineNumber: row.lineNumber, username, message: "Rolle ist ungueltig." });
+          issues.push({ lineNumber: row.lineNumber, username, message: "Rolle ist ungültig." });
+          continue;
+        }
+
+        if (!isRecognizedBooleanText(row.isActive)) {
+          issues.push({ lineNumber: row.lineNumber, username, message: "Status ist ungültig. Erlaubt sind aktiv, inaktiv, true, false, ja oder nein." });
           continue;
         }
 
@@ -905,7 +981,12 @@ adminRouter.post("/api/admin/users/import-csv", async (request, response) => {
           : (row.email.trim().toLowerCase() || existingUser?.email?.trim().toLowerCase() || null);
 
         if (role !== "guard" && !nextEmail) {
-          issues.push({ lineNumber: row.lineNumber, username, message: "Fuer diese Rolle ist eine E-Mail-Adresse erforderlich." });
+          issues.push({ lineNumber: row.lineNumber, username, message: "Für diese Rolle ist eine E-Mail-Adresse erforderlich." });
+          continue;
+        }
+
+        if (nextEmail && !z.string().email().safeParse(nextEmail).success) {
+          issues.push({ lineNumber: row.lineNumber, username, message: "E-Mail-Adresse ist ungültig." });
           continue;
         }
 
@@ -916,7 +997,7 @@ adminRouter.post("/api/admin/users/import-csv", async (request, response) => {
         }
 
         if (nextPassword && nextPassword.length < 8) {
-          issues.push({ lineNumber: row.lineNumber, username, message: "Passwort ist kuerzer als 8 Zeichen." });
+          issues.push({ lineNumber: row.lineNumber, username, message: "Passwort ist kürzer als 8 Zeichen." });
           continue;
         }
 
@@ -932,7 +1013,7 @@ adminRouter.post("/api/admin/users/import-csv", async (request, response) => {
           issues.push({
             lineNumber: row.lineNumber,
             username,
-            message: `Ungueltige Menuezugriffe fuer Rolle ${role}: ${invalidMenuAccess.join(", ")}`
+            message: `Ungültige Menüzugriffe für Rolle ${role}: ${invalidMenuAccess.join(", ")}`
           });
           continue;
         }
@@ -948,7 +1029,7 @@ adminRouter.post("/api/admin/users/import-csv", async (request, response) => {
       }
 
       if (issues.length > 0) {
-        return sendError(response, 400, "VALIDATION_ERROR", "Die CSV-Datei enthaelt fehlerhafte Benutzerzeilen.", {
+        return sendError(response, 400, "VALIDATION_ERROR", "Die CSV-Datei enthält fehlerhafte Benutzerzeilen.", {
           errors: issues
         });
       }
@@ -962,7 +1043,7 @@ adminRouter.post("/api/admin/users/import-csv", async (request, response) => {
       for (const row of rows) {
         const username = row.username.trim();
         const normalizedUserName = username.toLowerCase();
-        const role = row.role.trim() as AuthenticatedUser["role"];
+        const role = row.role.trim().toLowerCase() as AuthenticatedUser["role"];
         const existingUser = existingUsersByUsername.get(normalizedUserName);
         const requestedMenuAccess = row.menuAccess.trim()
           ? splitMultiValueField(row.menuAccess).map((entry) => entry as AppMenuKey)
@@ -1064,7 +1145,7 @@ adminRouter.post("/api/admin/users/import-csv", async (request, response) => {
         created,
         updated,
         total: rows.length,
-        message: `${rows.length} Benutzer verarbeitet. ${created} neu, ${updated} aktualisiert.`
+        message: `Import abgeschlossen: ${rows.length} Benutzer verarbeitet, ${created} neu angelegt, ${updated} aktualisiert.`
       });
     } catch (importError) {
       return handleUnexpectedError(response, importError, "USER_IMPORT_FAILED", "Der Benutzerimport konnte nicht verarbeitet werden.");
@@ -1337,7 +1418,7 @@ adminRouter.delete("/api/admin/users/:id", async (request, response) => {
   if (!admin) return;
 
   if (admin.id === request.params.id) {
-    return sendError(response, 409, "VALIDATION_ERROR", "Der aktuell angemeldete Admin kann sich nicht selbst loeschen.");
+    return sendError(response, 409, "VALIDATION_ERROR", "Der aktuell angemeldete Admin kann sich nicht selbst deaktivieren.");
   }
 
   try {
@@ -1359,62 +1440,42 @@ adminRouter.delete("/api/admin/users/:id", async (request, response) => {
     }
 
     const references = await countUserReferences(pool, request.params.id);
-
-    if (references.length > 0) {
-      await pool.request()
-        .input("id", sql.UniqueIdentifier, request.params.id)
-        .input("deactivatedBy", sql.UniqueIdentifier, admin.id)
-        .query(`
-          UPDATE dbo.users
-          SET
-            is_active = 0,
-            deactivated_at = COALESCE(deactivated_at, SYSUTCDATETIME()),
-            deactivated_by = COALESCE(deactivated_by, @deactivatedBy),
-            updated_at = SYSUTCDATETIME()
-          WHERE id = @id
-        `);
-
-      await writeAuditLog({
-        user: admin.username,
-        userId: admin.id,
-        action: "USER_DELETE_SOFT_DEACTIVATED",
-        objectType: "user",
-        objectId: request.params.id,
-        ipAddress: getRequestIp(request),
-        metadata: { username: target.username, references }
-      });
-
-      return response.json({
-        success: true,
-        deleted: false,
-        softDeleted: true,
-        references,
-        message: "Benutzer ist mit historischen Daten verknuepft und wurde deshalb deaktiviert."
-      });
-    }
+    await pool.request()
+      .input("id", sql.UniqueIdentifier, request.params.id)
+      .input("deactivatedBy", sql.UniqueIdentifier, admin.id)
+      .query(`
+        UPDATE dbo.users
+        SET
+          is_active = 0,
+          deactivated_at = COALESCE(deactivated_at, SYSUTCDATETIME()),
+          deactivated_by = COALESCE(deactivated_by, @deactivatedBy),
+          updated_at = SYSUTCDATETIME()
+        WHERE id = @id
+      `);
 
     await writeAuditLog({
       user: admin.username,
       userId: admin.id,
-      action: "USER_DELETED",
+      action: "USER_DEACTIVATED",
       objectType: "user",
       objectId: request.params.id,
       ipAddress: getRequestIp(request),
-      metadata: { username: target.username, role: target.role }
+      metadata: {
+        username: target.username,
+        role: target.role,
+        references
+      }
     });
-
-    await pool.request()
-      .input("id", sql.UniqueIdentifier, request.params.id)
-      .query("DELETE FROM dbo.users WHERE id = @id");
 
     return response.json({
       success: true,
-      deleted: true,
-      softDeleted: false,
-      message: "Benutzer wurde geloescht."
+      deleted: false,
+      softDeleted: true,
+      references,
+      message: "Benutzer wurde deaktiviert. Daten bleiben erhalten."
     });
   } catch (error) {
-    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der Benutzer konnte nicht geloescht werden.");
+    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der Benutzer konnte nicht deaktiviert werden.");
   }
 });
 
@@ -1625,6 +1686,63 @@ adminRouter.post("/api/admin/site-map/upload", async (request, response) => {
   } catch (error) {
     await fs.rm(targetPath, { force: true }).catch(() => undefined);
     return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der Geländeplan konnte nicht hochgeladen werden.");
+  }
+});
+
+adminRouter.post("/api/admin/ui-background/upload", async (request, response) => {
+  const user = await requirePermission(request, response, "admin.system");
+  if (!user) return;
+
+  const file = await parseSingleUiBackgroundUpload(request, response);
+  if (!file) return;
+
+  const parsed = siteMapUploadNameSchema.safeParse(request.body);
+  if (!parsed.success) return sendValidationError(response, parsed.error.flatten());
+
+  const extension = getNormalizedExtension(file.originalname);
+  if (!extension || !isAllowedSiteMapExtension(extension) || !isAllowedSiteMapMimeType(file.mimetype)) {
+    return sendValidationError(response, { fieldErrors: { file: ["Erlaubt sind nur PNG-, JPG- und WEBP-Dateien."] } });
+  }
+
+  const storedFileName = buildStoredUiBackgroundFileName(extension);
+  const filePath = buildUiBackgroundPublicPath(storedFileName);
+  const uploadDirectory = await ensureUiBackgroundUploadDirectory();
+  const targetPath = path.join(uploadDirectory, storedFileName);
+
+  try {
+    await fs.writeFile(targetPath, file.buffer);
+    await upsertSystemSettings({
+      [WORKFLOW_SETTING_KEYS.uiBackgroundImageUrl]: filePath,
+      [WORKFLOW_SETTING_KEYS.uiBackgroundImageName]: parsed.data.name || path.basename(file.originalname, path.extname(file.originalname)),
+      [WORKFLOW_SETTING_KEYS.uiBackgroundImageOriginalFileName]: file.originalname
+    });
+
+    await writeAuditLog({
+      user: user.username,
+      userId: user.id,
+      action: "UI_BACKGROUND_UPDATED",
+      objectType: "system_setting",
+      objectId: "ui_background_image",
+      ipAddress: getRequestIp(request),
+      userAgent: getRequestUserAgent(request),
+      metadata: {
+        file_path: filePath,
+        original_file_name: file.originalname,
+        stored_file_name: storedFileName,
+        mime_type: file.mimetype,
+        file_size_bytes: file.size
+      }
+    });
+
+    return response.status(201).json({
+      success: true,
+      backgroundImageUrl: filePath,
+      backgroundImageName: parsed.data.name || path.basename(file.originalname, path.extname(file.originalname)),
+      backgroundImageOriginalFileName: file.originalname
+    });
+  } catch (error) {
+    await fs.rm(targetPath, { force: true }).catch(() => undefined);
+    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Das Hintergrundbild konnte nicht hochgeladen werden.");
   }
 });
 
@@ -1930,6 +2048,9 @@ adminRouter.get("/api/admin/system-settings/workflow-email", async (request, res
     return response.json({
       approvalRequired: settings.approvalRequired,
       backgroundMode: settings.backgroundMode,
+      backgroundImageUrl: settings.backgroundImageUrl,
+      backgroundImageName: settings.backgroundImageName,
+      backgroundImageOriginalFileName: settings.backgroundImageOriginalFileName,
       emailRelay: {
         source: settings.emailRelay.source,
         configPath: settings.emailRelay.configPath,
@@ -2054,38 +2175,12 @@ adminRouter.post("/api/admin/system-settings/workflow-email/test", async (reques
 adminRouter.put("/api/admin/system-settings/retention", async (request, response) => {
   const user = await requirePermission(request, response, "admin.system");
   if (!user) return;
-  const parsed = retentionSettingsSchema.safeParse(request.body);
-  if (!parsed.success) return sendValidationError(response, parsed.error.flatten());
-
-  const settingValue = parsed.data.enabled ? String(parsed.data.days ?? env.VISITOR_RETENTION_DAYS) : "disabled";
-
-  try {
-    const pool = await getPool();
-    await pool.request()
-      .input("key", sql.NVarChar(120), "visitor_retention_days")
-      .input("value", sql.NVarChar(sql.MAX), settingValue)
-      .query(`
-        MERGE dbo.system_settings AS target
-        USING (SELECT @key AS [key], @value AS [value]) AS source
-        ON target.[key] = source.[key]
-        WHEN MATCHED THEN
-          UPDATE SET [value] = source.[value], updated_at = SYSUTCDATETIME()
-        WHEN NOT MATCHED THEN
-          INSERT ([key], [value], description) VALUES (source.[key], source.[value], 'Retention in days for visit cleanup');
-      `);
-
-    await writeAuditLog({
-      user: user.username,
-      action: "SYSTEM_SETTING_UPDATED",
-      objectType: "system_setting",
-      objectId: "visitor_retention_days",
-      ipAddress: getRequestIp(request)
-    });
-
-    return response.json({ success: true, retentionValue: settingValue });
-  } catch (error) {
-    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Aufbewahrungseinstellung konnte nicht gespeichert werden.");
-  }
+  return sendError(
+    response,
+    410,
+    "RETENTION_DISABLED",
+    "Die Aufbewahrung wird nicht über die Anwendung gesteuert. Daten bleiben erhalten und werden nur direkt in der SQL-Datenbank gelöscht."
+  );
 });
 
 adminRouter.post("/api/admin/visitors/:id/archive", async (request, response) => {
@@ -2127,63 +2222,10 @@ adminRouter.post("/api/admin/visitors/:id/archive", async (request, response) =>
 adminRouter.post("/api/admin/retention/cleanup", async (request, response) => {
   const user = await requirePermission(request, response, "admin.system");
   if (!user) return;
-
-  try {
-    const pool = await getPool();
-    const retention = await getRetentionSettings();
-    if (!retention.enabled || !retention.days) {
-      return response.json({
-        success: true,
-        deletedCount: 0
-      });
-    }
-    const cancelled = await pool.request()
-      .input("retentionDays", sql.Int, retention.days)
-      .input("cancelledBy", sql.UniqueIdentifier, user.id)
-      .query(`
-        UPDATE dbo.visits
-        SET
-          status = CASE WHEN status IN ('${VISIT_STATUS.CHECKED_OUT}', '${VISIT_STATUS.CANCELLED}') THEN status ELSE '${VISIT_STATUS.CANCELLED}' END,
-          cancelled_at = CASE WHEN cancelled_at IS NULL THEN SYSUTCDATETIME() ELSE cancelled_at END,
-          cancelled_by = CASE WHEN cancelled_by IS NULL THEN @cancelledBy ELSE cancelled_by END,
-          cancel_reason = CASE WHEN cancel_reason IS NULL AND status <> '${VISIT_STATUS.CHECKED_OUT}' THEN 'Retention cleanup' ELSE cancel_reason END,
-          updated_at = SYSUTCDATETIME()
-        WHERE created_at < DATEADD(day, -@retentionDays, SYSUTCDATETIME())
-      `);
-
-    await pool.request()
-      .input("retentionDays", sql.Int, retention.days)
-      .input("deletedBy", sql.UniqueIdentifier, user.id)
-      .query(`
-        UPDATE dbo.visitors
-        SET
-          is_deleted = 1,
-          archived_at = COALESCE(archived_at, SYSUTCDATETIME()),
-          deleted_at = COALESCE(deleted_at, SYSUTCDATETIME()),
-          deleted_by = COALESCE(deleted_by, @deletedBy),
-          is_active = 0,
-          updated_at = SYSUTCDATETIME()
-        WHERE id IN (
-          SELECT DISTINCT visitor_id
-          FROM dbo.visits
-          WHERE created_at < DATEADD(day, -@retentionDays, SYSUTCDATETIME())
-        )
-      `);
-
-    await writeAuditLog({
-      user: user.username,
-      userId: user.id,
-      action: "SYSTEM_RETENTION_CLEANUP",
-      objectType: "visit",
-      objectId: "bulk",
-      ipAddress: getRequestIp(request)
-    });
-
-    return response.json({
-      success: true,
-      deletedCount: cancelled.rowsAffected[0] ?? 0
-    });
-  } catch (error) {
-    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Bereinigung konnte nicht ausgefuehrt werden.");
-  }
+  return sendError(
+    response,
+    410,
+    "RETENTION_DISABLED",
+    "Die Bereinigung über die Anwendung ist deaktiviert. Löschungen erfolgen ausschließlich direkt in der SQL-Datenbank."
+  );
 });

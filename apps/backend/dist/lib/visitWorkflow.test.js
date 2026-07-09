@@ -33,13 +33,10 @@ function makeUser(role, gateId) {
     strict_1.default.doesNotThrow(() => (0, visitWorkflow_1.assertCanCheckOut)(visitWorkflow_1.VISIT_STATUS.CHECKED_IN, { status: visitWorkflow_1.HOST_SIGNATURE_STATUS.SIGNED_SAME_DAY }));
     strict_1.default.throws(() => (0, visitWorkflow_1.assertCanCheckOut)(visitWorkflow_1.VISIT_STATUS.PRE_REGISTERED, { status: visitWorkflow_1.HOST_SIGNATURE_STATUS.SIGNED_SAME_DAY }));
 });
-(0, node_test_1.default)("check-out requires signature date for signed_later", () => {
+(0, node_test_1.default)("check-out blocks any missing or deferred host confirmation", () => {
     strict_1.default.throws(() => (0, visitWorkflow_1.assertCanCheckOut)(visitWorkflow_1.VISIT_STATUS.CHECKED_IN, { status: visitWorkflow_1.HOST_SIGNATURE_STATUS.SIGNED_LATER }));
-    strict_1.default.doesNotThrow(() => (0, visitWorkflow_1.assertCanCheckOut)(visitWorkflow_1.VISIT_STATUS.CHECKED_IN, { status: visitWorkflow_1.HOST_SIGNATURE_STATUS.SIGNED_LATER, signatureDate: "2026-05-22" }));
-});
-(0, node_test_1.default)("check-out requires note for missing exception", () => {
     strict_1.default.throws(() => (0, visitWorkflow_1.assertCanCheckOut)(visitWorkflow_1.VISIT_STATUS.CHECKED_IN, { status: visitWorkflow_1.HOST_SIGNATURE_STATUS.MISSING_EXCEPTION }));
-    strict_1.default.doesNotThrow(() => (0, visitWorkflow_1.assertCanCheckOut)(visitWorkflow_1.VISIT_STATUS.CHECKED_IN, { status: visitWorkflow_1.HOST_SIGNATURE_STATUS.MISSING_EXCEPTION, note: "Ausnahme an Tor abgestimmt" }));
+    strict_1.default.throws(() => (0, visitWorkflow_1.assertCanCheckOut)(visitWorkflow_1.VISIT_STATUS.CHECKED_IN, { status: visitWorkflow_1.HOST_SIGNATURE_STATUS.NOT_REQUIRED }));
 });
 (0, node_test_1.default)("check-out requires matching returned badge number", () => {
     strict_1.default.doesNotThrow(() => (0, visitWorkflow_1.assertReturnedBadgeNumberMatches)("B-2026-000123", "B-2026-000123"));

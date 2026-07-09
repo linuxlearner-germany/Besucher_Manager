@@ -103,8 +103,8 @@ export function CommanderDashboardPage() {
               <div className="hero-stat-card"><span className="hero-stat-label">Aktuell eingecheckt</span><strong className="hero-stat-value">{summary?.checkedInVisitors ?? "-"}</strong></div>
               <div className="hero-stat-card"><span className="hero-stat-label">Vorangemeldet heute</span><strong className="hero-stat-value">{preRegisteredToday}</strong></div>
               <div className="hero-stat-card"><span className="hero-stat-label">Ausgecheckt heute</span><strong className="hero-stat-value">{checkedOutToday}</strong></div>
-              <div className="hero-stat-card"><span className="hero-stat-label">Unterschriften offen</span><strong className="hero-stat-value">{summary?.signaturesPending ?? "-"}</strong></div>
-              <div className="hero-stat-card"><span className="hero-stat-label">Nachreichungen</span><strong className="hero-stat-value">{summary?.signaturesFollowUp ?? "-"}</strong></div>
+              <div className="hero-stat-card"><span className="hero-stat-label">Bestätigung fehlt</span><strong className="hero-stat-value">{summary?.signaturesPending ?? "-"}</strong></div>
+              <div className="hero-stat-card"><span className="hero-stat-label">Vergangene offen</span><strong className="hero-stat-value">{summary?.signaturesFollowUp ?? "-"}</strong></div>
               <div className="hero-stat-card"><span className="hero-stat-label">Ausnahmen</span><strong className="hero-stat-value">{summary?.signaturesExceptions ?? "-"}</strong></div>
               <div className="hero-stat-card"><span className="hero-stat-label">Freigaben offen</span><strong className="hero-stat-value">{summary?.approvalsPending ?? "-"}</strong></div>
             </div>
@@ -156,7 +156,7 @@ export function CommanderDashboardPage() {
           <Card>
             <div className="section-header">
               <div>
-                <h3>Offene Nachreichungen / Unterschriften</h3>
+                <h3>Besuche ohne Ansprechpartner-Bestätigung</h3>
               </div>
               <Link className="button-link" to="/kaskdt/besucher">Besucherübersicht öffnen</Link>
             </div>
@@ -166,7 +166,7 @@ export function CommanderDashboardPage() {
                   <th>Besucher</th>
                   <th>Firma</th>
                   <th>Status</th>
-                  <th>Unterschrift</th>
+                  <th>Bestätigung</th>
                   <th>Gültig bis</th>
                   <th>Aktion</th>
                 </tr>

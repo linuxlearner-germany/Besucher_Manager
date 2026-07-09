@@ -716,7 +716,7 @@ async function checkOutVisit(user, visitId, returnedBadgeNumber, signature, chec
         SET
           status = '${visitWorkflow_1.VISIT_STATUS.CHECKED_OUT}',
           check_out_at = SYSUTCDATETIME(),
-          signed_by_host_confirmed = CASE WHEN @signatureStatus IN ('signed_same_day', 'signed_later') THEN 1 ELSE 0 END,
+          signed_by_host_confirmed = CASE WHEN @signatureStatus = 'signed_same_day' THEN 1 ELSE 0 END,
           host_signature_status = @signatureStatus,
           host_signature_date = @signatureDate,
           host_signature_note = @signatureNote,
@@ -786,7 +786,7 @@ async function updateHostSignatureForGuard(user, visitId, signature, ipAddress, 
             .query(`
         UPDATE dbo.visits
         SET
-          signed_by_host_confirmed = CASE WHEN @signatureStatus IN ('signed_same_day', 'signed_later') THEN 1 ELSE 0 END,
+          signed_by_host_confirmed = CASE WHEN @signatureStatus = 'signed_same_day' THEN 1 ELSE 0 END,
           host_signature_status = @signatureStatus,
           host_signature_date = @signatureDate,
           host_signature_note = @signatureNote,

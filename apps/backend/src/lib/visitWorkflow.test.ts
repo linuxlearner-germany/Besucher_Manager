@@ -47,14 +47,10 @@ test("check-out requires host signature confirmation", () => {
   assert.throws(() => assertCanCheckOut(VISIT_STATUS.PRE_REGISTERED, { status: HOST_SIGNATURE_STATUS.SIGNED_SAME_DAY }));
 });
 
-test("check-out requires signature date for signed_later", () => {
+test("check-out blocks any missing or deferred host confirmation", () => {
   assert.throws(() => assertCanCheckOut(VISIT_STATUS.CHECKED_IN, { status: HOST_SIGNATURE_STATUS.SIGNED_LATER }));
-  assert.doesNotThrow(() => assertCanCheckOut(VISIT_STATUS.CHECKED_IN, { status: HOST_SIGNATURE_STATUS.SIGNED_LATER, signatureDate: "2026-05-22" }));
-});
-
-test("check-out requires note for missing exception", () => {
   assert.throws(() => assertCanCheckOut(VISIT_STATUS.CHECKED_IN, { status: HOST_SIGNATURE_STATUS.MISSING_EXCEPTION }));
-  assert.doesNotThrow(() => assertCanCheckOut(VISIT_STATUS.CHECKED_IN, { status: HOST_SIGNATURE_STATUS.MISSING_EXCEPTION, note: "Ausnahme an Tor abgestimmt" }));
+  assert.throws(() => assertCanCheckOut(VISIT_STATUS.CHECKED_IN, { status: HOST_SIGNATURE_STATUS.NOT_REQUIRED }));
 });
 
 test("check-out requires matching returned badge number", () => {

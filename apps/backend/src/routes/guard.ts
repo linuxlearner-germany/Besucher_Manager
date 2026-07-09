@@ -33,7 +33,7 @@ const hostSignatureStatusSchema = z.enum([
 ]);
 const checkOutSchema = z.object({
   signed_by_host_confirmed: z.literal(true, {
-    errorMap: () => ({ message: "Bitte bestätigen Sie die Ansprechpartner-Unterschrift." })
+    errorMap: () => ({ message: "Bitte bestätigen Sie die Ansprechpartner-Bestätigung vor dem Check-out." })
   }),
   returned_badge_number: z.string().trim().min(1, "Bitte geben Sie die Besuchsnummer vom Besucherschein ein.").transform((value) => value.toUpperCase())
 });
@@ -431,6 +431,10 @@ guardRouter.post("/api/guard/visits/:id/check-out", async (request, response) =>
 
       if (error.message === "invalid_check_out_status") {
         return sendError(response, 409, "INVALID_STATUS_TRANSITION", "Der Besuch kann in diesem Status nicht ausgecheckt werden.");
+      }
+
+      if (error.message === "host_signature_checkout_required" || error.message === "host_signature_required") {
+        return sendError(response, 409, "HOST_CONFIRMATION_REQUIRED", "Ohne Ansprechpartner-Bestätigung darf der Besuch nicht vom Gelände gelassen werden.");
       }
     }
 
