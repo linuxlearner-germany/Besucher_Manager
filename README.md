@@ -84,10 +84,12 @@ npm run ops:update
 Fuer Installationen hinter Firmenproxy oder Reverse Proxy siehe:
 
 - [DEPLOYMENT.md](/root/Besucher_Manager/DEPLOYMENT.md)
+- [docs/update.md](/root/Besucher_Manager/docs/update.md)
 - Dort sind getrennt beschrieben:
   - Outbound-Proxy fuer Docker-Build und Runtime
   - Reverse Proxy mit HTTPS
   - `PUBLIC_BASE_URL`, `APP_SECURE_COOKIES` und `APP_TRUST_PROXY`
+  - sicherer Update-Ablauf fuer bestehende Installationen
 
 Zieladresse:
 
