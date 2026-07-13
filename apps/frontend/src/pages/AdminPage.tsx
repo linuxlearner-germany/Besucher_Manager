@@ -56,7 +56,7 @@ export function AdminPage() {
     { key: "admin", label: "Admin" },
     { key: "genehmigung", label: "Genehmigungen" },
     { key: "sibe", label: "SiBe" },
-    { key: "kaskdt", label: "Kasernenkommandant" },
+    { key: "kaskdt", label: "KasKdt" },
     { key: "texte", label: "Texte" }
   ];
   const permissionGroups: Array<{ title: string; items: Array<{ key: AppPermission; label: string }> }> = [
@@ -86,7 +86,7 @@ export function AdminPage() {
       items: [
         { key: "imports.execute", label: "Import ausführen" },
         { key: "dashboards.sibe", label: "SiBe-Übersicht" },
-        { key: "dashboards.commander", label: "Kasernenkommandant-Übersicht" },
+        { key: "dashboards.commander", label: "KasKdt-Lagebild" },
         { key: "admin.users", label: "Benutzer verwalten" },
         { key: "admin.guards", label: "Wachen verwalten" },
         { key: "admin.texts", label: "Texte verwalten" },
@@ -730,9 +730,11 @@ export function AdminPage() {
         method: "POST",
         body: formData
       });
+      setBackgroundMode("image");
       setBackgroundImageUrl(payload.backgroundImageUrl);
       setWorkflowSettings((current) => current ? {
         ...current,
+        backgroundMode: "image",
         backgroundImageUrl: payload.backgroundImageUrl,
         backgroundImageName: payload.backgroundImageName,
         backgroundImageOriginalFileName: payload.backgroundImageOriginalFileName

@@ -41,7 +41,6 @@ export function SibeUsersPage() {
         <div className="section-header">
           <div>
             <h2>SiBe Benutzer</h2>
-            <p className="section-copy">Anwendungskonten filtern und Rollen nachvollziehen.</p>
           </div>
         </div>
 
@@ -52,7 +51,7 @@ export function SibeUsersPage() {
             <option value="admin">Admin</option>
             <option value="guard">Wache</option>
             <option value="sibe">SiBe</option>
-            <option value="kaskdt">Kasernenkommandant</option>
+            <option value="kaskdt">KasKdt</option>
           </select>
           <select value={active} onChange={(event) => setActive(event.target.value)}>
             <option value="all">Alle Stati</option>

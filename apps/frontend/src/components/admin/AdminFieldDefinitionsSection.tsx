@@ -35,15 +35,6 @@ type AdminFieldDefinitionsSectionProps = {
 const fieldSectionOrder = ["Besucher", "Adresse", "Ansprechpartner", "Besuch", "Ausweis", "Ziel/Raum", "Sonstiges"];
 const hiddenSections = new Set(["Geraete", "Mitgefuehrte Geraete"]);
 const hiddenFieldKeys = new Set(["visitor_address", "id_document_issuing_place"]);
-const fieldSectionDescriptions: Record<string, string> = {
-  Besucher: "Daten zur besuchenden Person.",
-  Adresse: "Strukturierte Adressdaten für Check-in und Druck.",
-  Ansprechpartner: "Kontakt zur empfangenden Person im Unternehmen.",
-  Besuch: "Besuchszweck, Gültigkeitszeitraum und Ablaufdaten.",
-  Ausweis: "Ausweisdaten für Voranmeldung und Wache.",
-  "Ziel/Raum": "Interne Ziel-, Gebäude- und Raumangaben.",
-  Sonstiges: "Zusatzfelder ohne feste Kategorie."
-};
 
 export function AdminFieldDefinitionsSection({
   fieldDefinitions,
@@ -104,10 +95,8 @@ export function AdminFieldDefinitionsSection({
   return (
     <Card className="admin-fields-card">
       <h3>Feldkonfiguration</h3>
-      <p className="section-copy">Konfigurieren Sie die Felder als Modul-Baukasten. Öffnen Sie ein Modul, um nur die zugehörigen Felder zu bearbeiten.</p>
       <div className="panel field-config-transfer">
         <h4>Import / Export</h4>
-        <p className="section-copy">Import-Modus: Zusammenführen. Vorhandene Felder werden anhand ihres Keys aktualisiert, nicht enthaltene Felder bleiben erhalten.</p>
         <div className="row-actions action-bar">
           <button type="button" onClick={() => void exportFieldConfiguration()}>Konfiguration exportieren</button>
           <label className="secondary-button file-button-inline">
@@ -118,7 +107,7 @@ export function AdminFieldDefinitionsSection({
             Import prüfen
           </button>
         </div>
-        {fieldImportFileName ? <p className="section-copy">Datei: {fieldImportFileName}</p> : null}
+        {fieldImportFileName ? <div className="meta-list"><span><strong>Datei:</strong> {fieldImportFileName}</span></div> : null}
         {fieldImportPreview ? (
           <div className="panel field-import-preview">
             <p>
@@ -153,7 +142,6 @@ export function AdminFieldDefinitionsSection({
             <div>
               <p className="eyebrow">Modul</p>
               <h4>{selectedFieldSectionGroup.section}</h4>
-              <p className="section-copy">{fieldSectionDescriptions[selectedFieldSectionGroup.section] || "Feldgruppe für diesen Bereich."}</p>
             </div>
             <div className="row-actions action-bar">
               <button
@@ -222,7 +210,6 @@ export function AdminFieldDefinitionsSection({
               <article key={section} className="field-section-card">
                 <div className="field-section-summary">
                   <h4>{section}</h4>
-                  <p>{fieldSectionDescriptions[section] || "Feldgruppe fuer diesen Bereich."}</p>
                 </div>
                 <ul className="field-module-stats">
                   <li>{activeCount} aktive Felder</li>
@@ -366,26 +353,24 @@ export function AdminFieldDefinitionsSection({
               </div>
 
               <h5>Sichtbarkeit</h5>
-              <p className="section-copy">Legen Sie fest, in welchem Bereich dieses Feld sichtbar ist.</p>
               <div className="form-grid two-columns">
-                <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.showInPublic} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [selectedFieldDefinition.id]: { ...selectedFieldDefinition, showInPublic: event.target.checked } }))} />In Voranmeldung anzeigen<div className="field-help-text">Dieses Feld erscheint im Formular fuer Mitarbeiter ohne Login.</div></label>
-                <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.showInGuard} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [selectedFieldDefinition.id]: { ...selectedFieldDefinition, showInGuard: event.target.checked } }))} />In Wache anzeigen<div className="field-help-text">Dieses Feld ist in der Wache-Detailansicht sichtbar und bearbeitbar.</div></label>
-                <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.showInSibe} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [selectedFieldDefinition.id]: { ...selectedFieldDefinition, showInSibe: event.target.checked } }))} />In SiBe anzeigen<div className="field-help-text">Dieses Feld ist in der lesenden SiBe-Ansicht sichtbar.</div></label>
-                <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.showOnBadge} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [selectedFieldDefinition.id]: { ...selectedFieldDefinition, showOnBadge: event.target.checked } }))} />Auf Besucherschein drucken<div className="field-help-text">Dieses Feld wird auf dem Druckschein ausgegeben.</div></label>
+                <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.showInPublic} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [selectedFieldDefinition.id]: { ...selectedFieldDefinition, showInPublic: event.target.checked } }))} />In Voranmeldung anzeigen</label>
+                <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.showInGuard} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [selectedFieldDefinition.id]: { ...selectedFieldDefinition, showInGuard: event.target.checked } }))} />In Wache anzeigen</label>
+                <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.showInSibe} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [selectedFieldDefinition.id]: { ...selectedFieldDefinition, showInSibe: event.target.checked } }))} />In SiBe anzeigen</label>
+                <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.showOnBadge} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [selectedFieldDefinition.id]: { ...selectedFieldDefinition, showOnBadge: event.target.checked } }))} />Auf Besucherschein drucken</label>
               </div>
 
               <h5>Pflichtregeln</h5>
-              <p className="section-copy">Pflichtregeln steuern, wann ein Feld zwingend ausgefuellt sein muss.</p>
               <div className="form-grid two-columns">
-                <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.requiredPublic} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [selectedFieldDefinition.id]: { ...selectedFieldDefinition, requiredPublic: event.target.checked } }))} />Pflicht in Voranmeldung<div className="field-help-text">Mitarbeiter muessen dieses Feld beim Anmelden ausfuellen.</div></label>
-                <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.requiredGuardCheckin} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [selectedFieldDefinition.id]: { ...selectedFieldDefinition, requiredGuardCheckin: event.target.checked } }))} />Pflicht vor Check-in<div className="field-help-text">Die Wache muss dieses Feld vor dem Check-in ergaenzen.</div></label>
-                <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.requiredBeforePrint} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [selectedFieldDefinition.id]: { ...selectedFieldDefinition, requiredBeforePrint: event.target.checked } }))} />Pflicht vor Druck<div className="field-help-text">Der Besucherschein darf erst nach Ergaenzung gedruckt werden.</div></label>
+                <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.requiredPublic} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [selectedFieldDefinition.id]: { ...selectedFieldDefinition, requiredPublic: event.target.checked } }))} />Pflicht in Voranmeldung</label>
+                <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.requiredGuardCheckin} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [selectedFieldDefinition.id]: { ...selectedFieldDefinition, requiredGuardCheckin: event.target.checked } }))} />Pflicht vor Check-in</label>
+                <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.requiredBeforePrint} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [selectedFieldDefinition.id]: { ...selectedFieldDefinition, requiredBeforePrint: event.target.checked } }))} />Pflicht vor Druck</label>
               </div>
 
               <h5>Status</h5>
               <div className="form-grid two-columns">
-                <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.isActive} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [selectedFieldDefinition.id]: { ...selectedFieldDefinition, isActive: event.target.checked } }))} />Aktiv<div className="field-help-text">Inaktive Felder bleiben in Daten erhalten, werden aber nicht mehr aktiv verwendet.</div></label>
-                <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.isSystem} readOnly disabled />Systemfeld<div className="field-help-text">Systemfelder gehoeren zum Grundsystem und sind nicht loeschbar.</div></label>
+                <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.isActive} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [selectedFieldDefinition.id]: { ...selectedFieldDefinition, isActive: event.target.checked } }))} />Aktiv</label>
+                <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.isSystem} readOnly disabled />Systemfeld</label>
               </div>
             </div>
             <div className="row-actions action-bar modal-actions">

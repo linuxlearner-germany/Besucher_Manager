@@ -54,8 +54,7 @@ function summarizeContent(content: string): string {
 }
 
 export function BadgeTextManager({
-  heading = "Hinweistexte",
-  description = ""
+  heading = "Hinweistexte"
 }: BadgeTextManagerProps) {
   const [texts, setTexts] = useState<AdminBadgeText[]>([]);
   const [editableTexts, setEditableTexts] = useState<Record<string, AdminBadgeText>>({});
@@ -296,7 +295,6 @@ export function BadgeTextManager({
       <div className="section-header">
         <div>
           <h3>{heading}</h3>
-          {description ? <p className="section-copy">{description}</p> : null}
         </div>
       </div>
 
@@ -349,7 +347,6 @@ export function BadgeTextManager({
             <div className="text-section-header">
               <div>
                 <h4>Neu anlegen</h4>
-                <p className="section-copy">Name, Typ und Inhalt direkt erfassen.</p>
               </div>
             </div>
             <form className="form-grid" onSubmit={createText}>
@@ -404,7 +401,6 @@ export function BadgeTextManager({
             <div className="text-section-header">
               <div>
                 <h4>Vorhandene Texte</h4>
-                <p className="section-copy">{filteredTexts.length} von {texts.length} Eintraegen sichtbar.</p>
               </div>
             </div>
             <div className="text-record-list">
@@ -445,7 +441,6 @@ export function BadgeTextManager({
               <div className="text-section-header">
                 <div>
                   <h4>{selectedText.name}</h4>
-                  <p className="section-copy">{formatTextType(selectedDraft.textType)}</p>
                 </div>
                 <div className="text-detail-status">
                   <span className="field-config-badge">{selectedDraft.isActive ? "Aktiv" : "Inaktiv"}</span>
@@ -546,7 +541,6 @@ export function BadgeTextManager({
                 <div>
                   <p className="eyebrow">Hinweistext</p>
                   <h3>{previewText.name || "Ohne Name"}</h3>
-                  <p className="section-copy">{formatTextType(previewText.textType)}</p>
                 </div>
                 <img className="badge-print-logo" src={BRANDING.logo} alt="WIWeB" />
               </div>

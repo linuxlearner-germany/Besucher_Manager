@@ -115,11 +115,6 @@ export function SibeVisitorsPage() {
           <div className="page-hero-grid">
             <div className="page-hero-content">
               <h2>{isCommanderView ? "Besucherübersicht" : "SiBe Besucherübersicht"}</h2>
-              <p className="section-copy">
-                {isCommanderView
-                  ? "Lesender Zugriff auf Besuche, Historie und aktuelle Lageinformationen."
-                  : "Besuche, Besucherhistorie und Freigaben in einer kompakten Arbeitsansicht."}
-              </p>
             </div>
             <div className="hero-stat-grid">
               <div className="hero-stat-card">
@@ -146,7 +141,6 @@ export function SibeVisitorsPage() {
           <div className="section-header">
             <div>
               <h3>Filter</h3>
-              <p className="section-copy">Suche und Detailfilter bleiben zusammen, damit die Auswertung schneller lesbar wird.</p>
             </div>
             <div className="row-actions">
               <button type="button" className="secondary-button" onClick={() => void loadData()}>Aktualisieren</button>

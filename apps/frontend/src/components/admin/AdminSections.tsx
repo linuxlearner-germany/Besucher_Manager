@@ -88,7 +88,6 @@ export function AdminGatesSection({
       <div className="section-header">
         <div>
           <h3>Wachen</h3>
-          <p className="section-copy">Neue Wachen kompakt anlegen und bestehende Standorte direkt pflegen.</p>
         </div>
       </div>
       <form className="admin-inline-form admin-gate-form" onSubmit={createGate}>
@@ -109,7 +108,6 @@ export function AdminGatesSection({
         <div className="table-section-header">
           <div>
             <h4>Bestehende Wachen</h4>
-            <p className="section-copy">{gates.length} Einträge</p>
           </div>
         </div>
         <div className="table-wrap">
@@ -252,7 +250,6 @@ export function AdminUsersSection({
       <div className="section-header">
         <div>
           <h3>Benutzer</h3>
-          <p className="section-copy">Neue Konten anlegen, vorhandene Benutzer bearbeiten und bei Bedarf nur deaktivieren.</p>
         </div>
       </div>
       <div className="panel admin-user-card">
@@ -293,7 +290,7 @@ export function AdminUsersSection({
               <option value="guard">Wache</option>
               <option value="admin">Admin</option>
               <option value="sibe">SiBe</option>
-              <option value="kaskdt">Kasernenkommandant</option>
+              <option value="kaskdt">KasKdt</option>
               <option value="custom">Benutzerdefiniert</option>
             </select>
           </FormField>
@@ -354,12 +351,10 @@ export function AdminUsersSection({
         <div className="table-section-header">
           <div>
             <h4>Benutzer per CSV importieren</h4>
-            <p className="section-copy">Vorlage laden, CSV-Datei prüfen und Benutzer gesammelt anlegen oder aktualisieren.</p>
           </div>
         </div>
         <div className="import-toolbar">
           <button type="button" className="secondary-button" onClick={downloadUserImportTemplate}>CSV-Vorlage herunterladen</button>
-          <span className="section-copy">Pflichtspalten zuerst: username, password, role</span>
         </div>
         <div className="import-step-row" aria-hidden="true">
           <span>1. Vorlage laden</span>
@@ -398,11 +393,10 @@ export function AdminUsersSection({
             Auswahl leeren
           </button>
         </div>
-        {!userImportFile ? <p className="section-copy">Der Import startet erst nach Dateiauswahl.</p> : null}
         {userImportSummary ? (
           <div className="import-summary-card">
             <strong>Import abgeschlossen</strong>
-            <span className="section-copy">{userImportSummary.fileName}</span>
+            <span>{userImportSummary.fileName}</span>
             <span>{userImportSummary.total} Zeilen verarbeitet, {userImportSummary.created} neu angelegt, {userImportSummary.updated} aktualisiert.</span>
           </div>
         ) : null}
@@ -423,7 +417,6 @@ export function AdminUsersSection({
         <div className="table-section-header">
           <div>
             <h4>Bestehende Benutzer</h4>
-            <p className="section-copy">{users.length} Einträge</p>
           </div>
         </div>
         <div className="table-wrap">
@@ -455,11 +448,10 @@ export function AdminUsersSection({
       </div>
       {selectedUser ? (
         <div className="panel admin-user-card">
-          <div className="table-section-header">
-            <div>
-              <h4>Benutzer bearbeiten</h4>
-              <p className="section-copy">{selectedUser.username}</p>
-            </div>
+        <div className="table-section-header">
+          <div>
+            <h4>Benutzer bearbeiten</h4>
+          </div>
             <button type="button" className="secondary-button" onClick={() => setSelectedUserId(null)}>Schließen</button>
           </div>
           <div className="admin-user-create-grid">
@@ -480,7 +472,7 @@ export function AdminUsersSection({
                 <option value="guard">Wache</option>
                 <option value="admin">Admin</option>
                 <option value="sibe">SiBe</option>
-                <option value="kaskdt">Kasernenkommandant</option>
+                <option value="kaskdt">KasKdt</option>
                 <option value="custom">Benutzerdefiniert</option>
               </select>
             </FormField>
@@ -629,7 +621,6 @@ export function AdminSiteMapSection({
 
         {siteMapPreviewUrl ? (
           <div className="site-map-preview-card">
-            <p className="section-copy">Vorschau vor dem Upload</p>
             <img className="admin-site-map-preview" src={siteMapPreviewUrl} alt="Vorschau des neuen Geländeplans" />
           </div>
         ) : null}
@@ -659,7 +650,7 @@ export function AdminSiteMapSection({
               </div>
             </>
           ) : (
-            <p className="section-copy">Aktuell ist kein aktiver Geländeplan gesetzt.</p>
+            <p>Kein aktiver Geländeplan vorhanden.</p>
           )}
         </div>
 
@@ -688,7 +679,7 @@ export function AdminSiteMapSection({
                   <td>{formatDateTime(map.createdAt)}</td>
                   <td>
                     {map.isActive ? (
-                      <span className="section-copy">Aktiv</span>
+                      <span>Aktiv</span>
                     ) : (
                       <button type="button" className="secondary-button" onClick={() => void activateSiteMap(map.id)}>
                         Als aktiv setzen
@@ -737,7 +728,6 @@ export function AdminBackgroundSection({
       <div className="section-header">
         <div>
           <h3>Hintergrundbild</h3>
-          <p className="section-copy">Dieses Bild wird für die gesamte Anwendung verwendet.</p>
         </div>
       </div>
 
@@ -745,7 +735,7 @@ export function AdminBackgroundSection({
         <div className="form-grid two-columns">
           <FormField label="Darstellung">
             <select
-              value={workflowSettings?.backgroundMode ?? "image"}
+              value={workflowSettings?.backgroundMode ?? "plain"}
               onChange={(event) => setWorkflowSettings((current) => current ? {
                 ...current,
                 backgroundMode: event.target.value as "image" | "subtle" | "plain"
@@ -757,8 +747,8 @@ export function AdminBackgroundSection({
             </select>
           </FormField>
           <div className="meta-list">
-            <span><strong>Aktiver Name:</strong> {workflowSettings?.backgroundImageName || "Standardhintergrund"}</span>
-            <span><strong>Datei:</strong> {workflowSettings?.backgroundImageOriginalFileName || "background.png"}</span>
+            <span><strong>Aktiver Name:</strong> {workflowSettings?.backgroundImageName || "Kein Hintergrundbild aktiv"}</span>
+            <span><strong>Datei:</strong> {workflowSettings?.backgroundImageOriginalFileName || "Keine Datei hinterlegt"}</span>
           </div>
         </div>
         <div className="row-actions action-bar">
@@ -770,7 +760,6 @@ export function AdminBackgroundSection({
         <div className="table-section-header">
           <div>
             <h4>Neues Hintergrundbild hochladen</h4>
-            <p className="section-copy">PNG, JPG oder WEBP bis 10 MB. Vorhandene Dateien bleiben erhalten.</p>
           </div>
         </div>
         <label className="dropzone compact-dropzone">
@@ -799,16 +788,21 @@ export function AdminBackgroundSection({
         {backgroundFieldError ? <Alert type="error">{backgroundFieldError}</Alert> : null}
         <div className="background-preview-grid">
           <div className="site-map-preview-card">
-            <p className="section-copy">Aktiv</p>
-            <img
-              className="admin-site-map-preview"
-              src={workflowSettings?.backgroundImageUrl || "/branding/background.png"}
-              alt={workflowSettings?.backgroundImageName || "Aktiver Hintergrund"}
-            />
+            {workflowSettings?.backgroundImageUrl ? (
+              <img
+                className="admin-site-map-preview"
+                src={workflowSettings.backgroundImageUrl}
+                alt={workflowSettings?.backgroundImageName || "Aktiver Hintergrund"}
+              />
+            ) : (
+              <div className="empty-state-box">
+                <strong>Kein Hintergrundbild aktiv</strong>
+                <span>Die Anwendung nutzt aktuell nur die ruhige Standardfläche ohne Bild.</span>
+              </div>
+            )}
           </div>
           {backgroundPreviewUrl ? (
             <div className="site-map-preview-card">
-              <p className="section-copy">Neue Vorschau</p>
               <img className="admin-site-map-preview" src={backgroundPreviewUrl} alt="Neue Hintergrundvorschau" />
             </div>
           ) : null}
@@ -1068,7 +1062,6 @@ export function AdminAuditSection({
       <div className="section-header">
         <div>
           <h3>Auditlog</h3>
-          <p className="section-copy">Aktionen, Benutzer und Zeiträume gezielt filtern.</p>
         </div>
       </div>
       <div className="filter-grid admin-filter-grid">
@@ -1131,9 +1124,6 @@ export function AdminAuditSection({
           <div className="section-header">
             <div>
               <h3>Audit-Details</h3>
-              <p className="section-copy">
-                {formatAuditAction(selectedAuditLog.action)} für {selectedAuditLog.objectType}:{selectedAuditLog.objectId}
-              </p>
             </div>
           </div>
           <dl className="detail-grid">
@@ -1173,7 +1163,6 @@ export function AdminErrorLogSection({
       <div className="section-header">
         <div>
           <h3>Fehlerlog</h3>
-          <p className="section-copy">Fehler nach Code, Pfad und Zeitraum eingrenzen.</p>
         </div>
       </div>
       <div className="filter-grid admin-filter-grid">
@@ -1233,7 +1222,6 @@ export function AdminErrorLogSection({
           <div className="section-header">
             <div>
               <h3>Fehlerdetails</h3>
-              <p className="section-copy">{selectedErrorLog.errorCode} am {formatDateTime(selectedErrorLog.timestamp)}</p>
             </div>
           </div>
           <dl className="detail-grid">

@@ -61,7 +61,11 @@ const sampleVisitors: SeedVisitor[] = [
   { firstName: "Max", lastName: "Beispiel", company: "Acme GmbH", birthDate: "1988-04-12", phone: "0151 111111", email: "max.beispiel@acme.test" },
   { firstName: "Erika", lastName: "Muster", company: "NordTech AG", birthDate: "1992-09-03", phone: "0151 222222", email: "erika.muster@nordtech.test" },
   { firstName: "Sven", lastName: "Pruefer", company: "Werkservice KG", birthDate: "1979-01-28", phone: "0151 333333", email: "sven.pruefer@werkservice.test" },
-  { firstName: "Lena", lastName: "Archiv", company: "Consulting Test", birthDate: "1996-11-17", phone: "0151 444444", email: "lena.archiv@consulting.test" }
+  { firstName: "Lena", lastName: "Archiv", company: "Consulting Test", birthDate: "1996-11-17", phone: "0151 444444", email: "lena.archiv@consulting.test" },
+  { firstName: "Jonas", lastName: "Werner", company: "Supply Nord GmbH", birthDate: "1985-07-19", phone: "0151 555555", email: "jonas.werner@supply-nord.test" },
+  { firstName: "Mira", lastName: "Scholz", company: "Ingenieurbuero Scholz", birthDate: "1991-02-08", phone: "0151 666666", email: "mira.scholz@scholz.test" },
+  { firstName: "Tobias", lastName: "Kranz", company: "Elektro Kranz", birthDate: "1983-12-01", phone: "0151 777777", email: "tobias.kranz@elektro-kranz.test" },
+  { firstName: "Nina", lastName: "Roth", company: "Bauplanung Roth", birthDate: "1994-05-26", phone: "0151 888888", email: "nina.roth@bauplanung-roth.test" }
 ];
 
 function visitorKey(visitor: SeedVisitor): string {
@@ -89,7 +93,7 @@ function createSampleVisits(now: Date): SeedVisit[] {
   visit4Start.setHours(9, 0, 0, 0);
   const visit4End = new Date(visit4Start.getTime() + 2 * 60 * 60 * 1000);
 
-  return [
+  const currentWindowVisits: SeedVisit[] = [
     {
       marker: "SEED_VISIT_PRE_REGISTERED",
       visitorKey: visitorKey(sampleVisitors[0]),
@@ -155,6 +159,103 @@ function createSampleVisits(now: Date): SeedVisit[] {
       cancelReason: "Termin abgesagt"
     }
   ];
+
+  const rollingVisitTemplates = [
+    {
+      markerPrefix: "SEED_ROLLING_PRE_REGISTERED",
+      visitor: sampleVisitors[4],
+      gateName: "Hauptwache",
+      hostName: "Sabine Keller",
+      hostEmail: "sabine.keller@firma.test",
+      hostPhone: "0511 1100",
+      hostDepartment: "Produktion",
+      purpose: "Wartungstermin",
+      licensePlate: "HM-SN-510",
+      status: "pre_registered" as const,
+      durationHours: 2,
+      note: "Rollierende Voranmeldung"
+    },
+    {
+      markerPrefix: "SEED_ROLLING_CHECKED_IN",
+      visitor: sampleVisitors[5],
+      gateName: "Nordtor",
+      hostName: "Thomas Brandt",
+      hostEmail: "thomas.brandt@firma.test",
+      hostPhone: "0511 2200",
+      hostDepartment: "IT",
+      purpose: "Projektbesprechung",
+      licensePlate: "HM-IN-620",
+      status: "checked_in" as const,
+      durationHours: 3,
+      note: "Rollierender Check-in"
+    },
+    {
+      markerPrefix: "SEED_ROLLING_CHECKED_OUT",
+      visitor: sampleVisitors[6],
+      gateName: "Westtor",
+      hostName: "Julia Neumann",
+      hostEmail: "julia.neumann@firma.test",
+      hostPhone: "0511 3300",
+      hostDepartment: "Einkauf",
+      purpose: "Abstimmung vor Ort",
+      licensePlate: "H-EL-730",
+      status: "checked_out" as const,
+      durationHours: 4,
+      note: "Rollierender Check-out"
+    },
+    {
+      markerPrefix: "SEED_ROLLING_CANCELLED",
+      visitor: sampleVisitors[7],
+      gateName: "Hauptwache",
+      hostName: "Martin Vogel",
+      hostEmail: "martin.vogel@firma.test",
+      hostPhone: "0511 4400",
+      hostDepartment: "Sicherheit",
+      purpose: "Abgesagter Besprechungstermin",
+      licensePlate: "H-BA-840",
+      status: "cancelled" as const,
+      durationHours: 2,
+      note: "Rollierend storniert"
+    }
+  ];
+
+  const rollingVisits: SeedVisit[] = [];
+  const startOffsetDays = -35;
+  const intervalDays = 5;
+  const totalIntervals = 13;
+
+  for (let intervalIndex = 0; intervalIndex < totalIntervals; intervalIndex += 1) {
+    const dayOffset = startOffsetDays + intervalIndex * intervalDays;
+
+    rollingVisitTemplates.forEach((template, templateIndex) => {
+      const start = new Date(base);
+      start.setDate(base.getDate() + dayOffset);
+      start.setHours(8 + templateIndex * 2, 0, 0, 0);
+
+      const end = new Date(start.getTime() + template.durationHours * 60 * 60 * 1000);
+
+      rollingVisits.push({
+        marker: `${template.markerPrefix}_${String(intervalIndex + 1).padStart(2, "0")}`,
+        visitorKey: visitorKey(template.visitor),
+        gateName: template.gateName,
+        hostName: template.hostName,
+        hostEmail: template.hostEmail,
+        hostPhone: template.hostPhone,
+        hostDepartment: template.hostDepartment,
+        purpose: template.purpose,
+        licensePlate: template.licensePlate,
+        status: template.status,
+        validFrom: start,
+        validUntil: end,
+        notes: `${template.note} ${intervalIndex + 1}`,
+        signedByHostConfirmed: template.status === "checked_out",
+        checkoutNote: template.status === "checked_out" ? "Ausfahrt dokumentiert" : undefined,
+        cancelReason: template.status === "cancelled" ? "Termin durch Fachbereich verschoben" : undefined
+      });
+    });
+  }
+
+  return [...currentWindowVisits, ...rollingVisits];
 }
 
 async function ensureGates() {

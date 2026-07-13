@@ -25,7 +25,7 @@ Interne Besucherverwaltung fuer Wache, Empfang und Administration.
 - Fehlerlog im Admin mit Request-, Benutzer- und Stacktrace-Daten
 - Gelaendeplan-Upload per Drag-and-Drop im Admin-Panel
 - Dark Mode mit Persistenz (`localStorage`)
-- Globaler Hintergrund ueber `background.png`
+- Globaler Hintergrund wird im Adminbereich ueber die Hintergrundverwaltung gesetzt
 - Ausweisdaten bereits in der Voranmeldung und im Import
 - Excel-Importvorlage mit vereinfachtem Aufbau und Download aus der App
 
@@ -389,7 +389,7 @@ npm run verify:ops
 
 ## Frontend-Assets
 
-- Hintergrundbild: `apps/frontend/public/branding/background.png`
+- Hintergrundbild: im Adminbereich unter `Hintergrund` hochladbar
 
 ## Feldkonfiguration (MVP Stufe 1)
 

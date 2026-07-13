@@ -1712,6 +1712,7 @@ adminRouter.post("/api/admin/ui-background/upload", async (request, response) =>
   try {
     await fs.writeFile(targetPath, file.buffer);
     await upsertSystemSettings({
+      [WORKFLOW_SETTING_KEYS.uiBackgroundMode]: "image",
       [WORKFLOW_SETTING_KEYS.uiBackgroundImageUrl]: filePath,
       [WORKFLOW_SETTING_KEYS.uiBackgroundImageName]: parsed.data.name || path.basename(file.originalname, path.extname(file.originalname)),
       [WORKFLOW_SETTING_KEYS.uiBackgroundImageOriginalFileName]: file.originalname
@@ -2085,6 +2086,14 @@ adminRouter.put("/api/admin/system-settings/workflow-email", async (request, res
       [WORKFLOW_SETTING_KEYS.approvalRequired]: String(parsed.data.approvalRequired),
       [WORKFLOW_SETTING_KEYS.uiBackgroundMode]: parsed.data.backgroundMode
     };
+
+    if (parsed.data.backgroundMode === "plain") {
+      Object.assign(settingsToPersist, {
+        [WORKFLOW_SETTING_KEYS.uiBackgroundImageUrl]: "",
+        [WORKFLOW_SETTING_KEYS.uiBackgroundImageName]: "",
+        [WORKFLOW_SETTING_KEYS.uiBackgroundImageOriginalFileName]: ""
+      });
+    }
 
     if (currentSettings.emailRelay.source !== "yml") {
       const nextPassword = parsed.data.emailRelay.password?.trim()

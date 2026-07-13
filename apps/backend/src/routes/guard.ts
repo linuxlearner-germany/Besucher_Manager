@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   checkInVisit,
   checkOutVisit,
+  createWalkInVisit,
   getCalendarVisitsForUser,
   getTodayVisitsForUser,
   getVisitDetailForUser,
@@ -205,8 +206,81 @@ const guardCalendarQuerySchema = z.object({
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["to"], message: "Datumsbereich darf maximal 90 Tage umfassen." });
   }
 });
+const guardWalkInCreateSchema = z.object({
+  firstName: z.string().trim().min(1).max(120),
+  lastName: z.string().trim().min(1).max(120),
+  company: z.string().trim().min(1).max(255),
+  birthDate: z.string().trim().optional().or(z.literal("")),
+  phone: z.string().trim().optional().or(z.literal("")),
+  email: z.string().trim().email("Ungueltige E-Mail-Adresse.").optional().or(z.literal("")),
+  licensePlate: z.string().trim().max(40).optional().or(z.literal("")),
+  hostName: z.string().trim().min(1).max(255),
+  hostEmail: z.string().trim().email("Ungueltige Ansprechpartner-E-Mail.").optional().or(z.literal("")),
+  hostPhone: z.string().trim().min(1).max(80),
+  hostDepartment: z.string().trim().max(255).optional().or(z.literal("")),
+  purpose: z.string().trim().min(1).max(500),
+  validFrom: z.string().trim().min(1),
+  validUntil: z.string().trim().min(1),
+  notes: z.string().trim().optional().or(z.literal("")),
+  visitorStreet: z.string().trim().min(1).max(255),
+  visitorHouseNumber: z.string().trim().min(1).max(40),
+  visitorPostalCode: z.string().trim().min(1).max(20),
+  visitorCity: z.string().trim().min(1).max(120),
+  idDocumentType: z.enum(["identity_card", "passport", "other"]),
+  idDocumentValidUntil: z.string().trim().min(1),
+  idDocumentNumber: z.string().trim().min(1).max(120)
+}).superRefine((value, context) => {
+  const validFrom = new Date(value.validFrom);
+  const validUntil = new Date(value.validUntil);
+  if (!Number.isNaN(validFrom.getTime()) && !Number.isNaN(validUntil.getTime()) && validUntil < validFrom) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["validUntil"],
+      message: "Gültig bis darf nicht vor Gültig von liegen."
+    });
+  }
+});
 
 export const guardRouter = Router();
+
+guardRouter.post("/api/guard/visits/walk-in", async (request, response) => {
+  const user = await requirePermission(request, response, "visits.create");
+  if (!user) {
+    return;
+  }
+
+  const parsed = guardWalkInCreateSchema.safeParse(request.body);
+  if (!parsed.success) {
+    return sendValidationError(response, parsed.error.flatten());
+  }
+
+  try {
+    const created = await createWalkInVisit(
+      user,
+      parsed.data,
+      getRequestIp(request),
+      getRequestUserAgent(request)
+    );
+    return response.status(201).json({
+      success: true,
+      message: "Spontanbesucher wurde angelegt und direkt eingecheckt.",
+      visitId: created.visitId,
+      visitorId: created.visitorId,
+      badgeNumber: created.badgeNumber,
+      status: created.status
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === "visit_gate_required_for_checkin") {
+      return sendError(
+        response,
+        400,
+        "VALIDATION_ERROR",
+        "Für diese Anmeldung ist zuerst eine aktive Wache erforderlich."
+      );
+    }
+    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der Spontanbesucher konnte nicht angelegt werden.");
+  }
+});
 
 guardRouter.get("/api/guard/visits/today", async (request, response) => {
   const user = await requirePermission(request, response, "visits.read");

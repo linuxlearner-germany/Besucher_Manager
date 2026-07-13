@@ -91,6 +91,30 @@ function toBackgroundMode(value: string | null | undefined, fallback: "image" | 
   return fallback;
 }
 
+function loadBackgroundState(settingMap: Map<string, string>): Pick<WorkflowSettings, "backgroundMode" | "backgroundImageUrl" | "backgroundImageName" | "backgroundImageOriginalFileName"> {
+  const storedMode = toBackgroundMode(settingMap.get(WORKFLOW_SETTING_KEYS.uiBackgroundMode), "plain");
+  const imageUrl = settingMap.get(WORKFLOW_SETTING_KEYS.uiBackgroundImageUrl)?.trim() || "";
+  const imageName = settingMap.get(WORKFLOW_SETTING_KEYS.uiBackgroundImageName)?.trim() || "";
+  const originalFileName = settingMap.get(WORKFLOW_SETTING_KEYS.uiBackgroundImageOriginalFileName)?.trim() || "";
+  const isLegacyDefaultBackground = imageUrl === "/branding/background.png";
+
+  if (storedMode === "plain" || !imageUrl || isLegacyDefaultBackground) {
+    return {
+      backgroundMode: "plain",
+      backgroundImageUrl: "",
+      backgroundImageName: null,
+      backgroundImageOriginalFileName: null
+    };
+  }
+
+  return {
+    backgroundMode: storedMode,
+    backgroundImageUrl: imageUrl,
+    backgroundImageName: imageName || null,
+    backgroundImageOriginalFileName: originalFileName || null
+  };
+}
+
 export async function loadSystemSettings(keys: string[], transaction?: sql.Transaction): Promise<Map<string, string>> {
   if (keys.length === 0) {
     return new Map();
@@ -128,13 +152,12 @@ export async function loadWorkflowSettings(options?: {
     console.error("Mail relay YML could not be loaded, falling back to database settings.", error);
   }
 
+  const backgroundState = loadBackgroundState(settingMap);
+
   if (fileRelayConfig) {
     return {
       approvalRequired: toBoolean(settingMap.get(WORKFLOW_SETTING_KEYS.approvalRequired), true),
-      backgroundMode: toBackgroundMode(settingMap.get(WORKFLOW_SETTING_KEYS.uiBackgroundMode), "image"),
-      backgroundImageUrl: settingMap.get(WORKFLOW_SETTING_KEYS.uiBackgroundImageUrl)?.trim() || "/branding/background.png",
-      backgroundImageName: settingMap.get(WORKFLOW_SETTING_KEYS.uiBackgroundImageName)?.trim() || null,
-      backgroundImageOriginalFileName: settingMap.get(WORKFLOW_SETTING_KEYS.uiBackgroundImageOriginalFileName)?.trim() || null,
+      ...backgroundState,
       emailRelay: {
         source: "yml",
         configPath: fileRelayConfig.configPath,
@@ -154,10 +177,7 @@ export async function loadWorkflowSettings(options?: {
 
   return {
     approvalRequired: toBoolean(settingMap.get(WORKFLOW_SETTING_KEYS.approvalRequired), true),
-    backgroundMode: toBackgroundMode(settingMap.get(WORKFLOW_SETTING_KEYS.uiBackgroundMode), "image"),
-    backgroundImageUrl: settingMap.get(WORKFLOW_SETTING_KEYS.uiBackgroundImageUrl)?.trim() || "/branding/background.png",
-    backgroundImageName: settingMap.get(WORKFLOW_SETTING_KEYS.uiBackgroundImageName)?.trim() || null,
-    backgroundImageOriginalFileName: settingMap.get(WORKFLOW_SETTING_KEYS.uiBackgroundImageOriginalFileName)?.trim() || null,
+    ...backgroundState,
     emailRelay: {
       source: "database",
       configPath: null,

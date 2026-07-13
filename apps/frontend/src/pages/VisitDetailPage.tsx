@@ -11,6 +11,7 @@ import {
   fetchJson,
   formatDateOnly,
   formatDateTime,
+  formatIdDocumentType,
   formatStatus,
   type Gate,
   getNextStepHint,
@@ -282,7 +283,6 @@ export function VisitDetailPage() {
 
                 <Card>
                   <h3>Adresse</h3>
-                  <p className="section-copy">Adresse ist vollständig, wenn Straße, Hausnummer, PLZ und Wohnort gesetzt sind.</p>
                   <div className="form-grid two-columns">
                     <FormField label="Straße" required error={fieldErrors.visitorStreet}><input className={missingRequired.has("Strasse") || missingRequired.has("Straße") || missingRequired.has("Adresse") ? "required-missing" : ""} value={editForm.visitorStreet} onChange={(event) => setEditForm((current) => current ? { ...current, visitorStreet: event.target.value } : current)} /></FormField>
                     <FormField label="Hausnummer" required error={fieldErrors.visitorHouseNumber}><input className={missingRequired.has("Hausnummer") || missingRequired.has("Adresse") ? "required-missing" : ""} value={editForm.visitorHouseNumber} onChange={(event) => setEditForm((current) => current ? { ...current, visitorHouseNumber: event.target.value } : current)} /></FormField>
@@ -293,7 +293,6 @@ export function VisitDetailPage() {
 
                 <Card>
                   <h3>Ausweisdaten</h3>
-                  <p className="section-copy">Ausweisdaten werden für den Wache-Prozess erfasst und nicht in Übersichten angezeigt.</p>
                   <div className="form-grid two-columns">
                     <FormField label="Ausweisart" required error={fieldErrors.idDocumentType}><select className={missingRequired.has("Ausweisart") ? "required-missing" : ""} value={editForm.idDocumentType} onChange={(event) => setEditForm((current) => current ? { ...current, idDocumentType: event.target.value as GuardVisitEditState["idDocumentType"] } : current)}><option value="">-</option><option value="identity_card">Personalausweis</option><option value="passport">Reisepass</option><option value="other">Sonstiges</option></select></FormField>
                     <FormField label="Ausweis gültig bis" required error={fieldErrors.idDocumentValidUntil}><input className={missingRequired.has("Ausweis gültig bis") ? "required-missing" : ""} type="date" value={editForm.idDocumentValidUntil} onChange={(event) => setEditForm((current) => current ? { ...current, idDocumentValidUntil: event.target.value } : current)} /></FormField>
@@ -394,7 +393,7 @@ export function VisitDetailPage() {
                   <details className="panel">
                     <summary>Ausweis / Zusatzdaten</summary>
                     <div className="detail-grid">
-                      {visit.idDocumentType ? <div><span className="detail-label">Ausweisart</span><strong>{visit.idDocumentType}</strong></div> : null}
+                      {visit.idDocumentType ? <div><span className="detail-label">Ausweisart</span><strong>{formatIdDocumentType(visit.idDocumentType)}</strong></div> : null}
                       {visit.idDocumentValidUntil ? <div><span className="detail-label">Gültig bis</span><strong>{formatDateOnly(visit.idDocumentValidUntil)}</strong></div> : null}
                       {visit.idDocumentNumber ? <div><span className="detail-label">Ausweisnummer</span><strong>{visit.idDocumentNumber}</strong></div> : null}
                     </div>
@@ -407,7 +406,6 @@ export function VisitDetailPage() {
               <div className="modal-backdrop">
                 <div className="modal-card panel">
                   <h3>Besuch auschecken</h3>
-                  <p className="section-copy">Besuchsnummer vom zurueckgegebenen Besucherschein eingeben.</p>
                   <div className="checkout-box">
                     <input
                       placeholder="Besuchsnummer vom Besucherschein"

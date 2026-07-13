@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { AppLayout, BRANDING, type ApiError, fetchJson, formatDateOnly, type VisitDetail } from "../app/core";
+import { AppLayout, BRANDING, type ApiError, fetchJson, formatDateOnly, formatIdDocumentType, type VisitDetail } from "../app/core";
 
 export function PrintViewPage() {
   const { id } = useParams();
@@ -144,7 +144,7 @@ export function PrintViewPage() {
                 <article className="print-info-card">
                   <h3>Ausweis</h3>
                   <dl className="print-info-list">
-                    <div><dt>Art</dt><dd>{visit.idDocumentType || "-"}</dd></div>
+                    <div><dt>Art</dt><dd>{formatIdDocumentType(visit.idDocumentType)}</dd></div>
                     <div><dt>Gültig bis</dt><dd>{formatDateOnly(visit.idDocumentValidUntil)}</dd></div>
                     <div><dt>Nummer</dt><dd>{visit.idDocumentNumber || "-"}</dd></div>
                   </dl>

@@ -168,12 +168,11 @@ export function ApprovalQueuePage() {
 
         {!loading ? (
           <div className="table-section approval-table-shell">
-            <div className="table-section-header">
-              <div>
-                <h3>Offene Freigaben</h3>
-                <p className="section-copy">{visits.length} Einträge in der aktuellen Auswahl</p>
-              </div>
+          <div className="table-section-header">
+            <div>
+              <h3>Offene Freigaben</h3>
             </div>
+          </div>
             <DataTable>
               <thead>
                 <tr>

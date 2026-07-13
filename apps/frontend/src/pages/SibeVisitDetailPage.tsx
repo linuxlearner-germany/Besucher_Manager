@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Alert } from "../components/ui";
-import { AppLayout, type ApiError, extractFieldErrors, fetchJson, formatApprovalStatus, formatDateOnly, formatDateTime, formatSignatureStatus, formatStatus, type SibeVisitDetail, useAuth } from "../app/core";
+import { AppLayout, type ApiError, extractFieldErrors, fetchJson, formatApprovalStatus, formatDateOnly, formatDateTime, formatIdDocumentType, formatSignatureStatus, formatStatus, type SibeVisitDetail, useAuth } from "../app/core";
 
 function isExpiredDocument(value: string | null): boolean {
   if (!value) {
@@ -197,7 +197,7 @@ export function SibeVisitDetailPage() {
               <div><dt>Hausnummer</dt><dd>{visit.visitorHouseNumber || "-"}</dd></div>
               <div><dt>PLZ</dt><dd>{visit.visitorPostalCode || "-"}</dd></div>
               <div><dt>Ort</dt><dd>{visit.visitorCity || "-"}</dd></div>
-              <div><dt>Ausweisart</dt><dd>{visit.idDocumentType || "-"}</dd></div>
+              <div><dt>Ausweisart</dt><dd>{formatIdDocumentType(visit.idDocumentType)}</dd></div>
               <div><dt>Ausweis gültig bis</dt><dd>{formatDateOnly(visit.idDocumentValidUntil)}</dd></div>
               <div><dt>Ausweisnummer</dt><dd>{visit.idDocumentNumber || "-"}</dd></div>
               <div><dt>Ansprechpartner</dt><dd>{visit.hostName}</dd></div>

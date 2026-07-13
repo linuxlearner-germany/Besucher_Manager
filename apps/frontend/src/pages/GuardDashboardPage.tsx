@@ -15,6 +15,60 @@ import {
   type GuardCalendarItem,
   type VisitRow
 } from "../app/core";
+import { FormField } from "../components/ui";
+
+type WalkInFormState = {
+  firstName: string;
+  lastName: string;
+  company: string;
+  birthDate: string;
+  phone: string;
+  email: string;
+  licensePlate: string;
+  hostName: string;
+  hostEmail: string;
+  hostPhone: string;
+  hostDepartment: string;
+  purpose: string;
+  validFrom: string;
+  validUntil: string;
+  notes: string;
+  visitorStreet: string;
+  visitorHouseNumber: string;
+  visitorPostalCode: string;
+  visitorCity: string;
+  idDocumentType: "identity_card" | "passport" | "other";
+  idDocumentValidUntil: string;
+  idDocumentNumber: string;
+};
+
+function buildInitialWalkInForm(): WalkInFormState {
+  const today = toDateInputValue(new Date());
+  return {
+    firstName: "",
+    lastName: "",
+    company: "",
+    birthDate: "",
+    phone: "",
+    email: "",
+    licensePlate: "",
+    hostName: "",
+    hostEmail: "",
+    hostPhone: "",
+    hostDepartment: "",
+    purpose: "",
+    validFrom: today,
+    validUntil: today,
+    notes: "",
+    visitorStreet: "",
+    visitorHouseNumber: "",
+    visitorPostalCode: "",
+    visitorCity: "",
+    idDocumentType: "identity_card",
+    idDocumentValidUntil: today,
+    idDocumentNumber: ""
+  };
+}
 
 export function GuardDashboardPage() {
   const [visits, setVisits] = useState<VisitRow[]>([]);
@@ -28,6 +82,9 @@ export function GuardDashboardPage() {
   const [activeView, setActiveView] = useState<"list" | "calendar">("list");
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [checkoutState, setCheckoutState] = useState<Record<string, CheckoutFormState>>({});
+  const [walkInOpen, setWalkInOpen] = useState(false);
+  const [walkInSaving, setWalkInSaving] = useState(false);
+  const [walkInForm, setWalkInForm] = useState<WalkInFormState>(() => buildInitialWalkInForm());
   const [calendarMonth, setCalendarMonth] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
@@ -190,6 +247,27 @@ export function GuardDashboardPage() {
     }
   }
 
+  async function handleWalkInCreate() {
+    setActionMessage(null);
+    setWalkInSaving(true);
+
+    try {
+      const payload = await fetchJson<{ message: string; badgeNumber: string; visitId: string }>("/api/guard/visits/walk-in", {
+        method: "POST",
+        body: JSON.stringify(walkInForm)
+      });
+      setWalkInOpen(false);
+      setWalkInForm(buildInitialWalkInForm());
+      setActionMessage(`${payload.message} Besuchsnummer: ${payload.badgeNumber}.`);
+      await Promise.all([loadVisits(), loadCalendar()]);
+    } catch (apiError) {
+      const errorPayload = apiError as ApiError;
+      setActionMessage(errorPayload.message || "Spontanbesucher konnte nicht angelegt werden.");
+    } finally {
+      setWalkInSaving(false);
+    }
+  }
+
   function updateCheckoutState(visitId: string, next: Partial<CheckoutFormState>) {
     setCheckoutState((existing) => ({
       ...existing,
@@ -210,6 +288,9 @@ export function GuardDashboardPage() {
             <h2>Wache</h2>
           </div>
           <div className="section-tabs">
+            <button type="button" className="secondary-button" onClick={() => setWalkInOpen(true)}>
+              Spontanbesucher anmelden
+            </button>
             <button type="button" className={`tab-button ${activeView === "list" ? "tab-active" : ""}`} onClick={() => setActiveView("list")}>
               Tagesliste
             </button>
@@ -471,6 +552,69 @@ export function GuardDashboardPage() {
           </div>
         ) : null}
       </main>
+      {walkInOpen ? (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={(event) => {
+          if (event.target === event.currentTarget && !walkInSaving) {
+            setWalkInOpen(false);
+          }
+        }}>
+          <div className="modal-card panel guard-walkin-modal">
+            <div className="section-header">
+              <div>
+                <h3>Spontanbesucher anmelden</h3>
+              </div>
+            </div>
+            <div className="form-grid">
+              <div className="form-grid two-columns">
+                <FormField label="Vorname" required><input value={walkInForm.firstName} onChange={(event) => setWalkInForm((current) => ({ ...current, firstName: event.target.value }))} /></FormField>
+                <FormField label="Nachname" required><input value={walkInForm.lastName} onChange={(event) => setWalkInForm((current) => ({ ...current, lastName: event.target.value }))} /></FormField>
+                <FormField label="Firma / Organisation" required><input value={walkInForm.company} onChange={(event) => setWalkInForm((current) => ({ ...current, company: event.target.value }))} /></FormField>
+                <FormField label="Geburtsdatum"><input type="date" value={walkInForm.birthDate} onChange={(event) => setWalkInForm((current) => ({ ...current, birthDate: event.target.value }))} /></FormField>
+                <FormField label="Telefon Besucher"><input value={walkInForm.phone} onChange={(event) => setWalkInForm((current) => ({ ...current, phone: event.target.value }))} /></FormField>
+                <FormField label="E-Mail Besucher"><input value={walkInForm.email} onChange={(event) => setWalkInForm((current) => ({ ...current, email: event.target.value }))} /></FormField>
+                <FormField label="Kennzeichen"><input value={walkInForm.licensePlate} onChange={(event) => setWalkInForm((current) => ({ ...current, licensePlate: event.target.value }))} /></FormField>
+                <FormField label="Ansprechpartner" required><input value={walkInForm.hostName} onChange={(event) => setWalkInForm((current) => ({ ...current, hostName: event.target.value }))} /></FormField>
+                <FormField label="Ansprechpartner E-Mail"><input value={walkInForm.hostEmail} onChange={(event) => setWalkInForm((current) => ({ ...current, hostEmail: event.target.value }))} /></FormField>
+                <FormField label="Ansprechpartner Telefon" required><input value={walkInForm.hostPhone} onChange={(event) => setWalkInForm((current) => ({ ...current, hostPhone: event.target.value }))} /></FormField>
+                <FormField label="Abteilung / Bereich"><input value={walkInForm.hostDepartment} onChange={(event) => setWalkInForm((current) => ({ ...current, hostDepartment: event.target.value }))} /></FormField>
+                <FormField label="Besuchszweck" required><input value={walkInForm.purpose} onChange={(event) => setWalkInForm((current) => ({ ...current, purpose: event.target.value }))} /></FormField>
+                <FormField label="Gültig von" required><input type="date" value={walkInForm.validFrom} onChange={(event) => setWalkInForm((current) => ({ ...current, validFrom: event.target.value }))} /></FormField>
+                <FormField label="Gültig bis" required><input type="date" value={walkInForm.validUntil} onChange={(event) => setWalkInForm((current) => ({ ...current, validUntil: event.target.value }))} /></FormField>
+                <FormField label="Straße" required><input value={walkInForm.visitorStreet} onChange={(event) => setWalkInForm((current) => ({ ...current, visitorStreet: event.target.value }))} /></FormField>
+                <FormField label="Hausnummer" required><input value={walkInForm.visitorHouseNumber} onChange={(event) => setWalkInForm((current) => ({ ...current, visitorHouseNumber: event.target.value }))} /></FormField>
+                <FormField label="PLZ" required><input value={walkInForm.visitorPostalCode} onChange={(event) => setWalkInForm((current) => ({ ...current, visitorPostalCode: event.target.value }))} /></FormField>
+                <FormField label="Wohnort" required><input value={walkInForm.visitorCity} onChange={(event) => setWalkInForm((current) => ({ ...current, visitorCity: event.target.value }))} /></FormField>
+                <FormField label="Ausweisart" required>
+                  <select value={walkInForm.idDocumentType} onChange={(event) => setWalkInForm((current) => ({ ...current, idDocumentType: event.target.value as WalkInFormState["idDocumentType"] }))}>
+                    <option value="identity_card">Personalausweis</option>
+                    <option value="passport">Reisepass</option>
+                    <option value="other">Sonstiges</option>
+                  </select>
+                </FormField>
+                <FormField label="Ausweis gültig bis" required><input type="date" value={walkInForm.idDocumentValidUntil} onChange={(event) => setWalkInForm((current) => ({ ...current, idDocumentValidUntil: event.target.value }))} /></FormField>
+                <FormField label="Ausweisnummer" required><input value={walkInForm.idDocumentNumber} onChange={(event) => setWalkInForm((current) => ({ ...current, idDocumentNumber: event.target.value }))} /></FormField>
+              </div>
+              <FormField label="Bemerkung"><textarea rows={3} value={walkInForm.notes} onChange={(event) => setWalkInForm((current) => ({ ...current, notes: event.target.value }))} /></FormField>
+              <div className="row-actions">
+                <button type="button" onClick={() => void handleWalkInCreate()} disabled={walkInSaving}>
+                  {walkInSaving ? "Speichert..." : "Besucher direkt anmelden"}
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => {
+                    setWalkInOpen(false);
+                    setWalkInForm(buildInitialWalkInForm());
+                  }}
+                  disabled={walkInSaving}
+                >
+                  Abbrechen
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </AppLayout>
   );
 }

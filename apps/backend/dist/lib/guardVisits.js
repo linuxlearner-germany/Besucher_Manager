@@ -8,12 +8,14 @@ exports.getTodayVisitsForUser = getTodayVisitsForUser;
 exports.getCalendarVisitsForUser = getCalendarVisitsForUser;
 exports.getVisitDetailForUser = getVisitDetailForUser;
 exports.checkInVisit = checkInVisit;
+exports.createWalkInVisit = createWalkInVisit;
 exports.checkOutVisit = checkOutVisit;
 exports.updateHostSignatureForGuard = updateHostSignatureForGuard;
 exports.updateVisitForGuard = updateVisitForGuard;
 const mssql_1 = __importDefault(require("mssql"));
 const db_1 = require("./db");
 const auditLog_1 = require("./auditLog");
+const badgeNumber_1 = require("./badgeNumber");
 const fieldDefinitions_1 = require("./fieldDefinitions");
 const visitWorkflow_1 = require("./visitWorkflow");
 const MISSING_IMPORT_VALUE = "[fehlt]";
@@ -61,6 +63,13 @@ function isBlank(value) {
     const normalized = value?.trim();
     return !normalized || normalized.toLowerCase() === MISSING_IMPORT_VALUE;
 }
+function cleanOptional(value) {
+    if (typeof value !== "string") {
+        return null;
+    }
+    const normalized = value.trim();
+    return normalized.length > 0 ? normalized : null;
+}
 function normalizeDateOnlyStart(value) {
     const parsed = new Date(value);
     const utcYear = parsed.getUTCFullYear();
@@ -77,6 +86,25 @@ function normalizeDateOnlyEnd(value) {
 }
 function isDateOnlyValue(value) {
     return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.trim());
+}
+async function generateUniqueBadgeNumber(transaction) {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+        const candidate = (0, badgeNumber_1.generateBadgeNumberCandidate)();
+        const existing = await new mssql_1.default.Request(transaction)
+            .input("badgeNumber", mssql_1.default.NVarChar(64), candidate)
+            .query(`
+        SELECT TOP 1 v.id
+        FROM dbo.visits v
+        INNER JOIN dbo.visitors vis ON vis.id = v.visitor_id
+        WHERE v.badge_number = @badgeNumber
+          AND vis.is_deleted = 0
+          AND v.status <> '${visitWorkflow_1.VISIT_STATUS.CANCELLED}'
+      `);
+        if (existing.recordset.length === 0) {
+            return candidate;
+        }
+    }
+    throw new Error("badge_number_generation_failed");
 }
 function getSystemFieldValue(visit, fieldKey) {
     const mapping = {
@@ -658,6 +686,153 @@ async function checkInVisit(user, visitId, ipAddress, userAgent) {
             userAgent
         }, transaction);
         await transaction.commit();
+    }
+    catch (error) {
+        await transaction.rollback();
+        throw error;
+    }
+}
+async function createWalkInVisit(user, input, ipAddress, userAgent) {
+    if (!user.gateId) {
+        throw new Error("visit_gate_required_for_checkin");
+    }
+    const pool = await (0, db_1.getPool)();
+    const transaction = new mssql_1.default.Transaction(pool);
+    await transaction.begin();
+    try {
+        const badgeNumber = await generateUniqueBadgeNumber(transaction);
+        const visitorInsert = await new mssql_1.default.Request(transaction)
+            .input("firstName", mssql_1.default.NVarChar(120), input.firstName.trim())
+            .input("lastName", mssql_1.default.NVarChar(120), input.lastName.trim())
+            .input("company", mssql_1.default.NVarChar(255), input.company.trim())
+            .input("birthDate", mssql_1.default.Date, cleanOptional(input.birthDate))
+            .input("phone", mssql_1.default.NVarChar(80), cleanOptional(input.phone))
+            .input("email", mssql_1.default.NVarChar(255), cleanOptional(input.email))
+            .input("visitorStreet", mssql_1.default.NVarChar(255), input.visitorStreet.trim())
+            .input("visitorHouseNumber", mssql_1.default.NVarChar(40), input.visitorHouseNumber.trim())
+            .input("visitorPostalCode", mssql_1.default.NVarChar(20), input.visitorPostalCode.trim())
+            .input("visitorCity", mssql_1.default.NVarChar(120), input.visitorCity.trim())
+            .input("idDocumentType", mssql_1.default.NVarChar(40), input.idDocumentType.trim())
+            .input("idDocumentValidUntil", mssql_1.default.Date, input.idDocumentValidUntil.trim())
+            .input("idDocumentNumber", mssql_1.default.NVarChar(120), input.idDocumentNumber.trim())
+            .query(`
+        INSERT INTO dbo.visitors (
+          first_name,
+          last_name,
+          company,
+          birth_date,
+          phone_optional,
+          email_optional,
+          visitor_street,
+          visitor_house_number,
+          visitor_postal_code,
+          visitor_city,
+          id_document_type,
+          id_document_valid_until,
+          id_document_number
+        )
+        OUTPUT inserted.id
+        VALUES (
+          @firstName,
+          @lastName,
+          @company,
+          @birthDate,
+          @phone,
+          @email,
+          @visitorStreet,
+          @visitorHouseNumber,
+          @visitorPostalCode,
+          @visitorCity,
+          @idDocumentType,
+          @idDocumentValidUntil,
+          @idDocumentNumber
+        )
+      `);
+        const visitorId = visitorInsert.recordset[0]?.id;
+        if (!visitorId) {
+            throw new Error("visitor_insert_failed");
+        }
+        const visitInsert = await new mssql_1.default.Request(transaction)
+            .input("visitorId", mssql_1.default.UniqueIdentifier, visitorId)
+            .input("gateId", mssql_1.default.UniqueIdentifier, user.gateId)
+            .input("hostName", mssql_1.default.NVarChar(255), input.hostName.trim())
+            .input("hostEmail", mssql_1.default.NVarChar(255), cleanOptional(input.hostEmail))
+            .input("hostPhone", mssql_1.default.NVarChar(80), input.hostPhone.trim())
+            .input("hostDepartment", mssql_1.default.NVarChar(255), cleanOptional(input.hostDepartment))
+            .input("purpose", mssql_1.default.NVarChar(500), input.purpose.trim())
+            .input("validFrom", mssql_1.default.DateTime2, normalizeDateOnlyStart(input.validFrom))
+            .input("validUntil", mssql_1.default.DateTime2, normalizeDateOnlyEnd(input.validUntil))
+            .input("licensePlate", mssql_1.default.NVarChar(40), cleanOptional(input.licensePlate))
+            .input("badgeNumber", mssql_1.default.NVarChar(64), badgeNumber)
+            .input("notes", mssql_1.default.NVarChar(mssql_1.default.MAX), cleanOptional(input.notes))
+            .input("checkInBy", mssql_1.default.UniqueIdentifier, user.id)
+            .query(`
+        INSERT INTO dbo.visits (
+          visitor_id,
+          gate_id,
+          host_name,
+          host_email,
+          host_phone,
+          host_department,
+          purpose,
+          valid_from,
+          valid_until,
+          license_plate,
+          badge_number,
+          status,
+          approval_status,
+          created_by,
+          created_via_public_form,
+          notes,
+          check_in_at,
+          check_in_by
+        )
+        OUTPUT inserted.id, inserted.status
+        VALUES (
+          @visitorId,
+          @gateId,
+          @hostName,
+          @hostEmail,
+          @hostPhone,
+          @hostDepartment,
+          @purpose,
+          @validFrom,
+          @validUntil,
+          @licensePlate,
+          @badgeNumber,
+          '${visitWorkflow_1.VISIT_STATUS.CHECKED_IN}',
+          '${visitWorkflow_1.APPROVAL_STATUS.NOT_REQUIRED}',
+          @checkInBy,
+          0,
+          @notes,
+          SYSUTCDATETIME(),
+          @checkInBy
+        )
+      `);
+        const visit = visitInsert.recordset[0];
+        if (!visit) {
+            throw new Error("visit_insert_failed");
+        }
+        await (0, auditLog_1.writeAuditLog)({
+            user: user.username,
+            userId: user.id,
+            action: "VISIT_WALK_IN_CREATED",
+            objectType: "visit",
+            objectId: visit.id,
+            ipAddress,
+            userAgent,
+            metadata: {
+                source: "guard_walk_in",
+                badgeNumber
+            }
+        }, transaction);
+        await transaction.commit();
+        return {
+            visitId: visit.id,
+            visitorId,
+            badgeNumber,
+            status: visit.status
+        };
     }
     catch (error) {
         await transaction.rollback();

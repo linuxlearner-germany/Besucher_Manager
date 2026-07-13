@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { AppLayout, type ApiError, fetchJson, formatDateTime, formatSignatureStatus, formatStatus, statusClassName, type SibeSummary, type SibeVisitRow } from "../app/core";
+import { AppLayout, type ApiError, fetchJson, formatDateTime, formatStatus, statusClassName, type SibeSummary, type SibeVisitRow } from "../app/core";
 import { Alert, Card, DataTable } from "../components/ui";
 
 export function SibeDashboardPage() {
@@ -17,7 +17,7 @@ export function SibeDashboardPage() {
         ]);
 
         setSummary(summaryPayload);
-        setRecentVisits(recentPayload.visits.slice(0, 24));
+        setRecentVisits(recentPayload.visits.slice(0, 120));
       } catch (apiError) {
         const errorPayload = apiError as ApiError;
         setError(errorPayload.message || "Die Übersicht konnte nicht geladen werden.");
@@ -27,13 +27,15 @@ export function SibeDashboardPage() {
     void loadDashboard();
   }, []);
 
-  const checkedInVisits = useMemo(
-    () => recentVisits.filter((visit) => visit.status === "checked_in").slice(0, 8),
+  const pastVisits = useMemo(
+    () => recentVisits
+      .filter((visit) => visit.status === "checked_out" || new Date(visit.validUntil) < new Date())
+      .slice(0, 8),
     [recentVisits]
   );
-  const signatureFollowUps = useMemo(
+  const upcomingVisits = useMemo(
     () => recentVisits
-      .filter((visit) => visit.hostSignatureStatus === "pending" || visit.hostSignatureStatus === "signed_later" || visit.hostSignatureStatus === "missing_exception")
+      .filter((visit) => visit.status === "pre_registered" && new Date(visit.validFrom) > new Date())
       .slice(0, 8),
     [recentVisits]
   );
@@ -64,10 +66,6 @@ export function SibeDashboardPage() {
                 <strong className="hero-stat-value">{summary?.signaturesPending ?? "-"}</strong>
               </div>
               <div className="hero-stat-card">
-                <span className="hero-stat-label">Vergangene offen</span>
-                <strong className="hero-stat-value">{summary?.signaturesFollowUp ?? "-"}</strong>
-              </div>
-              <div className="hero-stat-card">
                 <span className="hero-stat-label">Ausnahmen</span>
                 <strong className="hero-stat-value">{summary?.signaturesExceptions ?? "-"}</strong>
               </div>
@@ -85,8 +83,7 @@ export function SibeDashboardPage() {
           <Card>
             <div className="section-header">
               <div>
-                <h3>Besuche ohne Ansprechpartner-Bestätigung</h3>
-                <p className="section-copy">Vergangene oder laufende Besuche, bei denen die Bestätigung noch fehlt.</p>
+                <h3>Vergangene Besuche</h3>
               </div>
               <Link className="button-link" to="/sibe/besucher">Besucherübersicht</Link>
             </div>
@@ -96,18 +93,16 @@ export function SibeDashboardPage() {
                   <th>Besucher</th>
                   <th>Firma</th>
                   <th>Status</th>
-                  <th>Bestätigung</th>
                   <th>Gültig bis</th>
                   <th>Aktion</th>
                 </tr>
               </thead>
               <tbody>
-                {signatureFollowUps.length > 0 ? signatureFollowUps.map((visit) => (
+                {pastVisits.length > 0 ? pastVisits.map((visit) => (
                   <tr key={visit.id}>
                     <td>{visit.visitorName}</td>
                     <td>{visit.company}</td>
                     <td><span className={statusClassName(visit.status)}>{formatStatus(visit.status)}</span></td>
-                    <td>{formatSignatureStatus(visit.hostSignatureStatus)}</td>
                     <td>{formatDateTime(visit.validUntil)}</td>
                     <td>
                       <Link className="button-link" to={`/sibe/besucher/${visit.id}`}>Details</Link>
@@ -115,7 +110,48 @@ export function SibeDashboardPage() {
                   </tr>
                 )) : (
                   <tr>
-                    <td colSpan={6}>Keine offenen Nachreichungen gefunden.</td>
+                    <td colSpan={5}>Keine vergangenen Besuche gefunden.</td>
+                  </tr>
+                )}
+              </tbody>
+            </DataTable>
+          </Card>
+        </div>
+
+        <div className="split-card-grid">
+          <Card>
+            <div className="section-header">
+              <div>
+                <h3>Kommende Besuche</h3>
+              </div>
+              <Link className="button-link" to="/sibe/besucher">Besucherübersicht</Link>
+            </div>
+            <DataTable>
+              <thead>
+                <tr>
+                  <th>Besucher</th>
+                  <th>Firma</th>
+                  <th>Ansprechpartner</th>
+                  <th>Wache</th>
+                  <th>Gültig von</th>
+                  <th>Aktion</th>
+                </tr>
+              </thead>
+              <tbody>
+                {upcomingVisits.length > 0 ? upcomingVisits.map((visit) => (
+                  <tr key={visit.id}>
+                    <td>{visit.visitorName}</td>
+                    <td>{visit.company}</td>
+                    <td>{visit.hostName}</td>
+                    <td>{visit.gateName}</td>
+                    <td>{formatDateTime(visit.validFrom)}</td>
+                    <td>
+                      <Link className="button-link" to={`/sibe/besucher/${visit.id}`}>Details</Link>
+                    </td>
+                  </tr>
+                )) : (
+                  <tr>
+                    <td colSpan={6}>Keine kommenden Besuche gefunden.</td>
                   </tr>
                 )}
               </tbody>

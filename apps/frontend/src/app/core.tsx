@@ -647,7 +647,7 @@ const ThemeContext = createContext<{
 export const BRANDING = {
   logo: "/branding/wiweb-logo-kurz-blau_neu.png",
   icon: "/branding/WIWEB-waage-vektor_ohne_schrift.png",
-  background: "/branding/background.png"
+  background: ""
 };
 
 export function formatDateTime(value: string | null): string {
@@ -723,6 +723,23 @@ export function formatApprovalStatus(status: VisitRow["approvalStatus"] | string
   }
 }
 
+export function formatIdDocumentType(value: string | null | undefined): string {
+  switch (value) {
+    case "identity_card":
+      return "Personalausweis";
+    case "passport":
+      return "Reisepass";
+    case "other":
+      return "Sonstiges";
+    case "":
+    case null:
+    case undefined:
+      return "-";
+    default:
+      return value;
+  }
+}
+
 export function formatRoleLabel(role: User["role"] | AdminUser["role"]): string {
   switch (role) {
     case "admin":
@@ -732,7 +749,7 @@ export function formatRoleLabel(role: User["role"] | AdminUser["role"]): string 
     case "sibe":
       return "SiBe";
     case "kaskdt":
-      return "Kasernenkommandant";
+      return "KasKdt";
     case "custom":
       return "Benutzerdefiniert";
     default:
@@ -1126,7 +1143,7 @@ export function ThemeProvider({ children }: PropsWithChildren) {
     return "light";
   });
   const [backgroundMode, setBackgroundMode] = useState<"image" | "subtle" | "plain">(() => {
-    return "image";
+    return "plain";
   });
   const [backgroundImageUrl, setBackgroundImageUrl] = useState<string>(BRANDING.background);
 
@@ -1140,7 +1157,10 @@ export function ThemeProvider({ children }: PropsWithChildren) {
   }, [backgroundMode]);
 
   useEffect(() => {
-    document.documentElement.style.setProperty("--body-background-source", `url("${backgroundImageUrl}")`);
+    document.documentElement.style.setProperty(
+      "--body-background-source",
+      backgroundImageUrl ? `url("${backgroundImageUrl}")` : "none"
+    );
   }, [backgroundImageUrl]);
 
   useEffect(() => {
@@ -1152,7 +1172,7 @@ export function ThemeProvider({ children }: PropsWithChildren) {
     }).then((payload) => {
       if (!active) return;
       setBackgroundMode(payload.backgroundMode);
-      setBackgroundImageUrl(payload.backgroundImageUrl || BRANDING.background);
+      setBackgroundImageUrl(payload.backgroundImageUrl || "");
     }).catch(() => {
     });
 
@@ -1196,7 +1216,7 @@ export function AppLayout({ children }: PropsWithChildren) {
     { to: "/admin", label: "Admin", visible: Boolean(user && hasMenuAccess(user, "admin") && (hasPermission(user, "admin.users") || hasPermission(user, "admin.guards") || hasPermission(user, "admin.fields") || hasPermission(user, "admin.map") || hasPermission(user, "admin.system") || hasPermission(user, "logs.audit") || hasPermission(user, "logs.errors"))) },
     { to: "/genehmigungen", label: "Genehmigungen", visible: Boolean(user && hasMenuAccess(user, "genehmigung") && hasPermission(user, "approvals.read")) },
     { to: "/sibe", label: "SiBe", visible: Boolean(user && hasMenuAccess(user, "sibe") && hasPermission(user, "dashboards.sibe")) },
-    { to: "/kaskdt", label: "Kasernenkommandant", visible: Boolean(user && hasMenuAccess(user, "kaskdt") && hasPermission(user, "dashboards.commander")) },
+    { to: "/kaskdt", label: "KasKdt", visible: Boolean(user && hasMenuAccess(user, "kaskdt") && hasPermission(user, "dashboards.commander")) },
     { to: "/texte", label: "Texte", visible: Boolean(user && hasMenuAccess(user, "texte") && hasPermission(user, "admin.texts")) },
     { to: "/login", label: "Login", visible: !user }
   ];

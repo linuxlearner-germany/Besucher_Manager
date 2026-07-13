@@ -51,10 +51,6 @@ export function ImportReviewModal({
         </div>
 
         <div className="import-review-stack">
-          <p className="section-copy">
-            {reviewRows.length} Einträge brauchen noch Ergänzungen oder Prüfung.
-          </p>
-
           {showLoginHint ? (
             <AlertNote>
               Für die direkte Nachbearbeitung ist eine Anmeldung an der Wache, im SiBe- oder Admin-Bereich erforderlich.

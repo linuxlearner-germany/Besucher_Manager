@@ -102,7 +102,6 @@ export function LoginPage() {
             <div className="section-header">
               <div>
                 <h2>{pendingLogin ? "Wache auswählen" : "Anmeldung"}</h2>
-                {pendingLogin ? <p className="section-copy">Wählen Sie den aktiven Standort für diese Anmeldung.</p> : null}
               </div>
             </div>
 
