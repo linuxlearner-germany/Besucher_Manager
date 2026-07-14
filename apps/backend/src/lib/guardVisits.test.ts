@@ -164,3 +164,26 @@ test("completeness blocks rejected approvals before check-in", () => {
   assert.equal(completeness.canCheckIn, false);
   assert.equal(completeness.errors.some((issue: { field: string; message: string }) => issue.field === "approval_status" && issue.message.includes("abgelehnt")), true);
 });
+
+test("guard visitor search is allowed for guard and admin only", () => {
+  const { canUseGuardVisitorSearch } = require("./guardVisits");
+  const basePermissions = {
+    visits: { create: true }
+  };
+
+  assert.equal(canUseGuardVisitorSearch({ role: "guard", permissions: basePermissions }), true);
+  assert.equal(canUseGuardVisitorSearch({ role: "admin", permissions: basePermissions }), true);
+  assert.equal(canUseGuardVisitorSearch({ role: "sibe", permissions: basePermissions }), false);
+  assert.equal(canUseGuardVisitorSearch({ role: "guard", permissions: { visits: { create: false } } }), false);
+});
+
+test("guard visitor search ignores empty and too-short criteria", () => {
+  const { hasGuardVisitorSearchCriteria } = require("./guardVisits");
+
+  assert.equal(hasGuardVisitorSearchCriteria({ firstName: "", lastName: "" }), false);
+  assert.equal(hasGuardVisitorSearchCriteria({ firstName: "A" }), false);
+  assert.equal(hasGuardVisitorSearchCriteria({ badgeNumber: "Z" }), false);
+  assert.equal(hasGuardVisitorSearchCriteria({ birthDate: "2026-07-14" }), true);
+  assert.equal(hasGuardVisitorSearchCriteria({ firstName: "Al" }), true);
+  assert.equal(hasGuardVisitorSearchCriteria({ email: "ab" }), true);
+});

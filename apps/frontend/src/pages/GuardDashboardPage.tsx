@@ -17,7 +17,11 @@ import {
 } from "../app/core";
 import { FormField } from "../components/ui";
 
+type WalkInAction = "save" | "check_in" | "check_in_and_print";
+
 type WalkInFormState = {
+  clientRequestId: string;
+  existingVisitorId: string | null;
   firstName: string;
   lastName: string;
   company: string;
@@ -40,11 +44,79 @@ type WalkInFormState = {
   idDocumentType: "identity_card" | "passport" | "other";
   idDocumentValidUntil: string;
   idDocumentNumber: string;
+  devicePhotoApp: boolean;
+  deviceFilmApp: boolean;
+  deviceVideoCamera: boolean;
+  deviceManufacturer: string;
+  deviceSerialNumber: string;
+  deviceAccessories: string;
+  deviceDepositNote: string;
 };
+
+type VisitorSearchFormState = {
+  query: string;
+};
+
+type GuardVisitorHistoryItem = {
+  visitId: string;
+  validFrom: string;
+  validUntil: string;
+  hostName: string;
+  hostDepartment: string | null;
+  purpose: string;
+  checkInAt: string | null;
+  checkOutAt: string | null;
+  status: string;
+  gateName: string | null;
+};
+
+type GuardVisitorMatch = {
+  visitorId: string;
+  firstName: string;
+  lastName: string;
+  company: string;
+  birthDate: string | null;
+  phone: string | null;
+  email: string | null;
+  visitorStreet: string | null;
+  visitorHouseNumber: string | null;
+  visitorPostalCode: string | null;
+  visitorCity: string | null;
+  idDocumentType: WalkInFormState["idDocumentType"] | null;
+  idDocumentValidUntil: string | null;
+  idDocumentNumber: string | null;
+  lastLicensePlate: string | null;
+  visitCount: number;
+  lastVisitAt: string | null;
+  lastVisitStatus: string | null;
+  lastHostName: string | null;
+  lastHostDepartment: string | null;
+  lastPurpose: string | null;
+  devicePhotoApp: boolean | null;
+  deviceFilmApp: boolean | null;
+  deviceVideoCamera: boolean | null;
+  deviceManufacturer: string | null;
+  deviceSerialNumber: string | null;
+  deviceAccessories: string | null;
+  deviceDepositNote: string | null;
+  history: GuardVisitorHistoryItem[];
+};
+
+type RecentWalkInResult = {
+  visitId: string;
+  badgeNumber: string;
+  status: string;
+};
+
+function buildWalkInRequestId(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+}
 
 function buildInitialWalkInForm(): WalkInFormState {
   const today = toDateInputValue(new Date());
   return {
+    clientRequestId: buildWalkInRequestId(),
+    existingVisitorId: null,
     firstName: "",
     lastName: "",
     company: "",
@@ -66,7 +138,52 @@ function buildInitialWalkInForm(): WalkInFormState {
     visitorCity: "",
     idDocumentType: "identity_card",
     idDocumentValidUntil: today,
-    idDocumentNumber: ""
+    idDocumentNumber: "",
+    devicePhotoApp: false,
+    deviceFilmApp: false,
+    deviceVideoCamera: false,
+    deviceManufacturer: "",
+    deviceSerialNumber: "",
+    deviceAccessories: "",
+    deviceDepositNote: ""
+  };
+}
+
+function buildInitialVisitorSearchForm(): VisitorSearchFormState {
+  return {
+    query: ""
+  };
+}
+
+function hasSearchCriteria(search: VisitorSearchFormState): boolean {
+  return search.query.trim().length >= 2;
+}
+
+function applyVisitorToWalkInForm(current: WalkInFormState, visitor: GuardVisitorMatch): WalkInFormState {
+  return {
+    ...current,
+    existingVisitorId: visitor.visitorId,
+    firstName: visitor.firstName,
+    lastName: visitor.lastName,
+    company: visitor.company,
+    birthDate: visitor.birthDate || "",
+    phone: visitor.phone || "",
+    email: visitor.email || "",
+    licensePlate: visitor.lastLicensePlate || "",
+    visitorStreet: visitor.visitorStreet || "",
+    visitorHouseNumber: visitor.visitorHouseNumber || "",
+    visitorPostalCode: visitor.visitorPostalCode || "",
+    visitorCity: visitor.visitorCity || "",
+    idDocumentType: (visitor.idDocumentType as WalkInFormState["idDocumentType"] | null) || current.idDocumentType,
+    idDocumentValidUntil: visitor.idDocumentValidUntil || current.idDocumentValidUntil,
+    idDocumentNumber: visitor.idDocumentNumber || "",
+    devicePhotoApp: Boolean(visitor.devicePhotoApp),
+    deviceFilmApp: Boolean(visitor.deviceFilmApp),
+    deviceVideoCamera: Boolean(visitor.deviceVideoCamera),
+    deviceManufacturer: visitor.deviceManufacturer || "",
+    deviceSerialNumber: visitor.deviceSerialNumber || "",
+    deviceAccessories: visitor.deviceAccessories || "",
+    deviceDepositNote: visitor.deviceDepositNote || ""
   };
 }
 
@@ -85,6 +202,12 @@ export function GuardDashboardPage() {
   const [walkInOpen, setWalkInOpen] = useState(false);
   const [walkInSaving, setWalkInSaving] = useState(false);
   const [walkInForm, setWalkInForm] = useState<WalkInFormState>(() => buildInitialWalkInForm());
+  const [visitorSearchForm, setVisitorSearchForm] = useState<VisitorSearchFormState>(() => buildInitialVisitorSearchForm());
+  const [visitorSearchLoading, setVisitorSearchLoading] = useState(false);
+  const [visitorSearchResults, setVisitorSearchResults] = useState<GuardVisitorMatch[]>([]);
+  const [selectedVisitor, setSelectedVisitor] = useState<GuardVisitorMatch | null>(null);
+  const [possibleDuplicates, setPossibleDuplicates] = useState<GuardVisitorMatch[]>([]);
+  const [recentWalkInResult, setRecentWalkInResult] = useState<RecentWalkInResult | null>(null);
   const [calendarMonth, setCalendarMonth] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
@@ -211,6 +334,92 @@ export function GuardDashboardPage() {
     void loadCalendar();
   }, [loadCalendar]);
 
+  useEffect(() => {
+    if (!walkInOpen || !hasSearchCriteria(visitorSearchForm)) {
+      setVisitorSearchResults([]);
+      setVisitorSearchLoading(false);
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      const params = new URLSearchParams();
+      for (const [key, value] of Object.entries(visitorSearchForm)) {
+        if (value.trim()) {
+          params.set(key, value.trim());
+        }
+      }
+      params.set("limit", "8");
+
+      setVisitorSearchLoading(true);
+      void fetchJson<{ visitors: GuardVisitorMatch[] }>(`/api/guard/visitors/search?${params.toString()}`, {
+        method: "GET",
+        headers: {}
+      }).then((payload) => {
+        setVisitorSearchResults(payload.visitors);
+      }).catch(() => {
+        setVisitorSearchResults([]);
+      }).finally(() => {
+        setVisitorSearchLoading(false);
+      });
+    }, 350);
+
+    return () => window.clearTimeout(timeout);
+  }, [visitorSearchForm, walkInOpen]);
+
+  useEffect(() => {
+    if (!walkInOpen || selectedVisitor) {
+      setPossibleDuplicates([]);
+      return;
+    }
+
+    const duplicateSearch = {
+      firstName: walkInForm.firstName,
+      lastName: walkInForm.lastName,
+      birthDate: walkInForm.birthDate,
+      city: walkInForm.visitorCity,
+      email: walkInForm.email,
+      phone: walkInForm.phone
+    };
+
+    const hasDuplicateCriteria = Object.entries(duplicateSearch).some(([key, value]) =>
+      key === "birthDate" ? value.trim().length === 10 : value.trim().length >= 2
+    );
+
+    if (!hasDuplicateCriteria) {
+      setPossibleDuplicates([]);
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      const params = new URLSearchParams();
+      for (const [key, value] of Object.entries(duplicateSearch)) {
+        if (value.trim()) {
+          params.set(key, value.trim());
+        }
+      }
+      params.set("limit", "5");
+      void fetchJson<{ visitors: GuardVisitorMatch[] }>(`/api/guard/visitors/search?${params.toString()}`, {
+        method: "GET",
+        headers: {}
+      }).then((payload) => {
+        setPossibleDuplicates(payload.visitors);
+      }).catch(() => {
+        setPossibleDuplicates([]);
+      });
+    }, 450);
+
+    return () => window.clearTimeout(timeout);
+  }, [
+    selectedVisitor,
+    walkInForm.birthDate,
+    walkInForm.email,
+    walkInForm.firstName,
+    walkInForm.lastName,
+    walkInForm.phone,
+    walkInForm.visitorCity,
+    walkInOpen
+  ]);
+
   async function handleCheckIn(visitId: string) {
     setActionMessage(null);
 
@@ -247,18 +456,37 @@ export function GuardDashboardPage() {
     }
   }
 
-  async function handleWalkInCreate() {
+  async function handleWalkInCreate(action: WalkInAction) {
     setActionMessage(null);
     setWalkInSaving(true);
 
     try {
-      const payload = await fetchJson<{ message: string; badgeNumber: string; visitId: string }>("/api/guard/visits/walk-in", {
+      const payload = await fetchJson<{ message: string; badgeNumber: string; visitId: string; status: string }>("/api/guard/visits/walk-in", {
         method: "POST",
-        body: JSON.stringify(walkInForm)
+        body: JSON.stringify({
+          ...walkInForm,
+          action
+        })
       });
       setWalkInOpen(false);
       setWalkInForm(buildInitialWalkInForm());
-      setActionMessage(`${payload.message} Besuchsnummer: ${payload.badgeNumber}.`);
+      setVisitorSearchForm(buildInitialVisitorSearchForm());
+      setVisitorSearchResults([]);
+      setSelectedVisitor(null);
+      setPossibleDuplicates([]);
+      setRecentWalkInResult({
+        visitId: payload.visitId,
+        badgeNumber: payload.badgeNumber,
+        status: payload.status
+      });
+      if (action === "check_in_and_print") {
+        const printWindow = window.open(`/wache/besuche/${payload.visitId}/druck?autoprint=1`, "_blank", "noopener,noreferrer");
+        setActionMessage(printWindow
+          ? `${payload.message} Besuchsnummer: ${payload.badgeNumber}. Druckansicht wurde geöffnet.`
+          : `${payload.message} Besuchsnummer: ${payload.badgeNumber}. Das Druckfenster konnte nicht automatisch geöffnet werden.`);
+      } else {
+        setActionMessage(`${payload.message} Besuchsnummer: ${payload.badgeNumber}.`);
+      }
       await Promise.all([loadVisits(), loadCalendar()]);
     } catch (apiError) {
       const errorPayload = apiError as ApiError;
@@ -266,6 +494,20 @@ export function GuardDashboardPage() {
     } finally {
       setWalkInSaving(false);
     }
+  }
+
+  function selectExistingVisitor(visitor: GuardVisitorMatch) {
+    setSelectedVisitor(visitor);
+    setWalkInForm((current) => applyVisitorToWalkInForm(current, visitor));
+  }
+
+  function resetWalkInDialog() {
+    setWalkInOpen(false);
+    setWalkInForm(buildInitialWalkInForm());
+    setVisitorSearchForm(buildInitialVisitorSearchForm());
+    setVisitorSearchResults([]);
+    setSelectedVisitor(null);
+    setPossibleDuplicates([]);
   }
 
   function updateCheckoutState(visitId: string, next: Partial<CheckoutFormState>) {
@@ -354,6 +596,13 @@ export function GuardDashboardPage() {
         ) : null}
 
         {actionMessage ? <div className="feedback info">{actionMessage}</div> : null}
+        {recentWalkInResult ? (
+          <div className="toolbar guard-created-actions">
+            <span className="badge status-active">Neue Besuchsnummer: {recentWalkInResult.badgeNumber}</span>
+            <Link className="button-link" to={`/wache/besuche/${recentWalkInResult.visitId}`}>Details öffnen</Link>
+            <Link className="button-link" to={`/wache/besuche/${recentWalkInResult.visitId}/druck`}>Besucherschein drucken</Link>
+          </div>
+        ) : null}
         {error ? <div className="feedback error">{error}</div> : null}
         {activeView === "list" && loading ? <div className="feedback info">Besuche werden geladen...</div> : null}
         {activeView === "calendar" && calendarLoading ? <div className="feedback info">Kalender wird geladen...</div> : null}
@@ -565,6 +814,105 @@ export function GuardDashboardPage() {
               </div>
             </div>
             <div className="form-grid">
+              <section className="walkin-search-panel">
+                <div className="section-header">
+                  <div>
+                    <h3>Bestehenden Besucher suchen</h3>
+                  </div>
+                </div>
+                <div className="form-grid two-columns">
+                  <FormField label="Besucher suchen">
+                    <input
+                      placeholder="Name, Firma, Wohnort, Telefon, E-Mail, Kennzeichen oder Besuchsnummer"
+                      value={visitorSearchForm.query}
+                      onChange={(event) => setVisitorSearchForm({ query: event.target.value })}
+                    />
+                  </FormField>
+                </div>
+                {selectedVisitor ? (
+                  <div className="feedback info">
+                    Besucher übernommen: {selectedVisitor.firstName} {selectedVisitor.lastName} ({selectedVisitor.company})
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => {
+                        setSelectedVisitor(null);
+                        setWalkInForm((current) => ({ ...current, existingVisitorId: null, clientRequestId: buildWalkInRequestId() }));
+                      }}
+                    >
+                      Auswahl aufheben
+                    </button>
+                  </div>
+                ) : null}
+                {visitorSearchLoading ? <div className="feedback info">Besucher werden gesucht...</div> : null}
+                {!visitorSearchLoading && hasSearchCriteria(visitorSearchForm) && visitorSearchResults.length === 0 ? (
+                  <div className="feedback info">Keine passenden Besucher gefunden.</div>
+                ) : null}
+                {visitorSearchResults.length > 0 ? (
+                  <div className="walkin-search-results">
+                    {visitorSearchResults.map((visitor) => (
+                      <article key={visitor.visitorId} className="walkin-search-result">
+                        <div className="walkin-search-result-head">
+                          <div>
+                            <strong>{visitor.firstName} {visitor.lastName}</strong>
+                            <div>{visitor.company}</div>
+                          </div>
+                          <button type="button" onClick={() => selectExistingVisitor(visitor)}>Besucher übernehmen</button>
+                        </div>
+                        <div className="walkin-search-meta">
+                          <span>Wohnort: {visitor.visitorCity || "-"}</span>
+                          <span>Letzter Besuch: {formatDateTime(visitor.lastVisitAt)}</span>
+                          <span>Bisherige Besuche: {visitor.visitCount}</span>
+                          <span>Letzter Status: {visitor.lastVisitStatus ? formatStatus(visitor.lastVisitStatus) : "-"}</span>
+                        </div>
+                        {visitor.history.length > 0 ? (
+                          <div className="table-wrap">
+                            <table className="data-table compact-table">
+                              <thead>
+                                <tr>
+                                  <th>Datum</th>
+                                  <th>Ansprechpartner</th>
+                                  <th>Bereich</th>
+                                  <th>Zweck</th>
+                                  <th>Status</th>
+                                  <th>Wache</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {visitor.history.map((entry) => (
+                                  <tr key={entry.visitId}>
+                                    <td className="cell-nowrap">{formatDateTime(entry.validFrom)}</td>
+                                    <td>{entry.hostName}</td>
+                                    <td>{entry.hostDepartment || "-"}</td>
+                                    <td>{entry.purpose}</td>
+                                    <td><span className={statusClassName(entry.status)}>{formatStatus(entry.status)}</span></td>
+                                    <td>{entry.gateName || "-"}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : null}
+                      </article>
+                    ))}
+                  </div>
+                ) : null}
+              </section>
+
+              {possibleDuplicates.length > 0 && !selectedVisitor ? (
+                <div className="feedback warning walkin-duplicate-warning">
+                  <strong>Möglicherweise ist dieser Besucher bereits vorhanden.</strong>
+                  <div className="walkin-duplicate-list">
+                    {possibleDuplicates.map((visitor) => (
+                      <div key={visitor.visitorId} className="walkin-duplicate-item">
+                        <span>{visitor.firstName} {visitor.lastName} - {visitor.company}{visitor.visitorCity ? `, ${visitor.visitorCity}` : ""}</span>
+                        <button type="button" className="secondary-button" onClick={() => selectExistingVisitor(visitor)}>Vorhandenen Besucher verwenden</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
               <div className="form-grid two-columns">
                 <FormField label="Vorname" required><input value={walkInForm.firstName} onChange={(event) => setWalkInForm((current) => ({ ...current, firstName: event.target.value }))} /></FormField>
                 <FormField label="Nachname" required><input value={walkInForm.lastName} onChange={(event) => setWalkInForm((current) => ({ ...current, lastName: event.target.value }))} /></FormField>
@@ -596,16 +944,19 @@ export function GuardDashboardPage() {
               </div>
               <FormField label="Bemerkung"><textarea rows={3} value={walkInForm.notes} onChange={(event) => setWalkInForm((current) => ({ ...current, notes: event.target.value }))} /></FormField>
               <div className="row-actions">
-                <button type="button" onClick={() => void handleWalkInCreate()} disabled={walkInSaving}>
-                  {walkInSaving ? "Speichert..." : "Besucher direkt anmelden"}
+                <button type="button" className="secondary-button" onClick={() => void handleWalkInCreate("save")} disabled={walkInSaving}>
+                  {walkInSaving ? "Speichert..." : "Besuch speichern"}
+                </button>
+                <button type="button" onClick={() => void handleWalkInCreate("check_in")} disabled={walkInSaving}>
+                  {walkInSaving ? "Speichert..." : "Speichern und einchecken"}
+                </button>
+                <button type="button" onClick={() => void handleWalkInCreate("check_in_and_print")} disabled={walkInSaving}>
+                  {walkInSaving ? "Speichert..." : "Speichern, einchecken und drucken"}
                 </button>
                 <button
                   type="button"
                   className="secondary-button"
-                  onClick={() => {
-                    setWalkInOpen(false);
-                    setWalkInForm(buildInitialWalkInForm());
-                  }}
+                  onClick={resetWalkInDialog}
                   disabled={walkInSaving}
                 >
                   Abbrechen

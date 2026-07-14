@@ -200,7 +200,7 @@ export function VisitDetailPage() {
                   <button type="button" onClick={() => setIsCheckoutModalOpen(true)}>Auschecken</button>
                 ) : null}
                 {visit.completeness.canPrintBadge ? (
-                  <Link className="button-link" to={`/wache/besuche/${visit.id}/druck`}>
+                  <Link className="button-link" to={`/wache/besuche/${visit.id}/druck${visit.status === "checked_out" ? "?reprint=1" : ""}`}>
                     {visit.status === "checked_out" ? "Besucherschein erneut drucken" : "Besucherschein drucken"}
                   </Link>
                 ) : null}

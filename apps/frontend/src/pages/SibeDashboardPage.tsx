@@ -33,6 +33,12 @@ export function SibeDashboardPage() {
       .slice(0, 8),
     [recentVisits]
   );
+  const currentVisits = useMemo(
+    () => recentVisits
+      .filter((visit) => visit.status === "checked_in")
+      .slice(0, 8),
+    [recentVisits]
+  );
   const upcomingVisits = useMemo(
     () => recentVisits
       .filter((visit) => visit.status === "pre_registered" && new Date(visit.validFrom) > new Date())
@@ -78,6 +84,47 @@ export function SibeDashboardPage() {
         </section>
 
         {error ? <Alert type="error">{error}</Alert> : null}
+
+        <div className="split-card-grid">
+          <Card>
+            <div className="section-header">
+              <div>
+                <h3>Aktuelle Besuche</h3>
+              </div>
+              <Link className="button-link" to="/sibe/besucher">Besucherübersicht</Link>
+            </div>
+            <DataTable>
+              <thead>
+                <tr>
+                  <th>Besucher</th>
+                  <th>Firma</th>
+                  <th>Ansprechpartner</th>
+                  <th>Wache</th>
+                  <th>Check-in</th>
+                  <th>Aktion</th>
+                </tr>
+              </thead>
+              <tbody>
+                {currentVisits.length > 0 ? currentVisits.map((visit) => (
+                  <tr key={visit.id}>
+                    <td>{visit.visitorName}</td>
+                    <td>{visit.company}</td>
+                    <td>{visit.hostName}</td>
+                    <td>{visit.gateName}</td>
+                    <td>{formatDateTime(visit.checkInAt || visit.validFrom)}</td>
+                    <td>
+                      <Link className="button-link" to={`/sibe/besucher/${visit.id}`}>Details</Link>
+                    </td>
+                  </tr>
+                )) : (
+                  <tr>
+                    <td colSpan={6}>Keine aktuellen Besuche gefunden.</td>
+                  </tr>
+                )}
+              </tbody>
+            </DataTable>
+          </Card>
+        </div>
 
         <div className="split-card-grid">
           <Card>

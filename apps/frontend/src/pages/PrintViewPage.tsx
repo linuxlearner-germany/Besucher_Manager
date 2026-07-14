@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router-dom";
 import { AppLayout, BRANDING, type ApiError, fetchJson, formatDateOnly, formatIdDocumentType, type VisitDetail } from "../app/core";
 
 export function PrintViewPage() {
   const { id } = useParams();
+  const location = useLocation();
   const [visit, setVisit] = useState<VisitDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -29,15 +30,35 @@ export function PrintViewPage() {
     void loadVisit();
   }, [id]);
 
+  useEffect(() => {
+    if (!visit) {
+      return;
+    }
+
+    const params = new URLSearchParams(location.search);
+    if (params.get("autoprint") !== "1") {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      void handlePrint();
+    }, 250);
+
+    return () => window.clearTimeout(timeout);
+  }, [location.search, visit]);
+
   async function handlePrint() {
     if (!id) {
       return;
     }
 
+    const params = new URLSearchParams(location.search);
+    const isReprint = params.get("reprint") === "1";
+
     try {
       await fetchJson<{ success: boolean }>(`/api/guard/visits/${id}/print-log`, {
         method: "POST",
-        body: JSON.stringify({})
+        body: JSON.stringify({ reprint: isReprint })
       });
     } catch {
     }

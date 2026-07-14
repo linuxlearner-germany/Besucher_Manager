@@ -156,3 +156,22 @@ function createBaseVisit() {
     strict_1.default.equal(completeness.canCheckIn, false);
     strict_1.default.equal(completeness.errors.some((issue) => issue.field === "approval_status" && issue.message.includes("abgelehnt")), true);
 });
+(0, node_test_1.default)("guard visitor search is allowed for guard and admin only", () => {
+    const { canUseGuardVisitorSearch } = require("./guardVisits");
+    const basePermissions = {
+        visits: { create: true }
+    };
+    strict_1.default.equal(canUseGuardVisitorSearch({ role: "guard", permissions: basePermissions }), true);
+    strict_1.default.equal(canUseGuardVisitorSearch({ role: "admin", permissions: basePermissions }), true);
+    strict_1.default.equal(canUseGuardVisitorSearch({ role: "sibe", permissions: basePermissions }), false);
+    strict_1.default.equal(canUseGuardVisitorSearch({ role: "guard", permissions: { visits: { create: false } } }), false);
+});
+(0, node_test_1.default)("guard visitor search ignores empty and too-short criteria", () => {
+    const { hasGuardVisitorSearchCriteria } = require("./guardVisits");
+    strict_1.default.equal(hasGuardVisitorSearchCriteria({ firstName: "", lastName: "" }), false);
+    strict_1.default.equal(hasGuardVisitorSearchCriteria({ firstName: "A" }), false);
+    strict_1.default.equal(hasGuardVisitorSearchCriteria({ badgeNumber: "Z" }), false);
+    strict_1.default.equal(hasGuardVisitorSearchCriteria({ birthDate: "2026-07-14" }), true);
+    strict_1.default.equal(hasGuardVisitorSearchCriteria({ firstName: "Al" }), true);
+    strict_1.default.equal(hasGuardVisitorSearchCriteria({ email: "ab" }), true);
+});
