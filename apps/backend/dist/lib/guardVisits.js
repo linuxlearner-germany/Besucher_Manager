@@ -606,10 +606,13 @@ async function getVisitDetailForUser(user, visitId) {
       id,
       name,
       text_type AS textType,
-      content
+      text_type AS sectionType,
+      custom_heading AS customHeading,
+      content,
+      sort_order AS sortOrder
     FROM dbo.badge_text_templates
     WHERE is_active = 1
-    ORDER BY text_type ASC, name ASC
+    ORDER BY sort_order ASC, updated_at ASC, name ASC
   `);
     return {
         ...visit,

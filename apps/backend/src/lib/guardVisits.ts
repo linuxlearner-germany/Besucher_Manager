@@ -186,7 +186,7 @@ export type VisitDetail = GuardVisitListItem & {
   notes: string | null;
   badgeNumber: string | null;
   siteMap: { id: string; name: string; filePath: string } | null;
-  badgeTexts: Array<{ id: string; name: string; textType: string; content: string }>;
+  badgeTexts: Array<{ id: string; name: string; textType: string; sectionType: string; customHeading: string | null; content: string; sortOrder: number }>;
   completeness: VisitCompleteness;
 };
 
@@ -912,15 +912,18 @@ export async function getVisitDetailForUser(user: AuthenticatedUser, visitId: st
     ORDER BY created_at DESC
   `);
 
-  const badgeTextsResult = await pool.request().query<{ id: string; name: string; textType: string; content: string }>(`
+  const badgeTextsResult = await pool.request().query<{ id: string; name: string; textType: string; sectionType: string; customHeading: string | null; content: string; sortOrder: number }>(`
     SELECT
       id,
       name,
       text_type AS textType,
-      content
+      text_type AS sectionType,
+      custom_heading AS customHeading,
+      content,
+      sort_order AS sortOrder
     FROM dbo.badge_text_templates
     WHERE is_active = 1
-    ORDER BY text_type ASC, name ASC
+    ORDER BY sort_order ASC, updated_at ASC, name ASC
   `);
 
   return {

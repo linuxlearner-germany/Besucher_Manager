@@ -130,8 +130,13 @@ export type AdminBadgeText = {
   id: string;
   name: string;
   textType: string;
+  sectionType: string;
+  sectionLabel: string;
+  heading: string;
+  customHeading: string | null;
   content: string;
   isActive: boolean;
+  sortOrder: number;
 };
 
 export type AdminAuditLog = {
@@ -291,7 +296,7 @@ export type VisitDetail = VisitRow & {
   notes: string | null;
   badgeNumber: string | null;
   siteMap: { id: string; name: string; filePath: string } | null;
-  badgeTexts: Array<{ id: string; name: string; textType: string; content: string }>;
+  badgeTexts: Array<{ id: string; name: string; textType: string; sectionType: string; customHeading: string | null; content: string; sortOrder: number }>;
   completeness: {
     canCheckIn: boolean;
     canPrintBadge: boolean;
@@ -838,13 +843,17 @@ export function statusClassName(status: string): string {
 export function formatTextType(textType: AdminBadgeText["textType"]): string {
   switch (textType) {
     case "security_notice":
-      return "Sicherheitshinweis";
+      return "Sicherheitshinweise";
     case "photo_ban":
       return "Fotografierverbot";
     case "signature_notice":
-      return "Unterschrift";
+      return "Rückgabe und Unterschrift";
+    case "visitor_notice":
+      return "Hinweis für Besucher";
     case "footer":
       return "Footer";
+    case "custom":
+      return "Benutzerdefinierter Bereich";
     default:
       return textType
         .replace(/[_-]+/g, " ")
