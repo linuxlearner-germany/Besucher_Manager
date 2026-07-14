@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000" fill="none">
+  <rect width="1600" height="1000" fill="#F4F7FA"/>
+  <rect x="70" y="70" width="1460" height="860" rx="24" fill="#FFFFFF" stroke="#B7C6D8" stroke-width="6"/>
+  <text x="100" y="145" fill="#10233A" font-family="Arial, Helvetica, sans-serif" font-size="42" font-weight="700">
+    Beispiel-Geländeplan
+  </text>
+  <text x="100" y="185" fill="#4E647C" font-family="Arial, Helvetica, sans-serif" font-size="22">
+    Datei liegt fest im Ordner uploads/site-maps
+  </text>
+
+  <rect x="120" y="250" width="260" height="180" rx="16" fill="#DCE8F5" stroke="#7A9BBC" stroke-width="4"/>
+  <text x="165" y="345" fill="#16324F" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700">
+    Hauptwache
+  </text>
+
+  <rect x="470" y="230" width="330" height="210" rx="16" fill="#E9EFF5" stroke="#98AFC6" stroke-width="4"/>
+  <text x="545" y="330" fill="#16324F" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="700">
+    Verwaltung
+  </text>
+
+  <rect x="930" y="220" width="430" height="240" rx="16" fill="#E1F0E7" stroke="#88B096" stroke-width="4"/>
+  <text x="1030" y="330" fill="#173B27" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="700">
+    Besucherbereich
+  </text>
+
+  <rect x="240" y="560" width="420" height="230" rx="16" fill="#F8ECD9" stroke="#C8A779" stroke-width="4"/>
+  <text x="360" y="675" fill="#5A4020" font-family="Arial, Helvetica, sans-serif" font-size="32" font-weight="700">
+    Halle A
+  </text>
+
+  <rect x="820" y="560" width="460" height="230" rx="16" fill="#F3E4E6" stroke="#B88A92" stroke-width="4"/>
+  <text x="970" y="675" fill="#5C2731" font-family="Arial, Helvetica, sans-serif" font-size="32" font-weight="700">
+    Halle B
+  </text>
+
+  <path d="M250 430H1310" stroke="#758CA3" stroke-width="18" stroke-linecap="round"/>
+  <path d="M390 340H470" stroke="#758CA3" stroke-width="18" stroke-linecap="round"/>
+  <path d="M800 340H930" stroke="#758CA3" stroke-width="18" stroke-linecap="round"/>
+  <path d="M1030 460V560" stroke="#758CA3" stroke-width="18" stroke-linecap="round"/>
+  <path d="M520 440V560" stroke="#758CA3" stroke-width="18" stroke-linecap="round"/>
+
+  <circle cx="1460" cy="160" r="28" fill="#D22F27"/>
+  <text x="1250" y="168" fill="#10233A" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="700">
+    Notfall-Sammelpunkt
+  </text>
+
+  <rect x="1180" y="820" width="280" height="70" rx="12" fill="#0F2B45"/>
+  <text x="1228" y="865" fill="#FFFFFF" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700">
+    Beispielplan
+  </text>
+</svg>

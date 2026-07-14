@@ -179,10 +179,6 @@ export function AdminPage() {
   const [siteMapPreviewUrl, setSiteMapPreviewUrl] = useState<string | null>(null);
   const [siteMapFieldError, setSiteMapFieldError] = useState<string | null>(null);
   const [siteMapUploading, setSiteMapUploading] = useState(false);
-  const [backgroundFile, setBackgroundFile] = useState<File | null>(null);
-  const [backgroundPreviewUrl, setBackgroundPreviewUrl] = useState<string | null>(null);
-  const [backgroundFieldError, setBackgroundFieldError] = useState<string | null>(null);
-  const [backgroundUploading, setBackgroundUploading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [editableGates, setEditableGates] = useState<Record<string, AdminGate>>({});
   const [editableUsers, setEditableUsers] = useState<Record<string, EditableAdminUser>>({});
@@ -303,20 +299,6 @@ export function AdminPage() {
       URL.revokeObjectURL(nextUrl);
     };
   }, [siteMapFile]);
-
-  useEffect(() => {
-    if (!backgroundFile) {
-      setBackgroundPreviewUrl(null);
-      return;
-    }
-
-    const nextUrl = URL.createObjectURL(backgroundFile);
-    setBackgroundPreviewUrl(nextUrl);
-
-    return () => {
-      URL.revokeObjectURL(nextUrl);
-    };
-  }, [backgroundFile]);
 
   useEffect(() => {
     if (!selectedFieldDefinitionId && !isCreateFieldModalOpen) {
@@ -453,11 +435,6 @@ export function AdminPage() {
     setDragActive(false);
   }
 
-  function resetBackgroundSelection() {
-    setBackgroundFile(null);
-    setBackgroundFieldError(null);
-  }
-
   function applySelectedFiles(files: FileList | File[] | null) {
     if (!files || files.length === 0) {
       return;
@@ -489,31 +466,6 @@ export function AdminPage() {
   function handleSiteMapFileInput(event: ChangeEvent<HTMLInputElement>) {
     applySelectedFiles(event.target.files);
     event.target.value = "";
-  }
-
-  function handleBackgroundFileInput(event: ChangeEvent<HTMLInputElement>) {
-    const files = event.target.files;
-    event.target.value = "";
-
-    if (!files || files.length === 0) {
-      return;
-    }
-
-    const [file] = Array.from(files);
-    const allowedTypes = ["image/png", "image/jpeg", "image/webp"];
-
-    if (!allowedTypes.includes(file.type)) {
-      setBackgroundFieldError("Erlaubt sind nur PNG-, JPG- und WEBP-Dateien.");
-      return;
-    }
-
-    if (file.size > 10 * 1024 * 1024) {
-      setBackgroundFieldError("Die Bilddatei ist größer als 10 MB.");
-      return;
-    }
-
-    setBackgroundFieldError(null);
-    setBackgroundFile(file);
   }
 
   function handleSiteMapDrop(event: DragEvent<HTMLLabelElement>) {
@@ -706,52 +658,6 @@ export function AdminPage() {
     } catch (apiError) {
       const payload = apiError as ApiError;
       setError(payload.message || "Geländeplan konnte nicht aktiviert werden.");
-    }
-  }
-
-  async function uploadBackgroundImage(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    if (!backgroundFile) {
-      setBackgroundFieldError("Bitte wählen Sie eine Bilddatei aus.");
-      return;
-    }
-
-    try {
-      setBackgroundUploading(true);
-      const formData = new FormData();
-      formData.append("file", backgroundFile);
-      const payload = await fetchJson<{
-        success: boolean;
-        backgroundImageUrl: string;
-        backgroundImageName: string;
-        backgroundImageOriginalFileName: string;
-      }>("/api/admin/ui-background/upload", {
-        method: "POST",
-        body: formData
-      });
-      setBackgroundMode("image");
-      setBackgroundImageUrl(payload.backgroundImageUrl);
-      setWorkflowSettings((current) => current ? {
-        ...current,
-        backgroundMode: "image",
-        backgroundImageUrl: payload.backgroundImageUrl,
-        backgroundImageName: payload.backgroundImageName,
-        backgroundImageOriginalFileName: payload.backgroundImageOriginalFileName
-      } : current);
-      resetBackgroundSelection();
-      setMessage("Hintergrundbild hochgeladen.");
-      setError(null);
-      await loadAll();
-    } catch (apiError) {
-      const payload = apiError as ApiError;
-      const fieldErrors = extractFieldErrors(payload);
-      if (fieldErrors.file) {
-        setBackgroundFieldError(fieldErrors.file);
-      }
-      setError(payload.message || "Hintergrundbild konnte nicht hochgeladen werden.");
-    } finally {
-      setBackgroundUploading(false);
     }
   }
 
@@ -1230,13 +1136,6 @@ export function AdminPage() {
             workflowSettings={workflowSettings}
             setWorkflowSettings={setWorkflowSettings}
             saveWorkflowSettings={saveWorkflowSettings}
-            backgroundFile={backgroundFile}
-            backgroundFieldError={backgroundFieldError}
-            backgroundPreviewUrl={backgroundPreviewUrl}
-            backgroundUploading={backgroundUploading}
-            uploadBackgroundImage={uploadBackgroundImage}
-            handleBackgroundFileInput={handleBackgroundFileInput}
-            resetBackgroundSelection={resetBackgroundSelection}
           />
         ) : null}
 

@@ -1889,59 +1889,12 @@ adminRouter.post("/api/admin/site-map/upload", async (request, response) => {
 adminRouter.post("/api/admin/ui-background/upload", async (request, response) => {
   const user = await requirePermission(request, response, "admin.system");
   if (!user) return;
-
-  const file = await parseSingleUiBackgroundUpload(request, response);
-  if (!file) return;
-
-  const parsed = siteMapUploadNameSchema.safeParse(request.body);
-  if (!parsed.success) return sendValidationError(response, parsed.error.flatten());
-
-  const extension = getNormalizedExtension(file.originalname);
-  if (!extension || !isAllowedSiteMapExtension(extension) || !isAllowedSiteMapMimeType(file.mimetype)) {
-    return sendValidationError(response, { fieldErrors: { file: ["Erlaubt sind nur PNG-, JPG- und WEBP-Dateien."] } });
-  }
-
-  const storedFileName = buildStoredUiBackgroundFileName(extension);
-  const filePath = buildUiBackgroundPublicPath(storedFileName);
-  const uploadDirectory = await ensureUiBackgroundUploadDirectory();
-  const targetPath = path.join(uploadDirectory, storedFileName);
-
-  try {
-    await fs.writeFile(targetPath, file.buffer);
-    await upsertSystemSettings({
-      [WORKFLOW_SETTING_KEYS.uiBackgroundMode]: "image",
-      [WORKFLOW_SETTING_KEYS.uiBackgroundImageUrl]: filePath,
-      [WORKFLOW_SETTING_KEYS.uiBackgroundImageName]: parsed.data.name || path.basename(file.originalname, path.extname(file.originalname)),
-      [WORKFLOW_SETTING_KEYS.uiBackgroundImageOriginalFileName]: file.originalname
-    });
-
-    await writeAuditLog({
-      user: user.username,
-      userId: user.id,
-      action: "UI_BACKGROUND_UPDATED",
-      objectType: "system_setting",
-      objectId: "ui_background_image",
-      ipAddress: getRequestIp(request),
-      userAgent: getRequestUserAgent(request),
-      metadata: {
-        file_path: filePath,
-        original_file_name: file.originalname,
-        stored_file_name: storedFileName,
-        mime_type: file.mimetype,
-        file_size_bytes: file.size
-      }
-    });
-
-    return response.status(201).json({
-      success: true,
-      backgroundImageUrl: filePath,
-      backgroundImageName: parsed.data.name || path.basename(file.originalname, path.extname(file.originalname)),
-      backgroundImageOriginalFileName: file.originalname
-    });
-  } catch (error) {
-    await fs.rm(targetPath, { force: true }).catch(() => undefined);
-    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Das Hintergrundbild konnte nicht hochgeladen werden.");
-  }
+  return sendError(
+    response,
+    410,
+    "BACKGROUND_UPLOAD_DISABLED",
+    "Der Upload ist deaktiviert. Bitte legen Sie die Bilddatei direkt im Ordner /app/uploads/ui-backgrounds ab und starten Sie die App neu."
+  );
 });
 
 adminRouter.get("/api/admin/site-map/active", async (request, response) => {
