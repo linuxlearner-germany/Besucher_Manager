@@ -219,10 +219,6 @@ const badgeTextCreateSchema = badgeTextUpdateSchema;
 const siteMapUploadNameSchema = z.object({
   name: z.string().trim().min(1).max(255).optional()
 });
-const retentionSettingsSchema = z.object({
-  enabled: z.boolean(),
-  days: z.number().int().positive().max(3650).optional()
-});
 const workflowSettingsUpdateSchema = z.object({
   approvalRequired: z.boolean(),
   backgroundMode: z.enum(["image", "subtle", "plain"]),
@@ -550,42 +546,6 @@ async function activateSiteMapById(
     ipAddress: getRequestIp(request),
     userAgent: getRequestUserAgent(request)
   });
-}
-
-async function getRetentionSettings() {
-  const pool = await getPool();
-  const configured = await pool.request()
-    .input("key", sql.NVarChar(120), "visitor_retention_days")
-    .query<{ value: string }>("SELECT [value] AS value FROM dbo.system_settings WHERE [key] = @key");
-
-  const raw = configured.recordset[0]?.value?.trim();
-
-  if (!raw) {
-    return {
-      enabled: true,
-      days: env.VISITOR_RETENTION_DAYS
-    };
-  }
-
-  if (raw.toLowerCase() === "disabled") {
-    return {
-      enabled: false,
-      days: null
-    };
-  }
-
-  const parsed = Number.parseInt(raw, 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return {
-      enabled: true,
-      days: env.VISITOR_RETENTION_DAYS
-    };
-  }
-
-  return {
-    enabled: true,
-    days: parsed
-  };
 }
 
 export const adminRouter = Router();
@@ -2147,17 +2107,9 @@ adminRouter.get("/api/admin/system-status", async (request, response) => {
   if (!user) return;
   try {
     const pool = await getPool();
-    const retention = await getRetentionSettings();
-    const [activeVisits, configuredGates, staleVisits, openPreRegistrationsToday, signaturesPending, signaturesFollowUp, signaturesExceptions, approvalsPending] = await Promise.all([
+    const [activeVisits, configuredGates, openPreRegistrationsToday, signaturesPending, signaturesFollowUp, signaturesExceptions, approvalsPending] = await Promise.all([
       pool.request().query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.visits WHERE status = 'checked_in'"),
       pool.request().query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.gates WHERE is_active = 1"),
-      pool.request()
-        .input("retentionDays", sql.Int, retention.days ?? env.VISITOR_RETENTION_DAYS)
-        .query<{ count: number }>(`
-          SELECT COUNT(*) AS count
-          FROM dbo.visits
-          WHERE created_at < DATEADD(day, -@retentionDays, SYSUTCDATETIME())
-        `),
       pool.request().query<{ count: number }>(`
         SELECT COUNT(*) AS count
         FROM dbo.visits
@@ -2179,9 +2131,6 @@ adminRouter.get("/api/admin/system-status", async (request, response) => {
       signaturesFollowUp: signaturesFollowUp.recordset[0]?.count ?? 0,
       signaturesExceptions: signaturesExceptions.recordset[0]?.count ?? 0,
       approvalsPending: approvalsPending.recordset[0]?.count ?? 0,
-      staleVisits: retention.enabled ? staleVisits.recordset[0]?.count ?? 0 : 0,
-      retentionDays: retention.days,
-      retentionEnabled: retention.enabled,
       dbHost: env.MSSQL_HOST,
       dbName: env.MSSQL_DATABASE
     });
@@ -2331,17 +2280,6 @@ adminRouter.post("/api/admin/system-settings/workflow-email/test", async (reques
   }
 });
 
-adminRouter.put("/api/admin/system-settings/retention", async (request, response) => {
-  const user = await requirePermission(request, response, "admin.system");
-  if (!user) return;
-  return sendError(
-    response,
-    410,
-    "RETENTION_DISABLED",
-    "Die Aufbewahrung wird nicht über die Anwendung gesteuert. Daten bleiben erhalten und werden nur direkt in der SQL-Datenbank gelöscht."
-  );
-});
-
 adminRouter.post("/api/admin/visitors/:id/archive", async (request, response) => {
   const user = await requirePermission(request, response, "admin.system");
   if (!user) return;
@@ -2376,15 +2314,4 @@ adminRouter.post("/api/admin/visitors/:id/archive", async (request, response) =>
   } catch (error) {
     return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der Besucher konnte nicht archiviert werden.");
   }
-});
-
-adminRouter.post("/api/admin/retention/cleanup", async (request, response) => {
-  const user = await requirePermission(request, response, "admin.system");
-  if (!user) return;
-  return sendError(
-    response,
-    410,
-    "RETENTION_DISABLED",
-    "Die Bereinigung über die Anwendung ist deaktiviert. Löschungen erfolgen ausschließlich direkt in der SQL-Datenbank."
-  );
 });

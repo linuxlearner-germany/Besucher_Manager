@@ -81,7 +81,6 @@ const envSchema = zod_1.z.object({
     MSSQL_ENCRYPT: booleanish.default(false),
     MSSQL_TRUST_SERVER_CERTIFICATE: booleanish.default(true),
     UPLOAD_DIR: zod_1.z.string().default("./uploads"),
-    VISITOR_RETENTION_DAYS: zod_1.z.coerce.number().int().positive().default(90),
     PUBLIC_FORM_RATE_LIMIT: zod_1.z.coerce.number().int().positive().default(10),
     PUBLIC_FORM_RATE_WINDOW_SECONDS: zod_1.z.coerce.number().int().positive().default(900),
     MAIL_RELAY_CONFIG_PATH: zod_1.z.string().trim().optional()
