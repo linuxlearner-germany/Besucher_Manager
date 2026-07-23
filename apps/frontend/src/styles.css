@@ -2212,42 +2212,6 @@ input[type="checkbox"] {
   font-weight: 700;
 }
 
-.approval-stat-grid {
-  gap: 12px;
-}
-
-.approval-mini-card {
-  min-height: 92px;
-  padding: 12px 14px;
-}
-
-.approval-mini-card h3 {
-  font-size: 15px;
-  line-height: 1.2;
-  margin-bottom: 8px;
-}
-
-.approval-mini-card p {
-  margin-top: 0;
-  font-size: 20px;
-}
-
-.approval-filter-actions {
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: center;
-}
-
-.approval-note-input {
-  min-width: 200px;
-  width: 100%;
-}
-
-.approval-action-row {
-  justify-content: flex-start;
-  align-items: stretch;
-}
-
 .guard-stat-grid {
   gap: 12px;
   margin-top: -4px;
@@ -2519,10 +2483,6 @@ input[type="checkbox"] {
   align-items: center;
 }
 
-.approval-table-shell .data-table {
-  min-width: 1120px;
-}
-
 .print-panel {
   padding: 16px;
 }
@@ -2548,6 +2508,49 @@ input[type="checkbox"] {
   background: var(--panel-bg);
   width: min(100%, 210mm);
   margin: 0 auto;
+}
+
+.paper-a5 .badge-sheet {
+  width: min(100%, 148mm);
+  min-height: 210mm;
+}
+
+.paper-a4 .badge-sheet {
+  width: min(100%, 210mm);
+  min-height: 297mm;
+}
+
+.paper-size-choice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+}
+
+.paper-size-choice legend {
+  padding: 0 4px;
+  font-size: 12px;
+}
+
+.paper-size-choice label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.country-checklist {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+  max-height: 360px;
+  margin-top: 12px;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
 }
 
 .badge-header {

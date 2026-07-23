@@ -1,182 +1,330 @@
-# Deployment (deb-srv-docker)
+# Deployment-Handbuch
 
-Diese Anwendung wird ausschliesslich per Docker betrieben.
+Dieses Dokument beschreibt die Installation, Konfiguration, Inbetriebnahme, Aktualisierung und Wiederherstellung des Besucher Managers auf einem Linux-Server mit Docker Compose.
 
-## Zielumgebung
+> [!CAUTION]
+> Die Migration `023_remove_approvals_add_nationality.sql` ist destruktiv. Sie entfernt frühere Genehmigungsspalten und zugehörige Laufzeitdaten. Vor dem Deployment muss ein erfolgreich erstelltes und überprüftes SQL-Backup vorliegen.
 
-- Docker-Host: `deb-srv-docker`
-- SQL-Server: lokaler Compose-Service `sqlserver`
-- Datenbank: `Besuchermngmt`
-- App-Port: `3030`
-- SQL-Port: `1433`
+## Inhaltsverzeichnis
 
-## Wichtige Regeln
+- [Zielbild](#zielbild)
+- [Voraussetzungen](#voraussetzungen)
+- [Deploymentvarianten](#deploymentvarianten)
+- [Server vorbereiten](#server-vorbereiten)
+- [Umgebungsvariablen](#umgebungsvariablen)
+- [Datenbank vorbereiten](#datenbank-vorbereiten)
+- [SMTP-Relay konfigurieren](#smtp-relay-konfigurieren)
+- [Erstdeployment](#erstdeployment)
+- [Reverse Proxy und HTTPS](#reverse-proxy-und-https)
+- [Abnahme nach dem Start](#abnahme-nach-dem-start)
+- [Updates](#updates)
+- [Backup und Wiederherstellung](#backup-und-wiederherstellung)
+- [Rollback](#rollback)
+- [Betrieb](#betrieb)
+- [Fehleranalyse](#fehleranalyse)
+- [Deployment-Checkliste](#deployment-checkliste)
 
-- kein Django / kein Python
-- kein manuelles `npm install` auf dem Server
-- keine Secrets in Git
-- `.env` nur lokal auf dem Server pflegen
-- Rollen im System: `admin`, `guard`, `sibe`, `kaskdt`
-- Daten werden nicht physisch geloescht
-- Updates muessen Datenbank und Uploads erhalten
+## Zielbild
 
-## 1) Repository vorbereiten
+```mermaid
+flowchart LR
+    U[Browser im internen Netz] -->|HTTPS| R[Reverse Proxy]
+    R -->|HTTP :3030| A[Besucher-Manager-Container]
+    A -->|TDS :1433| S[Microsoft SQL Server]
+    A -->|SMTP| M[Internes Mail-Relay]
+    A --> V[Docker-Volume uploads_data]
+```
+
+Empfohlene Eigenschaften:
+
+- HTTPS-Terminierung am Reverse Proxy
+- App-Port `3030` nur intern erreichbar
+- SQL Server nicht öffentlich erreichbar
+- persistentes Upload-Volume
+- regelmäßige SQL-Backups außerhalb des Containers
+- lokale `.env` und SMTP-YAML ohne Git-Tracking
+
+## Voraussetzungen
+
+### Server
+
+- Linux mit systemd
+- Docker Engine
+- Docker Compose Plugin
+- Git
+- mindestens 4 GB RAM; bei lokalem SQL Server mehr einplanen
+- ausreichend Speicher für Images, Uploads und Backups
+- DNS-Eintrag für die produktive URL
+- TLS-Zertifikat am Reverse Proxy
+
+### Prüfung
 
 ```bash
-cd /opt
-git clone https://github.com/linuxlearner-germany/Besucher_Manager.git
-cd Besucher_Manager
+docker version
+docker compose version
+git --version
+df -h
+```
+
+### Netzwerk
+
+Erforderliche Verbindungen:
+
+| Quelle | Ziel | Port | Zweck |
+|---|---|---:|---|
+| Reverse Proxy | App | 3030/TCP | HTTP-Upstream |
+| App | SQL Server | 1433/TCP | Datenbank |
+| App | SMTP-Relay | abhängig vom Relay | E-Mail |
+| Administrator | Git-/Registry-Ziele | 443/TCP | Pull und Build |
+
+## Deploymentvarianten
+
+### Variante A: Externer SQL Server
+
+Empfohlen für bestehende oder zentral administrierte SQL-Infrastruktur.
+
+- Nur der Service `app` wird gestartet.
+- `MSSQL_HOST` verweist auf den externen SQL Server.
+- Datenbank, Login und Berechtigungen werden vorab administrativ eingerichtet.
+- Das mitgelieferte Backupskript ist für diese Variante nicht automatisch geeignet; das zentrale SQL-Backupverfahren verwenden.
+
+### Variante B: SQL Server im Compose-Profil
+
+Für Test, Entwicklung oder eigenständig betriebene Installationen:
+
+```bash
+docker compose --profile local-db up -d
+```
+
+Das Profil startet:
+
+- `sqlserver`
+- `db-bootstrap`
+- `app`
+
+Persistenz:
+
+- `sqlserver_data:/var/opt/mssql`
+- `uploads_data:/app/uploads`
+
+## Server vorbereiten
+
+Empfohlener Installationspfad:
+
+```bash
+sudo mkdir -p /opt/besucher-manager
+sudo chown "$USER":"$USER" /opt/besucher-manager
+git clone https://github.com/linuxlearner-germany/Besucher_Manager.git /opt/besucher-manager
+cd /opt/besucher-manager
+```
+
+Konfigurationsdateien anlegen:
+
+```bash
 cp .env.example .env
+cp config/mail-relay.yml.example config/mail-relay.yml
+chmod 600 .env config/mail-relay.yml
 ```
 
-## 2) `.env` pflegen
+Prüfen, dass Secrets nicht von Git erfasst werden:
 
-### 2a) Standard ohne Reverse Proxy
-
-Beispielwerte (Platzhalter):
-
-```env
-NODE_ENV=production
-APP_HOST=0.0.0.0
-PUBLIC_BASE_URL=http://deb-srv-docker:3030
-PORT=3030
-APP_SECURE_COOKIES=false
-APP_TRUST_PROXY=
-
-MSSQL_HOST=sqlserver
-MSSQL_PORT=1433
-MSSQL_DATABASE=Besuchermngmt
-MSSQL_USER=dockerBesuchermngmt
-MSSQL_PASSWORD=CHANGE_ME
-MSSQL_ENCRYPT=false
-MSSQL_TRUST_SERVER_CERTIFICATE=true
-
-UPLOAD_DIR=/app/uploads
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=CHANGE_ME
-
-APP_SECRET=CHANGE_ME
-
-AUDIT_REVERSE_DNS_ENABLED=false
-AUDIT_TRUST_REMOTE_USER_HEADER=false
-AUDIT_REMOTE_USER_HEADER=x-auth-user
+```bash
+git status --short
+git check-ignore .env config/mail-relay.yml
 ```
 
-### 2b) Installation hinter Reverse Proxy mit HTTPS
+## Umgebungsvariablen
 
-Wenn ein interner Reverse Proxy oder WAF vor der App terminiert, muessen URL, Cookies und Proxy-Vertrauen angepasst werden:
+### Starkes Secret erzeugen
+
+```bash
+openssl rand -hex 48
+```
+
+Den Wert lokal als `APP_SECRET` speichern.
+
+### Beispiel für externen SQL Server und HTTPS
 
 ```env
 NODE_ENV=production
 APP_HOST=0.0.0.0
 PORT=3030
+
 PUBLIC_BASE_URL=https://besucher.example.intern
 APP_SECURE_COOKIES=true
-APP_TRUST_PROXY=true
+APP_TRUST_PROXY=127.0.0.1
+APP_SECRET=HIER_EIN_LANGES_ZUFAELLIGES_SECRET
 
-MSSQL_HOST=sqlserver
+MSSQL_HOST=mssql-server.intern
 MSSQL_PORT=1433
-MSSQL_DATABASE=Besuchermngmt
-MSSQL_USER=dockerBesuchermngmt
-MSSQL_PASSWORD=CHANGE_ME
-MSSQL_ENCRYPT=false
-MSSQL_TRUST_SERVER_CERTIFICATE=true
+MSSQL_DATABASE=BesucherManager
+MSSQL_USER=besucher_app
+MSSQL_PASSWORD=HIER_DAS_SQL_PASSWORT
+MSSQL_ENCRYPT=true
+MSSQL_TRUST_SERVER_CERTIFICATE=false
+
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=HIER_EIN_INITIALPASSWORT
 
 UPLOAD_DIR=/app/uploads
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=CHANGE_ME
-APP_SECRET=CHANGE_ME
-
 MAIL_RELAY_CONFIG_PATH=/app/config/mail-relay.yml
+
 AUDIT_REVERSE_DNS_ENABLED=false
 AUDIT_TRUST_REMOTE_USER_HEADER=false
 AUDIT_REMOTE_USER_HEADER=x-auth-user
 ```
 
-Hinweise zu den Proxy-relevanten Variablen:
-
-- `PUBLIC_BASE_URL` muss die externe Zieladresse der Benutzer enthalten, also normalerweise `https://...`.
-- `APP_SECURE_COOKIES=true` ist bei HTTPS hinter Proxy Pflicht, damit Session- und CSRF-Cookies nur verschluesselt ausgeliefert werden.
-- `APP_TRUST_PROXY=true` aktiviert im Backend die Auswertung der Forwarded-/Proxy-Kette fuer `request.ip`.
-- Alternativ kann `APP_TRUST_PROXY` enger gesetzt werden, z. B.:
-  - `APP_TRUST_PROXY=loopback`
-  - `APP_TRUST_PROXY=10.0.0.0/8`
-  - `APP_TRUST_PROXY=1`
-- Fuer produktive Netze ist eine konkrete Proxy-IP, CIDR oder Hop-Anzahl besser als pauschal `true`, wenn mehrere Zwischenstationen beteiligt sind.
-
-### 2c) Firmen-Proxy fuer Build und Runtime nach aussen
-
-Wenn der Docker-Host fuer `git clone`, `npm install`, Paket-Downloads oder SMTP-Ziele nur ueber einen Firmenproxy ins Internet kommt:
+### Beispiel für lokalen Compose-SQL-Server
 
 ```env
-HTTP_PROXY=http://proxy.firma.local:3128
-HTTPS_PROXY=http://proxy.firma.local:3128
-NO_PROXY=localhost,127.0.0.1,sqlserver,deb-srv-docker,besucher.example.intern
-http_proxy=http://proxy.firma.local:3128
-https_proxy=http://proxy.firma.local:3128
-no_proxy=localhost,127.0.0.1,sqlserver,deb-srv-docker,besucher.example.intern
+NODE_ENV=production
+APP_HOST=0.0.0.0
+PORT=3030
+
+PUBLIC_BASE_URL=http://server.intern:3030
+APP_SECURE_COOKIES=false
+APP_TRUST_PROXY=false
+APP_SECRET=HIER_EIN_LANGES_ZUFAELLIGES_SECRET
+
+MSSQL_HOST=sqlserver
+MSSQL_PORT=1433
+MSSQL_DATABASE=BesucherManager
+MSSQL_USER=besucher_app
+MSSQL_PASSWORD=HIER_EIN_STARKES_SQL_PASSWORT
+MSSQL_ENCRYPT=false
+MSSQL_TRUST_SERVER_CERTIFICATE=true
+
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=HIER_EIN_INITIALPASSWORT
+
+UPLOAD_DIR=/app/uploads
+MAIL_RELAY_CONFIG_PATH=/app/config/mail-relay.yml
+```
+
+> [!IMPORTANT]
+> `PUBLIC_BASE_URL` muss aus Sicht der Benutzer erreichbar sein. Der Wert wird für Links in Nationalitätsmeldungen verwendet.
+
+### Hinweise zu Cookies und Proxy-Vertrauen
+
+- Bei HTTPS ist `APP_SECURE_COOKIES=true` erforderlich.
+- `APP_TRUST_PROXY` nur aktivieren, wenn ein vertrauenswürdiger Proxy vorgeschaltet ist.
+- Eine konkrete IP, ein CIDR oder eine definierte Hop-Anzahl ist sicherer als pauschal `true`.
+- Der App-Port darf bei aktiviertem Proxy-Vertrauen nicht ungeschützt aus fremden Netzen erreichbar sein.
+
+### Firmenproxy
+
+Falls Build oder Runtime einen ausgehenden Proxy benötigen:
+
+```env
+HTTP_PROXY=http://proxy.intern:3128
+HTTPS_PROXY=http://proxy.intern:3128
+NO_PROXY=localhost,127.0.0.1,::1,sqlserver,db-bootstrap,app,mssql-server.intern,.intern
+
+http_proxy=http://proxy.intern:3128
+https_proxy=http://proxy.intern:3128
+no_proxy=localhost,127.0.0.1,::1,sqlserver,db-bootstrap,app,mssql-server.intern,.intern
+```
+
+Proxy-Zugangsdaten gehören ausschließlich in lokale Serverkonfigurationen.
+
+## Datenbank vorbereiten
+
+### Externer SQL Server
+
+Beispiel für die Einrichtung durch einen SQL-Administrator:
+
+```sql
+CREATE DATABASE [BesucherManager];
+GO
+
+CREATE LOGIN [besucher_app]
+WITH PASSWORD = 'EIN_STARKES_PASSWORT',
+     CHECK_POLICY = ON;
+GO
+
+USE [BesucherManager];
+GO
+
+CREATE USER [besucher_app] FOR LOGIN [besucher_app];
+GO
+
+ALTER ROLE [db_owner] ADD MEMBER [besucher_app];
+GO
+```
+
+Die Anwendung führt beim Start versionierte DDL-Migrationen aus. Das hierfür verwendete Konto benötigt entsprechende Rechte. Nach Abschluss der Schemaentwicklung kann ein restriktiveres Berechtigungsmodell separat geplant werden.
+
+### Lokaler Compose-SQL-Server
+
+Der Service `db-bootstrap` erstellt Datenbank, Login und Datenbankbenutzer idempotent:
+
+```bash
+docker compose --profile local-db up -d sqlserver db-bootstrap
+docker compose --profile local-db ps
+```
+
+## SMTP-Relay konfigurieren
+
+Datei: `config/mail-relay.yml`
+
+```yaml
+mailRelay:
+  enabled: true
+  host: smtp-relay.intern.example
+  port: 587
+  secure: false
+  username: relay-user
+  password: relay-pass
+  fromAddress: "Besucher Manager <noreply@example.org>"
 ```
 
 Hinweise:
 
-- Die Proxy-Variablen werden beim Docker-Build an `npm install` und `npm run build` durchgereicht.
-- Die gleichen Variablen werden auch an den laufenden `app`-Container weitergegeben.
-- `NO_PROXY` bzw. `no_proxy` muss interne Ziele wie `sqlserver`, `localhost`, `127.0.0.1` und den Docker-Host enthalten.
-- Falls die Reverse-Proxy-Adresse intern direkt erreichbar ist, sollte auch der interne FQDN in `NO_PROXY` stehen.
+- `secure: true` wird typischerweise für implizites TLS verwendet.
+- Bei STARTTLS auf Port 587 bleibt `secure` üblicherweise `false`.
+- Der Absender muss vom Relay akzeptiert werden.
+- Die App benötigt ausgehend Netzwerkzugriff auf den SMTP-Port.
+- SiBe-Benutzer benötigen eine E-Mail-Adresse im Benutzerkonto.
+- Nach dem Start kann im Admincenter eine Relay- oder Beispielmail gesendet werden.
 
-## 3) Build und Start
+## Erstdeployment
 
-```bash
-npm run ops:update
-```
-
-Optional mit Git-Update vor dem Build:
+### Externer SQL Server
 
 ```bash
-npm run ops:update -- --pull
-```
-
-Ohne Datenbank-Backup:
-
-```bash
-npm run ops:update -- --skip-backup
-```
-
-## 3a) Docker-Daemon hinter Firmenproxy
-
-Wenn der Docker-Host selbst nur ueber einen Firmenproxy ins Internet kommt, reicht `.env` fuer den App-Build meist aus. Falls auch Docker selbst den Proxy kennen muss:
-
-```bash
-sudo mkdir -p /etc/systemd/system/docker.service.d
-sudo tee /etc/systemd/system/docker.service.d/http-proxy.conf >/dev/null <<'EOF'
-[Service]
-Environment="HTTP_PROXY=http://proxy.firma.local:3128"
-Environment="HTTPS_PROXY=http://proxy.firma.local:3128"
-Environment="NO_PROXY=localhost,127.0.0.1,sqlserver,deb-srv-docker"
-EOF
-sudo systemctl daemon-reload
-sudo systemctl restart docker
-```
-
-Pruefen:
-
-```bash
-systemctl show --property=Environment docker
+cd /opt/besucher-manager
 docker compose build app
+docker compose up -d app
 ```
 
-Wenn der Proxy Authentifizierung verlangt, Benutzername/Passwort nur in der lokalen Server-Konfiguration oder in der lokalen `.env` hinterlegen, nie im Repository.
+### Lokaler SQL Server
 
-## 3b) Reverse Proxy davor schalten
+```bash
+cd /opt/besucher-manager
+docker compose --profile local-db up -d --build
+```
 
-Empfehlung:
+### Startvorgang
 
-- App weiter nur intern auf `3030`
-- Reverse Proxy terminiert HTTPS auf `443`
-- Reverse Proxy leitet an `http://127.0.0.1:3030` oder an den internen Docker-Hostnamen weiter
-- Port `3030` nach aussen per Firewall sperren, wenn der Zugriff ausschliesslich ueber den Reverse Proxy laufen soll
+Der App-Container:
 
-Beispiel `nginx`:
+1. prüft die SQL-Verbindung,
+2. führt ausstehende Migrationen transaktional aus,
+3. legt den initialen Admin an, falls er noch nicht existiert,
+4. startet den HTTP-Server,
+5. beantwortet den Healthcheck.
+
+Status:
+
+```bash
+docker compose ps
+docker compose logs --tail=200 app
+curl -fsS http://127.0.0.1:3030/health
+```
+
+## Reverse Proxy und HTTPS
+
+### Nginx-Beispiel
 
 ```nginx
 server {
@@ -186,7 +334,8 @@ server {
 }
 
 server {
-    listen 443 ssl http2;
+    listen 443 ssl;
+    http2 on;
     server_name besucher.example.intern;
 
     ssl_certificate     /etc/nginx/tls/besucher.example.intern/fullchain.pem;
@@ -207,238 +356,404 @@ server {
 }
 ```
 
-Wichtig fuer diesen Aufbau:
+Passende App-Konfiguration:
 
-- In `.env` muss `PUBLIC_BASE_URL=https://besucher.example.intern` gesetzt sein.
-- In `.env` muss `APP_SECURE_COOKIES=true` gesetzt sein.
-- In `.env` muss `APP_TRUST_PROXY=true` oder enger gesetzt sein.
-- Nach Aenderung von `.env` die App neu starten oder neu deployen.
+```env
+PUBLIC_BASE_URL=https://besucher.example.intern
+APP_SECURE_COOKIES=true
+APP_TRUST_PROXY=127.0.0.1
+```
 
-## 4) Health und Erreichbarkeit
+Konfiguration testen und neu laden:
 
 ```bash
-curl -s http://localhost:3030/health
-curl -s http://localhost:3030/api/health
-docker compose ps
-```
-
-Browser:
-
-```text
-http://deb-srv-docker:3030
-```
-
-Hinter Reverse Proxy:
-
-```text
-https://besucher.example.intern
-```
-
-Zusatzpruefungen hinter Reverse Proxy:
-
-```bash
+sudo nginx -t
+sudo systemctl reload nginx
 curl -Ik https://besucher.example.intern
-curl -s https://besucher.example.intern/health
+curl -fsS https://besucher.example.intern/health
 ```
 
-## 5) Betriebsnotizen
+### Firewall
 
-- Migrationen laufen automatisch beim Containerstart.
-- Start-Admin wird aus `ADMIN_USERNAME`/`ADMIN_PASSWORD` erstellt oder aktualisiert.
-- `db-bootstrap` legt Datenbank, SQL-Login und DB-User im lokalen MSSQL-Container bei Bedarf automatisch an.
-- Bei SQL-Login-Fehlern (`ELOGIN`) zuerst `.env`, `db-bootstrap` und den `sqlserver`-Container pruefen.
-- Uploads liegen persistent im Docker-Volume `uploads_data:/app/uploads`.
-- SQL-Daten liegen persistent im Docker-Volume `sqlserver_data:/var/opt/mssql`.
-- SQL-Backups werden ueber `npm run ops:backup` nach `archive/backups/` geschrieben.
-- `npm run ops:update` erstellt standardmaessig erst ein SQL-Backup und baut dann die App neu.
-- Rebuilds mit `docker compose build app && docker compose up -d` behalten Daten und Uploads, solange die Volumes nicht geloescht werden.
-- Wichtige Routen:
-  - `/`
-  - `/login`
-  - `/wache`
-  - `/wache/besuche/:id`
-  - `/wache/besuche/:id/druck`
-  - `/import`
-  - `/genehmigungen`
-  - `/sibe`
-  - `/kaskdt`
-  - `/kaskdt/texte`
-  - `/sibe/besucher`
-  - `/sibe/benutzer`
-  - `/admin`
-- Admin-Oberflaeche:
-  - Dashboard
-  - Wachen
-  - Benutzer
-  - Texte
-  - Karte
-  - Felder
-  - Audit
-  - Fehlerlog
-  - System
-- Audit-Bereich mit Suche, Filtern und metadata_json-Detailansicht
-- Fehlerlog im Admin-Bereich mit Zeit, Fehlercode, Meldung, Request-Pfad, Benutzer, Stacktrace und Metadaten
-- Tabellen-Trennung:
-  - `users` = Anwendungskonten
-  - `user_groups` = Benutzergruppen
-  - `user_menu_access` = Menuezugriffe
-  - `visitors` = externe Besucher
-  - `visits` = konkrete Besuchsvorgaenge
-- Operativer Ablauf:
-  - Voranmeldung/Gruppenformular/Import -> SiBe-Freigabe -> Wache -> Check-in -> Druck -> Check-out mit Unterschrift -> Auditlog
-- Wache kann Voranmeldedaten vor dem Check-in in der Detailansicht korrigieren oder ergaenzen.
-- Guard-Benutzer waehlen bei jeder Anmeldung ihre aktive Wache neu aus.
-- Oeffentliche Voranmeldungen koennen eine Wache bereits mitgeben.
-- Besucher-Import ist auch ohne Anmeldung moeglich.
-- Fuer den Import steht eine Excel-Vorlage direkt in der App bereit.
-- `Genehmigung` ist ein eigener Menuepunkt und kann pro Benutzer separat vergeben werden.
-- Neue Voranmeldungen und oeffentliche/Guard-Importe koennen vor dem Check-in eine SiBe-Freigabe verlangen.
-- SMTP-/E-Mail-Relay kann im Admin unter `System` getestet werden.
-- Fuer den Betriebsmodus hinter Proxy oder Relay-Infrastruktur sollte das SMTP-Outbound-Relay als YML-Datei gepflegt werden.
-- Standardpfad im Container: `/app/config/mail-relay.yml`
-- Standard-Mount in Compose: `./config:/app/config:ro`
-- Wenn die Datei vorhanden ist, ueberschreibt sie die SMTP-Felder aus der Datenbank.
-- Wache-Kalenderansicht in `/wache` zeigt Tages-/Monatsueberblick inkl. unzugeordneter Voranmeldungen.
-- `admin` und `kaskdt` duerfen Texte mit Vorschau und Druckvorschau bearbeiten.
+Wenn ausschließlich der lokale Reverse Proxy zugreift, sollte Port 3030 nicht extern freigegeben werden. SQL-Port 1433 darf nur für notwendige Hosts erreichbar sein.
 
-## 5a) Gelaendeplan hochladen
+## Abnahme nach dem Start
 
-- Upload erfolgt im Admin-Panel per Drag-and-Drop.
-- Erlaubte Dateitypen: `PNG`, `JPG/JPEG`, `WEBP`
-- Maximale Dateigroesse: `10 MB`
-- Speicherort im Container: `/app/uploads/site-maps/`
-- Neue Plaene werden aktiv gesetzt.
-- Alte Plaene bleiben erhalten und werden nur deaktiviert.
-- Der aktive Plan erscheint auf dem Besucherschein.
-
-## 5b) Besucherschein drucken
-
-- Druckansicht: `/wache/besuche/:id/druck`
-- Header und Navigation werden ueber Print-CSS ausgeblendet.
-- Wenn Browser URL, Datum oder Seitenzahl mitdrucken, im Druckdialog die Option fuer Kopf- und Fusszeilen deaktivieren.
-- Kein QR-Code im Besucherschein.
-- Ziel ist maximal Vorder-/Rueckseite fuer den A5-Druck.
-
-## 5c) Check-out mit Besuchsnummer und Unterschrift
-
-- Die Wache muss beim Check-out die Besuchsnummer vom zurueckgegebenen Besucherschein eingeben.
-- Die Pruefung erfolgt serverseitig.
-- Bei Abweichung wird der Check-out abgelehnt.
-- Die Checkbox `Unterschrift vom Ansprechpartner erledigt` ist Pflicht.
-
-Besuchsnummern:
-
-- Neue Besuchsnummern haben genau 5 Zeichen.
-- Erlaubte Zeichen: `A-Z` und `0-9`.
-
-## 5e) Keine Aufbewahrungssteuerung in der UI
-
-- Die neue App loescht Besucher-, Besuchs- und Auditdaten nicht physisch.
-- Im Admin-System gibt es keine Aufbewahrungs-/Archivierungssteuerung mehr.
-- Datenpflege ausserhalb der App erfolgt bei Bedarf administrativ direkt in SQL.
-
-Alle neuen App-Daten bleiben ohne physische Loeschung erhalten; Aenderungen und Check-out-Aktionen werden im Auditlog protokolliert.
-
-Erweiterte Unterschriftsstatus bleiben fuer Auswertung erhalten, sind aber nicht Teil der vereinfachten Standard-Check-out-Maske in der Wache.
-
-## 5d) Operativen MVP-Ablauf pruefen
-
-Das Hilfsskript verwendet nur Python-Standardbibliothek und spricht gegen die laufende App:
+### Technische Prüfung
 
 ```bash
-npm run verify:mvp
+docker compose ps
+curl -fsS http://127.0.0.1:3030/health
+curl -fsS http://127.0.0.1:3030/api/health
+docker compose logs --tail=200 app
 ```
 
-Falls die Demo-Benutzer fuer die Pruefung noch fehlen:
+Im Log muss entweder eine Liste angewandter Migrationen oder `No pending migrations.` erscheinen.
+
+### Schema prüfen
+
+```sql
+SELECT id, applied_at
+FROM dbo.schema_migrations
+ORDER BY applied_at;
+```
+
+Für diese Version insbesondere:
+
+```sql
+SELECT id, applied_at
+FROM dbo.schema_migrations
+WHERE id = '023_remove_approvals_add_nationality.sql';
+
+SELECT COUNT(*) AS countries_without_code
+FROM dbo.visitors
+WHERE nationality_code IS NULL;
+
+SELECT TOP (20) *
+FROM dbo.field_definitions
+ORDER BY section, sort_order;
+```
+
+Bestehende Besucher dürfen weiterhin `nationality_code IS NULL` besitzen. Sie werden nicht automatisch Deutschland zugeordnet.
+
+### Rollen- und Workflowprüfung
+
+Für eine Test- oder Abnahmeumgebung:
 
 ```bash
 npm run seed:sample
+npm run verify:roles
+npm run verify:mvp
 ```
 
-Der Wrapper fuehrt das Seed im Docker-Betrieb direkt im laufenden `app`-Container aus. Ohne laufenden Container wechselt er lokal automatisch von `sqlserver` auf `127.0.0.1`, damit das Standard-Compose-Setup auch ausserhalb des Container-Netzes seedbar bleibt.
-`npm run verify:mvp`, `npm run verify:roles` und `npm run verify:ops` lesen die Admin-Zugangsdaten dabei automatisch aus der Repo-`.env`, wenn keine CLI-Werte gesetzt werden.
+> [!WARNING]
+> Beispieldaten und Demo-Benutzer nicht unkontrolliert in einer produktiven Datenbank erzeugen.
 
-Es prueft:
+### Manuelle Fachabnahme
 
-- Voranmeldung
-- SiBe-Freigabe
-- Wache-Sichtbarkeit
-- Guard-Bearbeitung
-- Check-in
-- Druck-Audit
-- Check-out mit Unterschriftsstatus
-- SiBe-Nachvollziehbarkeit
-- Admin-Auditlog
+- Admin-Login
+- Benutzer-E-Mail für einen SiBe hinterlegen
+- Länderabonnement speichern
+- Einzelanmeldung mit Nationalität
+- spontane Wachen-Anmeldung
+- Excel-Import mit gültigem Land
+- Excel-Import mit ungültigem Land und Prüfung auf atomare Ablehnung
+- Check-in ohne Genehmigung
+- A5-Druck auf zwei Seiten
+- A4-Duplexdruck
+- Check-out mit Besuchsnummer
+- Audit- und Fehlerlog prüfen
+- Benutzer-CSV exportieren und sicherstellen, dass kein Passwort enthalten ist
 
-Fuer die Rollen- und Zugriffssicherheit:
+## Updates
+
+### Empfohlener Ablauf
+
+```bash
+cd /opt/besucher-manager
+git status --short
+npm run ops:update -- --pull
+```
+
+Der Wrapper:
+
+1. führt optional `git pull --ff-only` aus,
+2. erstellt standardmäßig ein SQL-Backup,
+3. baut das App-Image,
+4. startet beziehungsweise ersetzt den App-Container,
+5. wartet auf einen erfolgreichen Docker-Healthcheck.
+
+Nur wenn ein anderweitig geprüftes Backup vorliegt:
+
+```bash
+npm run ops:update -- --pull --skip-backup
+```
+
+> [!CAUTION]
+> `--skip-backup` ist für Releases mit Datenbankmigrationen nicht empfohlen.
+
+### Update mit externem SQL Server
+
+Das mitgelieferte Backupskript erwartet den Compose-Service `sqlserver`. Bei einem externen SQL Server deshalb:
+
+1. Backup über das zentrale SQL-Verfahren erstellen,
+2. Wiederherstellbarkeit prüfen,
+3. anschließend bewusst mit `--skip-backup` aktualisieren.
+
+```bash
+npm run ops:update -- --pull --skip-backup
+```
+
+### Update ohne Wrapper
+
+```bash
+git pull --ff-only
+docker compose build app
+docker compose up -d app
+docker compose ps
+docker compose logs --tail=200 app
+```
+
+## Backup und Wiederherstellung
+
+### Lokaler Compose-SQL-Server
+
+```bash
+npm run ops:backup
+```
+
+Standardziel:
+
+```text
+archive/backups/<datenbank>_YYYYMMDD_HHMMSS.bak
+```
+
+Zusätzlich sollten die Backups regelmäßig auf ein externes, gesichertes Ziel übertragen werden.
+
+### Uploads sichern
+
+Volume als Archiv sichern:
+
+```bash
+docker run --rm \
+  -v besucher_manager_uploads_data:/source:ro \
+  -v "$PWD/archive/backups:/backup" \
+  alpine \
+  tar -czf /backup/uploads_$(date +%Y%m%d_%H%M%S).tar.gz -C /source .
+```
+
+Den tatsächlichen Volumenamen vorher prüfen:
+
+```bash
+docker volume ls
+docker compose config --volumes
+```
+
+### SQL-Wiederherstellung
+
+Die konkrete Wiederherstellung hängt von der SQL-Infrastruktur ab. Für SQL Server gilt grundsätzlich:
+
+1. App stoppen, damit keine neuen Schreibzugriffe stattfinden.
+2. Backup auf den SQL Server übertragen.
+3. Datenbank in einen wiederherstellbaren Zustand versetzen.
+4. `RESTORE DATABASE` mit den zur Umgebung passenden Datei- und `MOVE`-Angaben ausführen.
+5. App-Version und Datenbankschema aufeinander abstimmen.
+6. App starten und Healthcheck sowie fachlichen Ablauf prüfen.
+
+Die Wiederherstellung sollte vor dem Produktiveinsatz mindestens einmal in einer Testumgebung geprobt werden.
+
+## Rollback
+
+### Ohne neue Migration
+
+Wenn nur Anwendungscode geändert wurde:
+
+```bash
+git checkout <vorheriger-tag-oder-commit>
+docker compose build app
+docker compose up -d app
+```
+
+### Mit vorwärtsgerichteter Migration
+
+Ein älteres Image ist nicht automatisch mit einem neueren Schema kompatibel. Bei fehlgeschlagener Migration:
+
+1. App stoppen.
+2. Fehlerlogs sichern.
+3. Datenbank aus dem unmittelbar vorher erstellten Backup wiederherstellen.
+4. vorherigen Release-Tag auschecken.
+5. Image neu bauen und starten.
+6. technische und fachliche Abnahme wiederholen.
+
+### Besonderheit Migration 023
+
+Ein Code-Rollback allein stellt entfernte Genehmigungsspalten und -daten nicht wieder her. Dafür ist zwingend die Wiederherstellung des vor der Migration erstellten SQL-Backups erforderlich.
+
+## Betrieb
+
+### Containerstatus
+
+```bash
+docker compose ps
+docker inspect "$(docker compose ps -q app)" \
+  --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}'
+```
+
+### Logs
+
+```bash
+docker compose logs --tail=200 app
+docker compose logs -f app
+```
+
+Lokaler SQL Server:
+
+```bash
+docker compose --profile local-db logs --tail=200 sqlserver
+```
+
+### Neustart
+
+```bash
+docker compose restart app
+```
+
+### Speicher
+
+```bash
+docker system df
+docker volume ls
+du -sh archive/backups
+```
+
+### Betriebsprüfungen
 
 ```bash
 npm run verify:roles
-```
-
-Fuer einen CSV-Export unterschriftsrelevanter Besuche:
-
-```bash
-npm run report:signatures > unterschriften.csv
-```
-
-Fuer einen Sammellauf aller operativen Kernpruefungen:
-
-```bash
+npm run verify:mvp
 npm run verify:ops
 ```
 
-## 5f) Import und Vorlagen
+### Regelmäßige Aufgaben
 
-- Route: `/import`
-- Oeffentlicher Import ohne Login sowie interner Import mit Rollenfreigabe
-- Formate: `XLSX`, `XLS`
-- Vorlagen:
-  - `/api/public/visits/import-template.xlsx`
-  - `/api/sibe/visits/import-template.xlsx`
-- Die Excel-Vorlage ist die bevorzugte Vorlage fuer Anwender.
-- Fehlende Daten werden im Import-Ergebnis sichtbar markiert und koennen danach in der Wache ergaenzt werden.
+- SQL-Backup und Restore-Test
+- Upload-Backup
+- Audit- und Fehlerlog prüfen
+- fehlgeschlagene Länder-E-Mails prüfen
+- Zertifikatslaufzeit kontrollieren
+- Docker- und Basisimage-Updates planen
+- npm-Abhängigkeiten und bekannte Schwachstellen prüfen
+- Speicherverbrauch und alte Backups überwachen
 
-## 5g) Lokaler Build-Hinweis
+## Fehleranalyse
 
-- Das Frontend ruft vor `vite build` automatisch `scripts/ops/fix_node_permissions.sh` auf.
-- Damit werden bekannte `esbuild EACCES`-Probleme nach `npm install` sowohl lokal als auch im Container-Build abgefangen.
+### App bleibt `unhealthy`
 
-## 6) Legacy-Django-Tabellen bereinigen
-
-- Die laufende Anwendung verwendet kein Django mehr.
-- Vor dem Cleanup immer ein Datenbankbackup erstellen.
-- Optionales Hilfsscript: [docs/sql/backup_legacy_django_tables.sql](/root/Besucher_Manager/docs/sql/backup_legacy_django_tables.sql)
-- Die Cleanup-Migration entfernt nur alte Legacy-Tabellen:
-  - `auth_*`
-  - `django_*`
-  - `core_*`
-  - `visits_visit`
-  - `visits_visitor`
-- Die neuen Zieltabellen bleiben ausdruecklich erhalten:
-  - `users`
-  - `visitors`
-  - `visits`
-  - `gates`
-  - `site_maps`
-  - `badge_text_templates`
-  - `system_settings`
-  - `audit_logs`
-  - `error_logs`
-  - `schema_migrations`
-
-Nach Deployment/Start pruefen:
-
-```sql
-SELECT TABLE_NAME
-FROM INFORMATION_SCHEMA.TABLES
-WHERE TABLE_SCHEMA = 'dbo'
-ORDER BY TABLE_NAME;
+```bash
+docker compose ps
+docker compose logs --tail=300 app
+curl -v http://127.0.0.1:3030/health
 ```
 
-In DataGrip:
+Mögliche Ursachen:
 
-1. Rechtsklick auf Datenquelle oder Schema
-2. `Synchronize`
-3. Alte `auth_*`, `django_*`, `core_*`, `visits_visit`, `visits_visitor` sollten verschwunden sein
-4. Neues ER-Diagramm aus den Zieltabellen erzeugen
+- SQL Server nicht erreichbar
+- falsche SQL-Zugangsdaten
+- fehlgeschlagene Migration
+- ungültige Umgebungsvariable
+- Port bereits belegt
+
+### SQL-Loginfehler
+
+```bash
+docker compose --profile local-db ps
+docker compose --profile local-db logs db-bootstrap
+docker compose --profile local-db logs sqlserver
+```
+
+Prüfen:
+
+- `MSSQL_HOST`
+- `MSSQL_DATABASE`
+- `MSSQL_USER`
+- `MSSQL_PASSWORD`
+- Verschlüsselungsparameter
+- Firewall und DNS
+
+### Migration schlägt fehl
+
+```bash
+docker compose logs --tail=400 app
+```
+
+Nicht wiederholt manuell Änderungen an derselben produktiven Datenbank ausprobieren. Stattdessen:
+
+1. Fehler und betroffene Migration identifizieren.
+2. Datenbankzustand prüfen.
+3. bei unklarem Zustand das Vorab-Backup wiederherstellen.
+4. Migration in einer Kopie reproduzieren.
+
+### E-Mail wird nicht versendet
+
+Prüfen:
+
+- `config/mail-relay.yml` ist im Container vorhanden.
+- `MAIL_RELAY_CONFIG_PATH` ist korrekt.
+- Relay ist aktiviert.
+- Host, Port, TLS und Zugangsdaten stimmen.
+- Absender ist erlaubt.
+- SiBe-Benutzer besitzt eine E-Mail.
+- Land wurde abonniert.
+- Fehlerlog enthält einen `MAIL_RELAY_*`-Eintrag.
+
+Containerprüfung:
+
+```bash
+docker compose exec app \
+  sh -lc 'test -r /app/config/mail-relay.yml && echo relay-config-readable'
+```
+
+### Login funktioniert hinter HTTPS nicht
+
+Prüfen:
+
+```env
+PUBLIC_BASE_URL=https://besucher.example.intern
+APP_SECURE_COOKIES=true
+APP_TRUST_PROXY=<vertrauenswürdiger Proxy>
+```
+
+Zusätzlich Forwarded-Header und direkten Zugriff auf Port 3030 kontrollieren.
+
+### Uploads fehlen
+
+```bash
+docker compose config
+docker volume inspect besucher_manager_uploads_data
+docker compose exec app ls -la /app/uploads
+```
+
+Keine Volumes mit `docker compose down -v` entfernen, außer die vollständige Löschung ist ausdrücklich beabsichtigt und gesichert.
+
+## Deployment-Checkliste
+
+### Vorher
+
+- [ ] Release-Commit oder Tag festgelegt
+- [ ] Typecheck erfolgreich
+- [ ] Backendtests erfolgreich
+- [ ] Produktionsbuild erfolgreich
+- [ ] Docker-E2E erfolgreich
+- [ ] SQL-Backup erstellt
+- [ ] Restore des Backups geprüft
+- [ ] Upload-Backup erstellt
+- [ ] `.env` geprüft
+- [ ] `APP_SECRET` stark und lokal gespeichert
+- [ ] `PUBLIC_BASE_URL` korrekt
+- [ ] HTTPS- und Proxy-Einstellungen korrekt
+- [ ] SMTP-YAML geprüft
+- [ ] Wartungsfenster kommuniziert
+
+### Währenddessen
+
+- [ ] App-Image erfolgreich gebaut
+- [ ] Container gestartet
+- [ ] Migrationen ohne Fehler ausgeführt
+- [ ] Healthcheck grün
+- [ ] Keine unerwarteten Fehler im Startlog
+
+### Danach
+
+- [ ] Admin-Login erfolgreich
+- [ ] Rollenprüfung erfolgreich
+- [ ] Voranmeldung erfolgreich
+- [ ] Check-in ohne Genehmigung erfolgreich
+- [ ] Pflichtfeldblockaden geprüft
+- [ ] Länderabonnement und Testmail geprüft
+- [ ] Excel-Import geprüft
+- [ ] A5-Druck geprüft
+- [ ] A4-Duplexdruck geprüft
+- [ ] Check-out geprüft
+- [ ] Benutzerexport geprüft
+- [ ] Audit- und Fehlerlog geprüft
+- [ ] Backup und Releaseversion dokumentiert

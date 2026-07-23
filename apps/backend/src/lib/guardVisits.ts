@@ -1,20 +1,19 @@
 import sql from "mssql";
 import { getPool } from "./db";
+import { getCountryName } from "./countries";
+import { notifyNationalitySubscribers } from "./mailRelay";
 import { writeAuditLog } from "./auditLog";
 import { generateBadgeNumberCandidate } from "./badgeNumber";
 import { loadCompletenessFieldConfig, type CompletenessFieldConfig } from "./fieldDefinitions";
 import {
-  APPROVAL_STATUS,
   assertCanCheckIn,
   assertCanCheckOut,
-  assertVisitApprovedForCheckIn,
   assertReturnedBadgeNumberMatches,
   assertCanUpdateHostSignature,
   canAccessGate,
   canManageGuardScopedVisit,
   HOST_SIGNATURE_STATUS,
   type AuthenticatedUser,
-  type ApprovalStatus,
   type HostSignatureStatus,
   VISIT_STATUS
 } from "./visitWorkflow";
@@ -25,6 +24,7 @@ export type GuardWalkInVisitInput = {
   firstName: string;
   lastName: string;
   company: string;
+  nationalityCode: string;
   birthDate?: string | null;
   phone?: string | null;
   email?: string | null;
@@ -49,10 +49,6 @@ export type GuardWalkInVisitInput = {
 export type GuardVisitListItem = {
   id: string;
   status: string;
-  approvalStatus: ApprovalStatus;
-  approvalNote: string | null;
-  approvalDecidedBy: string | null;
-  approvalDecidedAt: string | null;
   validFrom: string;
   validUntil: string;
   checkInAt: string | null;
@@ -60,6 +56,8 @@ export type GuardVisitListItem = {
   firstName: string;
   lastName: string;
   company: string;
+  nationalityCode: string | null;
+  nationalityName?: string | null;
   birthDate: string | null;
   visitorPhone: string | null;
   visitorEmail: string | null;
@@ -154,7 +152,6 @@ type VisitScopeRow = {
   id: string;
   gateId: string | null;
   status: string;
-  approvalStatus?: ApprovalStatus | null;
   badgeNumber?: string | null;
   visitorId?: string;
   validFrom?: Date;
@@ -270,10 +267,10 @@ async function generateUniqueBadgeNumber(transaction: sql.Transaction): Promise<
 
 type CompletenessSourceVisit = {
   status: string;
-  approvalStatus?: ApprovalStatus | null;
   firstName: string;
   lastName: string;
   company: string;
+  nationalityCode: string | null;
   hostName: string;
   hostPhone: string | null;
   purpose: string;
@@ -302,6 +299,7 @@ function getSystemFieldValue(visit: CompletenessSourceVisit, fieldKey: string): 
     visitor_first_name: visit.firstName,
     visitor_last_name: visit.lastName,
     visitor_company: visit.company,
+    visitor_nationality: visit.nationalityCode,
     visitor_birth_date: visit.birthDate,
     visitor_phone: visit.visitorPhone,
     visitor_email: visit.visitorEmail,
@@ -328,6 +326,7 @@ function defaultCompletenessConfig(): CompletenessFieldConfig {
     ["visitor_first_name", "Vorname"],
     ["visitor_last_name", "Nachname"],
     ["visitor_company", "Firma / Organisation"],
+    ["visitor_nationality", "Nationalität"],
     ["host_name", "Ansprechpartner"],
     ["host_phone", "Ansprechpartner Telefon"],
     ["visit_purpose", "Besuchszweck"],
@@ -440,22 +439,6 @@ export function getVisitCompleteness(visit: CompletenessSourceVisit, config?: Co
     errors.push({ field, message: `${field} fehlt.`, severity: "error" });
   }
 
-  if ((visit.approvalStatus || APPROVAL_STATUS.NOT_REQUIRED) === APPROVAL_STATUS.PENDING) {
-    errors.push({
-      field: "approval_status",
-      message: "SiBe-Genehmigung steht noch aus.",
-      severity: "error"
-    });
-  }
-
-  if (visit.approvalStatus === APPROVAL_STATUS.REJECTED) {
-    errors.push({
-      field: "approval_status",
-      message: "Besuch wurde durch SiBe abgelehnt.",
-      severity: "error"
-    });
-  }
-
   const validFromDate = new Date(visit.validFrom);
   const validUntilDate = isDateOnlyValue(visit.validUntil)
     ? normalizeDateOnlyEnd(visit.validUntil)
@@ -501,9 +484,10 @@ export function getVisitCompleteness(visit: CompletenessSourceVisit, config?: Co
     }
   }
 
+  const hasDomainError = errors.some((issue) => !missingRequiredFields.has(issue.field));
   return {
-    canCheckIn: visit.status === VISIT_STATUS.PRE_REGISTERED && missingGuard.size === 0 && errors.length === 0,
-    canPrintBadge: (visit.status === VISIT_STATUS.PRE_REGISTERED || visit.status === VISIT_STATUS.CHECKED_IN || visit.status === VISIT_STATUS.CHECKED_OUT) && missingPrint.size === 0 && errors.length === 0,
+    canCheckIn: visit.status === VISIT_STATUS.PRE_REGISTERED && missingGuard.size === 0 && !hasDomainError,
+    canPrintBadge: (visit.status === VISIT_STATUS.PRE_REGISTERED || visit.status === VISIT_STATUS.CHECKED_IN || visit.status === VISIT_STATUS.CHECKED_OUT) && missingPrint.size === 0 && !hasDomainError,
     canCheckOut: visit.status === VISIT_STATUS.CHECKED_IN,
     missingRequiredFields: Array.from(missingRequiredFields),
     errors,
@@ -547,10 +531,6 @@ export async function getTodayVisitsForUser(
     SELECT
       v.id,
       ${normalizedStatusSql} AS status,
-      ISNULL(v.approval_status, '${APPROVAL_STATUS.NOT_REQUIRED}') AS approvalStatus,
-      v.approval_note AS approvalNote,
-      approver.username AS approvalDecidedBy,
-      CONVERT(NVARCHAR(30), v.approval_decided_at, 127) AS approvalDecidedAt,
       CONVERT(NVARCHAR(30), v.valid_from, 127) AS validFrom,
       CONVERT(NVARCHAR(30), v.valid_until, 127) AS validUntil,
       CONVERT(NVARCHAR(30), v.check_in_at, 127) AS checkInAt,
@@ -558,6 +538,7 @@ export async function getTodayVisitsForUser(
       vis.first_name AS firstName,
       vis.last_name AS lastName,
       vis.company,
+      vis.nationality_code AS nationalityCode,
       CONVERT(NVARCHAR(10), vis.birth_date, 23) AS birthDate,
       vis.phone_optional AS visitorPhone,
       vis.email_optional AS visitorEmail,
@@ -609,7 +590,6 @@ export async function getTodayVisitsForUser(
     FROM dbo.visits v
     INNER JOIN dbo.visitors vis ON vis.id = v.visitor_id
     LEFT JOIN dbo.gates g ON g.id = v.gate_id
-    LEFT JOIN dbo.users approver ON approver.id = v.approval_decided_by
     LEFT JOIN dbo.users confirmer ON confirmer.id = v.host_signature_confirmed_by
     LEFT JOIN dbo.users returner ON returner.id = v.device_returned_by
     LEFT JOIN dbo.users checkinUser ON checkinUser.id = v.check_in_by
@@ -626,7 +606,10 @@ export async function getTodayVisitsForUser(
       vis.first_name ASC
   `);
 
-  return result.recordset;
+  return result.recordset.map((visit) => ({
+    ...visit,
+    nationalityName: getCountryName(visit.nationalityCode)
+  }));
 }
 
 export async function getCalendarVisitsForUser(
@@ -711,10 +694,6 @@ export async function getVisitDetailForUser(user: AuthenticatedUser, visitId: st
     SELECT
       v.id,
       ${normalizedStatusSql} AS status,
-      ISNULL(v.approval_status, '${APPROVAL_STATUS.NOT_REQUIRED}') AS approvalStatus,
-      v.approval_note AS approvalNote,
-      approver.username AS approvalDecidedBy,
-      CONVERT(NVARCHAR(30), v.approval_decided_at, 127) AS approvalDecidedAt,
       CONVERT(NVARCHAR(30), v.valid_from, 127) AS validFrom,
       CONVERT(NVARCHAR(30), v.valid_until, 127) AS validUntil,
       CONVERT(NVARCHAR(30), v.check_in_at, 127) AS checkInAt,
@@ -722,6 +701,7 @@ export async function getVisitDetailForUser(user: AuthenticatedUser, visitId: st
       vis.first_name AS firstName,
       vis.last_name AS lastName,
       vis.company,
+      vis.nationality_code AS nationalityCode,
       CONVERT(NVARCHAR(10), vis.birth_date, 23) AS birthDate,
       vis.phone_optional AS visitorPhone,
       vis.email_optional AS visitorEmail,
@@ -776,7 +756,6 @@ export async function getVisitDetailForUser(user: AuthenticatedUser, visitId: st
     FROM dbo.visits v
     INNER JOIN dbo.visitors vis ON vis.id = v.visitor_id
     LEFT JOIN dbo.gates g ON g.id = v.gate_id
-    LEFT JOIN dbo.users approver ON approver.id = v.approval_decided_by
     LEFT JOIN dbo.users confirmer ON confirmer.id = v.host_signature_confirmed_by
     LEFT JOIN dbo.users returner ON returner.id = v.device_returned_by
     LEFT JOIN dbo.users checkinUser ON checkinUser.id = v.check_in_by
@@ -813,6 +792,7 @@ export async function getVisitDetailForUser(user: AuthenticatedUser, visitId: st
 
   return {
     ...visit,
+    nationalityName: getCountryName(visit.nationalityCode),
     siteMap: siteMapResult.recordset[0] ?? null,
     badgeTexts: badgeTextsResult.recordset,
     completeness: await getConfiguredVisitCompleteness(visit)
@@ -827,7 +807,6 @@ async function loadVisitForUpdate(transaction: sql.Transaction, visitId: string)
         id,
         gate_id AS gateId,
         badge_number AS badgeNumber,
-        approval_status AS approvalStatus,
         visitor_id AS visitorId,
         valid_from AS validFrom,
         host_signature_status AS hostSignatureStatus,
@@ -875,6 +854,7 @@ export async function checkInVisit(
         firstName: string;
         lastName: string;
         company: string;
+        nationalityCode: string | null;
         hostName: string;
         hostPhone: string | null;
         purpose: string;
@@ -899,10 +879,10 @@ export async function checkInVisit(
       }>(`
       SELECT
         ${normalizedStatusSql} AS status,
-        ISNULL(v.approval_status, '${APPROVAL_STATUS.NOT_REQUIRED}') AS approvalStatus,
         vis.first_name AS firstName,
           vis.last_name AS lastName,
           vis.company,
+          vis.nationality_code AS nationalityCode,
           v.host_name AS hostName,
           v.host_phone AS hostPhone,
           v.purpose,
@@ -942,7 +922,6 @@ export async function checkInVisit(
     }
 
     assertCanCheckIn(visit.status);
-    assertVisitApprovedForCheckIn(visit.approvalStatus);
 
     await new sql.Request(transaction)
       .input("visitId", sql.UniqueIdentifier, visitId)
@@ -1000,6 +979,7 @@ export async function createWalkInVisit(
       .input("firstName", sql.NVarChar(120), input.firstName.trim())
       .input("lastName", sql.NVarChar(120), input.lastName.trim())
       .input("company", sql.NVarChar(255), input.company.trim())
+      .input("nationalityCode", sql.NChar(2), input.nationalityCode)
       .input("birthDate", sql.Date, cleanOptional(input.birthDate))
       .input("phone", sql.NVarChar(80), cleanOptional(input.phone))
       .input("email", sql.NVarChar(255), cleanOptional(input.email))
@@ -1015,6 +995,7 @@ export async function createWalkInVisit(
           first_name,
           last_name,
           company,
+          nationality_code,
           birth_date,
           phone_optional,
           email_optional,
@@ -1031,6 +1012,7 @@ export async function createWalkInVisit(
           @firstName,
           @lastName,
           @company,
+          @nationalityCode,
           @birthDate,
           @phone,
           @email,
@@ -1077,7 +1059,6 @@ export async function createWalkInVisit(
           license_plate,
           badge_number,
           status,
-          approval_status,
           created_by,
           created_via_public_form,
           notes,
@@ -1098,7 +1079,6 @@ export async function createWalkInVisit(
           @licensePlate,
           @badgeNumber,
           '${VISIT_STATUS.CHECKED_IN}',
-          '${APPROVAL_STATUS.NOT_REQUIRED}',
           @checkInBy,
           0,
           @notes,
@@ -1130,6 +1110,15 @@ export async function createWalkInVisit(
     );
 
     await transaction.commit();
+    void notifyNationalitySubscribers({
+      visitId: visit.id,
+      nationalityCode: input.nationalityCode,
+      visitorName: `${input.firstName.trim()} ${input.lastName.trim()}`,
+      company: input.company.trim(),
+      validFrom: input.validFrom,
+      validUntil: input.validUntil,
+      gateName: user.gateName ?? null
+    });
     return {
       visitId: visit.id,
       visitorId,
@@ -1351,6 +1340,7 @@ export async function updateVisitForGuard(
     lastName: string;
     birthDate?: string | null;
     company: string;
+    nationalityCode?: string | null;
     phone?: string | null;
     email?: string | null;
     licensePlate?: string | null;
@@ -1423,12 +1413,23 @@ export async function updateVisitForGuard(
       throw new Error("visit_update_status_forbidden");
     }
 
+    const previousVisitor = await new sql.Request(transaction)
+      .input("visitId", sql.UniqueIdentifier, visitId)
+      .query<{ nationalityCode: string | null }>(`
+        SELECT vis.nationality_code AS nationalityCode
+        FROM dbo.visitors vis
+        INNER JOIN dbo.visits v ON v.visitor_id = vis.id
+        WHERE v.id = @visitId
+      `);
+    const shouldNotifyNationality = !previousVisitor.recordset[0]?.nationalityCode && Boolean(input.nationalityCode?.trim());
+
     await new sql.Request(transaction)
       .input("visitId", sql.UniqueIdentifier, visitId)
       .input("firstName", sql.NVarChar(120), input.firstName.trim())
       .input("lastName", sql.NVarChar(120), input.lastName.trim())
       .input("birthDate", sql.Date, input.birthDate?.trim() || null)
       .input("company", sql.NVarChar(255), input.company.trim())
+      .input("nationalityCode", sql.NChar(2), input.nationalityCode?.trim() || null)
       .input("phone", sql.NVarChar(80), input.phone?.trim() || null)
       .input("email", sql.NVarChar(255), input.email?.trim() || null)
       .input("licensePlate", sql.NVarChar(40), input.licensePlate?.trim() || null)
@@ -1475,6 +1476,7 @@ export async function updateVisitForGuard(
           last_name = @lastName,
           birth_date = @birthDate,
           company = @company,
+          nationality_code = @nationalityCode,
           phone_optional = @phone,
           email_optional = @email,
           visitor_street = @visitorStreet,
@@ -1537,6 +1539,7 @@ export async function updateVisitForGuard(
           "last_name",
           "birth_date",
           "company",
+          "nationality_code",
           "phone_optional",
           "email_optional",
           "visitor_street",
@@ -1594,6 +1597,7 @@ export async function updateVisitForGuard(
           "last_name",
           "birth_date",
           "company",
+          "nationality_code",
           "phone_optional",
           "email_optional",
           "visitor_street",
@@ -1610,6 +1614,20 @@ export async function updateVisitForGuard(
     }, transaction);
 
     await transaction.commit();
+    if (shouldNotifyNationality && input.nationalityCode) {
+      const gate = nextGateId
+        ? await pool.request().input("gateId", sql.UniqueIdentifier, nextGateId).query<{ name: string }>("SELECT name FROM dbo.gates WHERE id = @gateId")
+        : null;
+      void notifyNationalitySubscribers({
+        visitId,
+        nationalityCode: input.nationalityCode,
+        visitorName: `${input.firstName.trim()} ${input.lastName.trim()}`,
+        company: input.company.trim(),
+        validFrom: input.validFrom,
+        validUntil: input.validUntil,
+        gateName: gate?.recordset[0]?.name ?? null
+      });
+    }
   } catch (error) {
     await transaction.rollback();
     throw error;

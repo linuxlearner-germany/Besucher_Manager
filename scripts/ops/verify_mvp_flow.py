@@ -137,6 +137,7 @@ def make_public_payload(suffix: str) -> dict[str, Any]:
         "lastName": f"Flow-{suffix}",
         "birthDate": "1990-05-10",
         "company": "Test Musterfirma",
+        "nationalityCode": "DE",
         "phone": "0123456789",
         "email": f"mvp-flow-{suffix}@example.com",
         "licensePlate": f"MVP-{suffix[-4:]}",
@@ -163,6 +164,7 @@ def make_guard_update_payload(detail: dict[str, Any]) -> dict[str, Any]:
         "lastName": "Flow-Aktualisiert",
         "birthDate": detail.get("birthDate") or "1990-05-10",
         "company": "Test Musterfirma Aktualisiert",
+        "nationalityCode": detail.get("nationalityCode") or "DE",
         "phone": "0171000000",
         "email": "flow-updated@example.com",
         "licensePlate": "FLOW-UPD",
@@ -207,6 +209,7 @@ def build_import_workbook(gate_name: str, suffix: str) -> bytes:
             "Vorname [Pflicht]",
             "Nachname [Pflicht]",
             "Firma / Organisation [Pflicht]",
+            "Nationalität [Pflicht]",
             "Ansprechpartner [Pflicht]",
             "Besuchszweck [Pflicht]",
             "Gültig von [Pflicht]",
@@ -220,6 +223,7 @@ def build_import_workbook(gate_name: str, suffix: str) -> bytes:
             "Import",
             f"Voll-{suffix}",
             "Test Import GmbH",
+            "Deutschland",
             "Import Ansprechpartner",
             "Importtest vollständig",
             today,
@@ -233,6 +237,7 @@ def build_import_workbook(gate_name: str, suffix: str) -> bytes:
             "Import",
             f"Offen-{suffix}",
             "Test Import GmbH",
+            "Deutschland",
             "Import Ansprechpartner",
             "Importtest unvollständig",
             today,
@@ -408,22 +413,9 @@ def main() -> int:
     detail_before = guard_client.request("GET", f"/api/guard/visits/{visit_id}")["visit"]
     guard_client.request("PUT", f"/api/guard/visits/{visit_id}", payload=make_guard_update_payload(detail_before))
 
-    print("6/11 SiBe prueft und genehmigt den Besuch...")
+    print("6/11 SiBe prueft den Besuch...")
     login(sibe_client, args.sibe_user, args.sibe_password)
-    sibe_pending_before = sibe_client.request("GET", "/api/sibe/summary")
-    if int(sibe_pending_before.get("approvalsPending", 0)) < 1:
-        raise RuntimeError("SiBe-Dashboard meldet keine offenen Freigaben vor der Entscheidung.")
-    sibe_client.request(
-        "PUT",
-        f"/api/sibe/visits/{visit_id}/approval",
-        payload={
-            "status": "approved",
-            "note": "Automatische Freigabe durch MVP-Test",
-        },
-    )
-    approved_detail = sibe_client.request("GET", f"/api/sibe/visits/{visit_id}")["visit"]
-    if approved_detail.get("approvalStatus") != "approved":
-        raise RuntimeError("SiBe-Freigabe wurde nicht als approved gespeichert.")
+    sibe_client.request("GET", f"/api/sibe/visits/{visit_id}")
 
     print("7/11 Import markiert Nachbearbeitung und SiBe sieht den Datensatz...")
     imported_sibe_visit = require_visit(
@@ -440,7 +432,7 @@ def main() -> int:
         raise RuntimeError("Check-in hat nicht den erwarteten Status geliefert.")
 
     print("9/11 Guard schreibt Druck-Audit...")
-    guard_client.request("POST", f"/api/guard/visits/{visit_id}/print-log", payload={})
+    guard_client.request("POST", f"/api/guard/visits/{visit_id}/print-log", payload={"paperSize": "A5"})
 
     signature_payload: dict[str, Any] = {
         "host_signature_status": args.signature_status,

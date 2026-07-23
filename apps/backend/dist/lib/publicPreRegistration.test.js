@@ -7,6 +7,7 @@ const node_test_1 = __importDefault(require("node:test"));
 const strict_1 = __importDefault(require("node:assert/strict"));
 const publicPreRegistrationSchema_1 = require("./publicPreRegistrationSchema");
 const idDocumentFields = {
+    nationalityCode: "DE",
     idDocumentType: "identity_card",
     idDocumentValidUntil: "2030-12-31",
     idDocumentNumber: "A1234567"
@@ -133,4 +134,9 @@ const idDocumentFields = {
         ...idDocumentFields
     });
     strict_1.default.equal(withoutHostPhone.success, false);
+});
+(0, node_test_1.default)("public pre-registration only requires fields selected by field configuration", () => {
+    const schema = (0, publicPreRegistrationSchema_1.createPublicPreRegistrationSchema)(new Set(["visitor_nationality"]));
+    const result = schema.safeParse({ nationalityCode: "DE" });
+    strict_1.default.equal(result.success, true);
 });

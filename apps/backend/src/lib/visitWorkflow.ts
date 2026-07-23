@@ -13,19 +13,11 @@ export const HOST_SIGNATURE_STATUS = {
   MISSING_EXCEPTION: "missing_exception"
 } as const;
 
-export const APPROVAL_STATUS = {
-  NOT_REQUIRED: "not_required",
-  PENDING: "pending",
-  APPROVED: "approved",
-  REJECTED: "rejected"
-} as const;
-
 export type VisitStatus = (typeof VISIT_STATUS)[keyof typeof VISIT_STATUS] | "vorangemeldet" | "eingecheckt" | "ausgecheckt";
 export type HostSignatureStatus = (typeof HOST_SIGNATURE_STATUS)[keyof typeof HOST_SIGNATURE_STATUS];
-export type ApprovalStatus = (typeof APPROVAL_STATUS)[keyof typeof APPROVAL_STATUS];
 
 export type AppRole = "admin" | "guard" | "sibe" | "kaskdt" | "custom";
-export const APP_MENU_KEYS = ["voranmeldung", "wache", "import", "admin", "genehmigung", "sibe", "kaskdt", "texte"] as const;
+export const APP_MENU_KEYS = ["voranmeldung", "wache", "import", "admin", "sibe", "kaskdt", "texte"] as const;
 export type AppMenuKey = (typeof APP_MENU_KEYS)[number];
 
 export type UserPermissions = {
@@ -34,7 +26,6 @@ export type UserPermissions = {
     guard: boolean;
     import: boolean;
     admin: boolean;
-    approvals: boolean;
     sibe: boolean;
     commander: boolean;
     texts: boolean;
@@ -51,12 +42,7 @@ export type UserPermissions = {
   imports: {
     execute: boolean;
   };
-  approvals: {
-    read: boolean;
-    review: boolean;
-    approve: boolean;
-    reject: boolean;
-  };
+  texts: { manage: boolean };
   dashboards: {
     sibe: boolean;
     commander: boolean;
@@ -64,7 +50,6 @@ export type UserPermissions = {
   admin: {
     users: boolean;
     guards: boolean;
-    texts: boolean;
     map: boolean;
     fields: boolean;
     system: boolean;
@@ -79,13 +64,14 @@ export type UserPermissionsInput = {
   menu?: Partial<UserPermissions["menu"]>;
   visits?: Partial<UserPermissions["visits"]>;
   imports?: Partial<UserPermissions["imports"]>;
-  approvals?: Partial<UserPermissions["approvals"]>;
+  texts?: Partial<UserPermissions["texts"]>;
   dashboards?: Partial<UserPermissions["dashboards"]>;
   admin?: Partial<UserPermissions["admin"]>;
   logs?: Partial<UserPermissions["logs"]>;
 };
 
 export const APP_PERMISSION_KEYS = [
+  "menu.guard",
   "visits.read",
   "visits.create",
   "visits.update",
@@ -94,15 +80,11 @@ export const APP_PERMISSION_KEYS = [
   "visits.checkOut",
   "visits.printBadge",
   "imports.execute",
-  "approvals.read",
-  "approvals.review",
-  "approvals.approve",
-  "approvals.reject",
+  "texts.manage",
   "dashboards.sibe",
   "dashboards.commander",
   "admin.users",
   "admin.guards",
-  "admin.texts",
   "admin.map",
   "admin.fields",
   "admin.system",
@@ -119,7 +101,6 @@ function createEmptyPermissions(): UserPermissions {
       guard: false,
       import: false,
       admin: false,
-      approvals: false,
       sibe: false,
       commander: false,
       texts: false
@@ -136,12 +117,7 @@ function createEmptyPermissions(): UserPermissions {
     imports: {
       execute: false
     },
-    approvals: {
-      read: false,
-      review: false,
-      approve: false,
-      reject: false
-    },
+    texts: { manage: false },
     dashboards: {
       sibe: false,
       commander: false
@@ -149,7 +125,6 @@ function createEmptyPermissions(): UserPermissions {
     admin: {
       users: false,
       guards: false,
-      texts: false,
       map: false,
       fields: false,
       system: false
@@ -168,7 +143,6 @@ function withAllPermissions(): UserPermissions {
       guard: true,
       import: true,
       admin: true,
-      approvals: true,
       sibe: true,
       commander: true,
       texts: true
@@ -185,12 +159,7 @@ function withAllPermissions(): UserPermissions {
     imports: {
       execute: true
     },
-    approvals: {
-      read: true,
-      review: true,
-      approve: true,
-      reject: true
-    },
+    texts: { manage: true },
     dashboards: {
       sibe: true,
       commander: true
@@ -198,7 +167,6 @@ function withAllPermissions(): UserPermissions {
     admin: {
       users: true,
       guards: true,
-      texts: true,
       map: true,
       fields: true,
       system: true
@@ -219,7 +187,7 @@ function mergePermissions(base: UserPermissions, override?: UserPermissionsInput
     menu: { ...base.menu, ...(override.menu ?? {}) },
     visits: { ...base.visits, ...(override.visits ?? {}) },
     imports: { ...base.imports, ...(override.imports ?? {}) },
-    approvals: { ...base.approvals, ...(override.approvals ?? {}) },
+    texts: { ...base.texts, ...(override.texts ?? {}) },
     dashboards: { ...base.dashboards, ...(override.dashboards ?? {}) },
     admin: { ...base.admin, ...(override.admin ?? {}) },
     logs: { ...base.logs, ...(override.logs ?? {}) }
@@ -229,16 +197,16 @@ function mergePermissions(base: UserPermissions, override?: UserPermissionsInput
 const defaultMenuAccessByRole: Record<AppRole, AppMenuKey[]> = {
   admin: [...APP_MENU_KEYS],
   guard: ["voranmeldung", "wache", "import"],
-  sibe: ["genehmigung", "sibe", "import"],
-  kaskdt: ["kaskdt"],
+  sibe: ["sibe", "import"],
+  kaskdt: ["kaskdt", "texte"],
   custom: []
 };
 
 const allowedMenuAccessByRole: Record<AppRole, AppMenuKey[]> = {
   admin: [...APP_MENU_KEYS],
   guard: ["voranmeldung", "wache", "import"],
-  sibe: ["import", "genehmigung", "sibe"],
-  kaskdt: ["kaskdt"],
+  sibe: ["import", "sibe"],
+  kaskdt: ["kaskdt", "texte"],
   custom: [...APP_MENU_KEYS]
 };
 
@@ -261,7 +229,6 @@ export function getDefaultPermissionsForRole(role: AppRole): UserPermissions {
           guard: true,
           import: true,
           admin: false,
-          approvals: false,
           sibe: false,
           commander: false,
           texts: false
@@ -285,7 +252,6 @@ export function getDefaultPermissionsForRole(role: AppRole): UserPermissions {
           preRegistration: false,
           guard: false,
           import: true,
-          approvals: true,
           sibe: true,
           admin: false,
           commander: false,
@@ -303,12 +269,6 @@ export function getDefaultPermissionsForRole(role: AppRole): UserPermissions {
         imports: {
           execute: true
         },
-        approvals: {
-          read: true,
-          review: true,
-          approve: true,
-          reject: true
-        },
         dashboards: {
           sibe: true,
           commander: false
@@ -321,10 +281,9 @@ export function getDefaultPermissionsForRole(role: AppRole): UserPermissions {
           guard: false,
           import: false,
           admin: false,
-          approvals: false,
           sibe: false,
           commander: true,
-          texts: false
+          texts: true
         },
         visits: {
           read: true,
@@ -335,12 +294,7 @@ export function getDefaultPermissionsForRole(role: AppRole): UserPermissions {
           checkOut: false,
           printBadge: false
         },
-        approvals: {
-          read: true,
-          review: false,
-          approve: false,
-          reject: false
-        },
+        texts: { manage: true },
         dashboards: {
           sibe: false,
           commander: true
@@ -365,7 +319,6 @@ export function normalizeUserPermissions(
   normalized.menu.guard = nextMenuAccess.includes("wache");
   normalized.menu.import = nextMenuAccess.includes("import");
   normalized.menu.admin = nextMenuAccess.includes("admin");
-  normalized.menu.approvals = nextMenuAccess.includes("genehmigung");
   normalized.menu.sibe = nextMenuAccess.includes("sibe");
   normalized.menu.commander = nextMenuAccess.includes("kaskdt");
   normalized.menu.texts = nextMenuAccess.includes("texte");
@@ -433,18 +386,6 @@ export function assertCanCheckIn(status: string): void {
 
   if (normalized !== VISIT_STATUS.PRE_REGISTERED) {
     throw new Error("invalid_check_in_status");
-  }
-}
-
-export function assertVisitApprovedForCheckIn(approvalStatus: string | null | undefined): void {
-  const normalized = approvalStatus || APPROVAL_STATUS.NOT_REQUIRED;
-
-  if (normalized === APPROVAL_STATUS.PENDING) {
-    throw new Error("visit_approval_pending");
-  }
-
-  if (normalized === APPROVAL_STATUS.REJECTED) {
-    throw new Error("visit_approval_rejected");
   }
 }
 

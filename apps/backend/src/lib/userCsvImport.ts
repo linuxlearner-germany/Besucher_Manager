@@ -32,6 +32,7 @@ const headerAliases: Record<string, keyof Omit<UserCsvImportRawRow, "lineNumber"
 };
 
 const templateHeaders = ["username", "password", "role", "displayName", "email", "groups", "menuAccess", "isActive"];
+const exportHeaders = ["username", "role", "displayName", "email", "gate", "groups", "menuAccess", "isActive", "lastLoginAt"];
 
 function normalizeHeader(value: string): string {
   return value
@@ -84,6 +85,37 @@ function parseDelimitedLine(line: string, delimiter: "," | ";"): string[] {
 
 export function buildUserImportTemplateCsv(): string {
   return `${templateHeaders.join(",")}\n`;
+}
+
+function escapeCsvCell(value: unknown): string {
+  const text = value === null || value === undefined ? "" : String(value);
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, "\"\"")}"` : text;
+}
+
+export function buildUserExportCsv(rows: Array<{
+  username: string;
+  role: string;
+  displayName: string;
+  email: string | null;
+  gate: string | null;
+  groups: string[];
+  menuAccess: string[];
+  isActive: boolean;
+  lastLoginAt: string | null;
+}>): string {
+  const lines = rows.map((row) => [
+    row.username,
+    row.role,
+    row.displayName,
+    row.email,
+    row.gate,
+    row.groups.join("|"),
+    row.menuAccess.join("|"),
+    row.isActive ? "true" : "false",
+    row.lastLoginAt
+  ].map(escapeCsvCell).join(","));
+
+  return `\uFEFF${exportHeaders.join(",")}\n${lines.join("\n")}${lines.length ? "\n" : ""}`;
 }
 
 export function parseUserImportCsv(input: Buffer | string): UserCsvImportRawRow[] {

@@ -49,6 +49,8 @@ const columnAliases: Record<string, keyof ImportVisitInput> = {
   "validuntil": "validUntil",
   ausweisart: "idDocumentType",
   dokumentart: "idDocumentType",
+  nationalitaet: "nationalityCode",
+  staatsangehoerigkeit: "nationalityCode",
   "ausweisgueltigbis": "idDocumentValidUntil",
   "ausweisgültigbis": "idDocumentValidUntil",
   dokumentgueltigbis: "idDocumentValidUntil",

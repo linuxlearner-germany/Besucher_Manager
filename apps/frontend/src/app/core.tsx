@@ -10,7 +10,7 @@ import {
 import { Navigate, NavLink, useLocation, useNavigate } from "react-router-dom";
 
 export type AppRole = "admin" | "guard" | "sibe" | "kaskdt" | "custom";
-export type AppMenuKey = "voranmeldung" | "wache" | "import" | "admin" | "genehmigung" | "sibe" | "kaskdt" | "texte";
+export type AppMenuKey = "voranmeldung" | "wache" | "import" | "admin" | "sibe" | "kaskdt" | "texte";
 export type AppPermission =
   | "visits.read"
   | "visits.create"
@@ -20,15 +20,11 @@ export type AppPermission =
   | "visits.checkOut"
   | "visits.printBadge"
   | "imports.execute"
-  | "approvals.read"
-  | "approvals.review"
-  | "approvals.approve"
-  | "approvals.reject"
+  | "texts.manage"
   | "dashboards.sibe"
   | "dashboards.commander"
   | "admin.users"
   | "admin.guards"
-  | "admin.texts"
   | "admin.map"
   | "admin.fields"
   | "admin.system"
@@ -41,7 +37,6 @@ export type UserPermissions = {
     guard: boolean;
     import: boolean;
     admin: boolean;
-    approvals: boolean;
     sibe: boolean;
     commander: boolean;
     texts: boolean;
@@ -58,12 +53,7 @@ export type UserPermissions = {
   imports: {
     execute: boolean;
   };
-  approvals: {
-    read: boolean;
-    review: boolean;
-    approve: boolean;
-    reject: boolean;
-  };
+  texts: { manage: boolean };
   dashboards: {
     sibe: boolean;
     commander: boolean;
@@ -71,7 +61,6 @@ export type UserPermissions = {
   admin: {
     users: boolean;
     guards: boolean;
-    texts: boolean;
     map: boolean;
     fields: boolean;
     system: boolean;
@@ -86,7 +75,7 @@ type UserPermissionsInput = {
   menu?: Partial<UserPermissions["menu"]>;
   visits?: Partial<UserPermissions["visits"]>;
   imports?: Partial<UserPermissions["imports"]>;
-  approvals?: Partial<UserPermissions["approvals"]>;
+  texts?: Partial<UserPermissions["texts"]>;
   dashboards?: Partial<UserPermissions["dashboards"]>;
   admin?: Partial<UserPermissions["admin"]>;
   logs?: Partial<UserPermissions["logs"]>;
@@ -206,30 +195,9 @@ export type FieldConfigExportPayload = {
   }>;
 };
 
-export type NewFieldDefinitionForm = {
-  label: string;
-  fieldType: string;
-  section: string;
-  helpText: string;
-  sortOrder: number;
-  showInPublic: boolean;
-  showInGuard: boolean;
-  showInSibe: boolean;
-  showOnBadge: boolean;
-  requiredPublic: boolean;
-  requiredGuardCheckin: boolean;
-  requiredBeforePrint: boolean;
-  isActive: boolean;
-  optionsJson: string;
-};
-
 export type VisitRow = {
   id: string;
   status: string;
-  approvalStatus: "not_required" | "pending" | "approved" | "rejected";
-  approvalNote: string | null;
-  approvalDecidedBy: string | null;
-  approvalDecidedAt: string | null;
   validFrom: string;
   validUntil: string;
   checkInAt: string | null;
@@ -237,6 +205,8 @@ export type VisitRow = {
   firstName: string;
   lastName: string;
   company: string;
+  nationalityCode: string | null;
+  nationalityName: string | null;
   birthDate: string | null;
   visitorPhone: string | null;
   visitorEmail: string | null;
@@ -310,6 +280,7 @@ export type FormState = {
   firstName: string;
   lastName: string;
   company: string;
+  nationalityCode: string;
   birthDate: string;
   hostName: string;
   hostEmail: string;
@@ -321,7 +292,7 @@ export type FormState = {
   phone: string;
   email: string;
   licensePlate: string;
-  idDocumentType: "identity_card" | "passport" | "other" | "";
+  idDocumentType: "identity_card" | "passport" | "service_id" | "other" | "";
   idDocumentValidUntil: string;
   idDocumentNumber: string;
   notes: string;
@@ -343,19 +314,19 @@ export type AuthContextValue = {
 };
 
 const defaultMenuAccessByRole: Record<User["role"], AppMenuKey[]> = {
-  admin: ["voranmeldung", "wache", "import", "admin", "genehmigung", "sibe", "kaskdt", "texte"],
+  admin: ["voranmeldung", "wache", "import", "admin", "sibe", "kaskdt", "texte"],
   guard: ["voranmeldung", "wache", "import"],
-  sibe: ["genehmigung", "sibe", "import"],
-  kaskdt: ["kaskdt"],
+  sibe: ["sibe", "import"],
+  kaskdt: ["kaskdt", "texte"],
   custom: []
 };
 
 const allowedMenuAccessByRole: Record<User["role"], AppMenuKey[]> = {
-  admin: ["voranmeldung", "wache", "import", "admin", "genehmigung", "sibe", "kaskdt", "texte"],
+  admin: ["voranmeldung", "wache", "import", "admin", "sibe", "kaskdt", "texte"],
   guard: ["voranmeldung", "wache", "import"],
-  sibe: ["genehmigung", "sibe", "import"],
-  kaskdt: ["kaskdt"],
-  custom: ["voranmeldung", "wache", "import", "admin", "genehmigung", "sibe", "kaskdt", "texte"]
+  sibe: ["sibe", "import"],
+  kaskdt: ["kaskdt", "texte"],
+  custom: ["voranmeldung", "wache", "import", "admin", "sibe", "kaskdt", "texte"]
 };
 
 function createEmptyPermissions(): UserPermissions {
@@ -365,7 +336,6 @@ function createEmptyPermissions(): UserPermissions {
       guard: false,
       import: false,
       admin: false,
-      approvals: false,
       sibe: false,
       commander: false,
       texts: false
@@ -382,12 +352,7 @@ function createEmptyPermissions(): UserPermissions {
     imports: {
       execute: false
     },
-    approvals: {
-      read: false,
-      review: false,
-      approve: false,
-      reject: false
-    },
+    texts: { manage: false },
     dashboards: {
       sibe: false,
       commander: false
@@ -395,7 +360,6 @@ function createEmptyPermissions(): UserPermissions {
     admin: {
       users: false,
       guards: false,
-      texts: false,
       map: false,
       fields: false,
       system: false
@@ -416,7 +380,7 @@ function mergePermissions(base: UserPermissions, override?: UserPermissionsInput
     menu: { ...base.menu, ...(override.menu ?? {}) },
     visits: { ...base.visits, ...(override.visits ?? {}) },
     imports: { ...base.imports, ...(override.imports ?? {}) },
-    approvals: { ...base.approvals, ...(override.approvals ?? {}) },
+    texts: { ...base.texts, ...(override.texts ?? {}) },
     dashboards: { ...base.dashboards, ...(override.dashboards ?? {}) },
     admin: { ...base.admin, ...(override.admin ?? {}) },
     logs: { ...base.logs, ...(override.logs ?? {}) }
@@ -427,33 +391,32 @@ export function getDefaultPermissionsForRole(role: User["role"]): UserPermission
   switch (role) {
     case "admin":
       return mergePermissions(createEmptyPermissions(), {
-        menu: { preRegistration: true, guard: true, import: true, admin: true, approvals: true, sibe: true, commander: true, texts: true },
+        menu: { preRegistration: true, guard: true, import: true, admin: true, sibe: true, commander: true, texts: true },
         visits: { read: true, create: true, update: true, delete: true, checkIn: true, checkOut: true, printBadge: true },
         imports: { execute: true },
-        approvals: { read: true, review: true, approve: true, reject: true },
+        texts: { manage: true },
         dashboards: { sibe: true, commander: true },
-        admin: { users: true, guards: true, texts: true, map: true, fields: true, system: true },
+        admin: { users: true, guards: true, map: true, fields: true, system: true },
         logs: { audit: true, errors: true }
       });
     case "guard":
       return mergePermissions(createEmptyPermissions(), {
-        menu: { preRegistration: true, guard: true, import: true, admin: false, approvals: false, sibe: false, commander: false, texts: false },
+        menu: { preRegistration: true, guard: true, import: true, admin: false, sibe: false, commander: false, texts: false },
         visits: { read: true, create: true, update: true, delete: false, checkIn: true, checkOut: true, printBadge: true },
         imports: { execute: true }
       });
     case "sibe":
       return mergePermissions(createEmptyPermissions(), {
-        menu: { preRegistration: false, guard: false, import: true, admin: false, approvals: true, sibe: true, commander: false, texts: false },
+        menu: { preRegistration: false, guard: false, import: true, admin: false, sibe: true, commander: false, texts: false },
         visits: { read: true, create: true, update: true, delete: false, checkIn: false, checkOut: false, printBadge: false },
         imports: { execute: true },
-        approvals: { read: true, review: true, approve: true, reject: true },
         dashboards: { sibe: true, commander: false }
       });
     case "kaskdt":
       return mergePermissions(createEmptyPermissions(), {
-        menu: { preRegistration: false, guard: false, import: false, admin: false, approvals: false, sibe: false, commander: true, texts: false },
+        menu: { preRegistration: false, guard: false, import: false, admin: false, sibe: false, commander: true, texts: true },
         visits: { read: true, create: false, update: false, delete: false, checkIn: false, checkOut: false, printBadge: false },
-        approvals: { read: true, review: false, approve: false, reject: false },
+        texts: { manage: true },
         dashboards: { sibe: false, commander: true }
       });
     case "custom":
@@ -478,6 +441,7 @@ export type GuardVisitEditState = {
   lastName: string;
   birthDate: string;
   company: string;
+  nationalityCode: string;
   phone: string;
   email: string;
   licensePlate: string;
@@ -495,7 +459,7 @@ export type GuardVisitEditState = {
   visitorPostalCode: string;
   visitorCity: string;
   visitorAddress: string;
-  idDocumentType: "identity_card" | "passport" | "other" | "";
+  idDocumentType: "identity_card" | "passport" | "service_id" | "other" | "";
   idDocumentValidUntil: string;
   idDocumentNumber: string;
   idDocumentIssuingPlace: string;
@@ -542,7 +506,6 @@ export type SibeSummary = {
   signaturesPending: number;
   signaturesFollowUp: number;
   signaturesExceptions: number;
-  approvalsPending: number;
 };
 
 export type SibeVisitStatistics = {
@@ -560,6 +523,8 @@ export type SibeVisitRow = {
   visitorId: string;
   visitorName: string;
   company: string;
+  nationalityCode: string | null;
+  nationalityName: string | null;
   licensePlate: string | null;
   badgeNumber: string | null;
   status: string;
@@ -572,11 +537,9 @@ export type SibeVisitRow = {
   checkInAt: string | null;
   checkOutAt: string | null;
   hostSignatureStatus: string;
-  approvalStatus: "not_required" | "pending" | "approved" | "rejected";
 };
 
 export type AdminWorkflowSettings = {
-  approvalRequired: boolean;
   backgroundMode: "image" | "subtle" | "plain";
   backgroundImageUrl: string;
   backgroundImageName: string | null;
@@ -591,7 +554,6 @@ export type AdminWorkflowSettings = {
     secure: boolean;
     username: string;
     fromAddress: string;
-    approvalRecipients: string[];
     hasPassword: boolean;
   };
 };
@@ -601,6 +563,8 @@ export type SibeVisitorRow = {
   firstName: string;
   lastName: string;
   company: string;
+  nationalityCode: string | null;
+  nationalityName: string | null;
   birthDate: string | null;
   phone: string | null;
   email: string | null;
@@ -708,27 +672,14 @@ export function formatSignatureStatus(status: VisitRow["hostSignatureStatus"] | 
   }
 }
 
-export function formatApprovalStatus(status: VisitRow["approvalStatus"] | string): string {
-  switch (status) {
-    case "pending":
-      return "Freigabe offen";
-    case "approved":
-      return "Freigegeben";
-    case "rejected":
-      return "Abgelehnt";
-    case "not_required":
-      return "Keine Freigabe";
-    default:
-      return status;
-  }
-}
-
 export function formatIdDocumentType(value: string | null | undefined): string {
   switch (value) {
     case "identity_card":
       return "Personalausweis";
     case "passport":
       return "Reisepass";
+    case "service_id":
+      return "Dienstausweis";
     case "other":
       return "Sonstiges";
     case "":
@@ -763,10 +714,6 @@ export function formatAuditAction(action: string): string {
       return "Besucher ausgecheckt";
     case "VISIT_CHECKED_IN":
       return "Besucher eingecheckt";
-    case "VISIT_APPROVED":
-      return "Besuch freigegeben";
-    case "VISIT_REJECTED":
-      return "Besuch abgelehnt";
     case "PUBLIC_PRE_REGISTRATION_CREATED":
       return "Voranmeldung erstellt";
     case "SIBE_VISIT_NOTES_UPDATED":
@@ -782,12 +729,6 @@ export function formatAuditAction(action: string): string {
 
 export function getNextStepHint(visit: VisitDetail): string {
   if (visit.status === "pre_registered") {
-    if (visit.approvalStatus === "pending") {
-      return "Nächster Schritt: SiBe-Freigabe abwarten";
-    }
-    if (visit.approvalStatus === "rejected") {
-      return "Nächster Schritt: Ablehnung prüfen und Besuch korrigieren";
-    }
     return visit.completeness.canCheckIn
       ? "Nächster Schritt: Daten prüfen und einchecken"
       : "Nächster Schritt: Fehlende Pflichtdaten ergänzen";
@@ -903,16 +844,13 @@ export function getDefaultRouteForUser(user: User): string {
   if (hasMenuAccess(user, "wache") && hasPermission(user, "visits.read")) {
     return "/wache";
   }
-  if (hasMenuAccess(user, "genehmigung") && hasPermission(user, "approvals.read")) {
-    return "/genehmigungen";
-  }
   if (hasMenuAccess(user, "sibe") && hasPermission(user, "dashboards.sibe")) {
     return "/sibe";
   }
   if (hasMenuAccess(user, "kaskdt") && hasPermission(user, "dashboards.commander")) {
     return "/kaskdt";
   }
-  if (hasMenuAccess(user, "texte") && hasPermission(user, "admin.texts")) {
+  if (hasMenuAccess(user, "texte") && hasPermission(user, "texts.manage")) {
     return "/texte";
   }
   if (hasMenuAccess(user, "voranmeldung")) {
@@ -958,6 +896,7 @@ export function buildInitialFormState(): FormState {
     firstName: "",
     lastName: "",
     company: "",
+    nationalityCode: "DE",
     birthDate: "",
     hostName: "",
     hostEmail: "",
@@ -996,6 +935,7 @@ export function buildGuardVisitEditState(visit: VisitDetail): GuardVisitEditStat
     lastName: visit.lastName,
     birthDate: visit.birthDate || "",
     company: visit.company,
+    nationalityCode: visit.nationalityCode || "DE",
     phone: visit.visitorPhone || "",
     email: visit.visitorEmail || "",
     licensePlate: visit.licensePlate || "",
@@ -1214,10 +1154,9 @@ export function AppLayout({ children }: PropsWithChildren) {
     { to: "/wache", label: "Wache", visible: Boolean(user && hasMenuAccess(user, "wache") && hasPermission(user, "visits.read")) },
     { to: "/import", label: "Import", visible: Boolean(!user || (user && hasMenuAccess(user, "import") && hasPermission(user, "imports.execute"))) },
     { to: "/admin", label: "Admin", visible: Boolean(user && hasMenuAccess(user, "admin") && (hasPermission(user, "admin.users") || hasPermission(user, "admin.guards") || hasPermission(user, "admin.fields") || hasPermission(user, "admin.map") || hasPermission(user, "admin.system") || hasPermission(user, "logs.audit") || hasPermission(user, "logs.errors"))) },
-    { to: "/genehmigungen", label: "Genehmigungen", visible: Boolean(user && hasMenuAccess(user, "genehmigung") && hasPermission(user, "approvals.read")) },
     { to: "/sibe", label: "SiBe", visible: Boolean(user && hasMenuAccess(user, "sibe") && hasPermission(user, "dashboards.sibe")) },
     { to: "/kaskdt", label: "KasKdt", visible: Boolean(user && hasMenuAccess(user, "kaskdt") && hasPermission(user, "dashboards.commander")) },
-    { to: "/texte", label: "Texte", visible: Boolean(user && hasMenuAccess(user, "texte") && hasPermission(user, "admin.texts")) },
+    { to: "/texte", label: "Texte", visible: Boolean(user && hasMenuAccess(user, "texte") && hasPermission(user, "texts.manage")) },
     { to: "/login", label: "Login", visible: !user }
   ];
 

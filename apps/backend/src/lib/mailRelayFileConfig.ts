@@ -35,21 +35,6 @@ const positiveNumber = z.preprocess((value) => {
   return value;
 }, z.number().int().positive());
 
-const recipientList = z.preprocess((value) => {
-  if (Array.isArray(value)) {
-    return value.map((entry) => String(entry).trim()).filter(Boolean);
-  }
-
-  if (typeof value === "string") {
-    return value
-      .split(/[,\n;]+/)
-      .map((entry) => entry.trim())
-      .filter(Boolean);
-  }
-
-  return [];
-}, z.array(z.string()));
-
 const relayBlockSchema = z.object({
   enabled: booleanish.default(false),
   host: optionalString.default(""),
@@ -59,9 +44,6 @@ const relayBlockSchema = z.object({
   password: optionalString.default(""),
   fromAddress: optionalString.default(""),
   from: optionalString.optional(),
-  approvalRecipients: recipientList.default([]),
-  recipients: recipientList.optional(),
-  approvalTo: recipientList.optional(),
   auth: z.object({
     username: optionalString.optional(),
     password: optionalString.optional()
@@ -84,13 +66,8 @@ export type MailRelayFileConfig = {
   username: string;
   password: string;
   fromAddress: string;
-  approvalRecipients: string[];
   hasPassword: boolean;
 };
-
-function normalizeRecipients(values: string[]): string[] {
-  return Array.from(new Set(values.map((entry) => entry.trim()).filter(Boolean)));
-}
 
 function resolveRelayBlock(rawConfig: z.infer<typeof relayConfigSchema>) {
   return rawConfig.mailRelay ?? rawConfig.smtpRelay ?? rawConfig.smtpOutboundRelay ?? null;
@@ -125,14 +102,6 @@ export async function loadMailRelayFileConfig(): Promise<MailRelayFileConfig | n
   const username = relayBlock.username.trim() || relayBlock.auth?.username?.trim() || "";
   const password = relayBlock.password || relayBlock.auth?.password || "";
   const fromAddress = (relayBlock.fromAddress || relayBlock.from || "").trim();
-  const approvalRecipients = normalizeRecipients(
-    relayBlock.approvalRecipients.length > 0
-      ? relayBlock.approvalRecipients
-      : relayBlock.recipients?.length
-        ? relayBlock.recipients
-        : relayBlock.approvalTo ?? []
-  );
-
   return {
     source: "yml",
     configPath: env.mailRelayConfigPath,
@@ -143,7 +112,6 @@ export async function loadMailRelayFileConfig(): Promise<MailRelayFileConfig | n
     username,
     password,
     fromAddress,
-    approvalRecipients,
     hasPassword: password.trim().length > 0
   };
 }

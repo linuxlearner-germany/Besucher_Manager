@@ -39,7 +39,6 @@ import {
   getDefaultPermissionsForRole,
   getAllowedMenuAccessForRole,
   hasPermission,
-  type NewFieldDefinitionForm,
   type SiteMapSummary,
   type UserPermissions,
   useAuth,
@@ -54,7 +53,6 @@ export function AdminPage() {
     { key: "wache", label: "Wache" },
     { key: "import", label: "Import" },
     { key: "admin", label: "Admin" },
-    { key: "genehmigung", label: "Genehmigungen" },
     { key: "sibe", label: "SiBe" },
     { key: "kaskdt", label: "KasKdt" },
     { key: "texte", label: "Texte" }
@@ -73,15 +71,6 @@ export function AdminPage() {
       ]
     },
     {
-      title: "Freigaben",
-      items: [
-        { key: "approvals.read", label: "Freigaben ansehen" },
-        { key: "approvals.review", label: "Freigaben prüfen" },
-        { key: "approvals.approve", label: "Freigeben" },
-        { key: "approvals.reject", label: "Ablehnen" }
-      ]
-    },
-    {
       title: "Verwaltung",
       items: [
         { key: "imports.execute", label: "Import ausführen" },
@@ -89,7 +78,7 @@ export function AdminPage() {
         { key: "dashboards.commander", label: "KasKdt-Lagebild" },
         { key: "admin.users", label: "Benutzer verwalten" },
         { key: "admin.guards", label: "Wachen verwalten" },
-        { key: "admin.texts", label: "Texte verwalten" },
+        { key: "texts.manage", label: "Texte verwalten" },
         { key: "admin.map", label: "Geländeplan verwalten" },
         { key: "admin.fields", label: "Felder verwalten" },
         { key: "admin.system", label: "System verwalten" }
@@ -117,14 +106,13 @@ export function AdminPage() {
     signaturesPending: number;
     signaturesFollowUp: number;
     signaturesExceptions: number;
-    approvalsPending: number;
     dbHost?: string;
     dbName?: string;
   } | null>(null);
   const [workflowSettings, setWorkflowSettings] = useState<AdminWorkflowSettings | null>(null);
   const [workflowPassword, setWorkflowPassword] = useState("");
   const [workflowTestRecipient, setWorkflowTestRecipient] = useState("");
-  const [workflowTestKind, setWorkflowTestKind] = useState<"relay" | "approval_request" | "approval_approved" | "approval_rejected">("relay");
+  const [workflowTestKind, setWorkflowTestKind] = useState<"relay" | "nationality">("relay");
   const [userImportFile, setUserImportFile] = useState<File | null>(null);
   const [userImporting, setUserImporting] = useState(false);
   const [userImportIssues, setUserImportIssues] = useState<Array<{ lineNumber: number; username: string | null; message: string }>>([]);
@@ -190,7 +178,6 @@ export function AdminPage() {
   const [editableFieldDefinitions, setEditableFieldDefinitions] = useState<Record<string, AdminFieldDefinition>>({});
   const [selectedFieldDefinitionId, setSelectedFieldDefinitionId] = useState<string | null>(null);
   const [selectedFieldSection, setSelectedFieldSection] = useState<string | null>(null);
-  const [isCreateFieldModalOpen, setIsCreateFieldModalOpen] = useState(false);
   const [fieldImportText, setFieldImportText] = useState("");
   const [fieldImportFileName, setFieldImportFileName] = useState("");
   const [fieldImportPreview, setFieldImportPreview] = useState<{
@@ -198,23 +185,6 @@ export function AdminPage() {
     summary: { total: number; willUpdate: number; willCreate: number; willSkip: number; warnings: string[] };
     changes: Array<{ fieldKey: string; action: "update" | "create"; label: string }>;
   } | null>(null);
-  const [newFieldDefinition, setNewFieldDefinition] = useState<NewFieldDefinitionForm>({
-    label: "",
-    fieldType: "text",
-    section: "Besucher",
-    helpText: "",
-    sortOrder: 100,
-    showInPublic: false,
-    showInGuard: true,
-    showInSibe: true,
-    showOnBadge: false,
-    requiredPublic: false,
-    requiredGuardCheckin: false,
-    requiredBeforePrint: false,
-    isActive: true,
-    optionsJson: ""
-  });
-
   const loadAuditLogs = useCallback(async (filters = auditFilters) => {
     const params = new URLSearchParams();
     if (filters.search.trim()) params.set("search", filters.search.trim());
@@ -249,7 +219,7 @@ export function AdminPage() {
         fetchJson<{ gates: AdminGate[] }>("/api/admin/gates", { method: "GET", headers: {} }),
         fetchJson<{ users: AdminUser[] }>("/api/admin/users", { method: "GET", headers: {} }),
         fetchJson<{ texts: AdminBadgeText[] }>("/api/admin/badge-texts", { method: "GET", headers: {} }),
-        fetchJson<{ app: string; activeVisits: number; activeGates: number; openPreRegistrationsToday: number; signaturesPending: number; signaturesFollowUp: number; signaturesExceptions: number; approvalsPending: number; dbHost?: string; dbName?: string }>("/api/admin/system-status", { method: "GET", headers: {} }),
+        fetchJson<{ app: string; activeVisits: number; activeGates: number; openPreRegistrationsToday: number; signaturesPending: number; signaturesFollowUp: number; signaturesExceptions: number; dbHost?: string; dbName?: string }>("/api/admin/system-status", { method: "GET", headers: {} }),
         fetchJson<AdminWorkflowSettings>("/api/admin/system-settings/workflow-email", { method: "GET", headers: {} }),
         fetchJson<{ siteMap: SiteMapSummary }>("/api/admin/site-map", { method: "GET", headers: {} }),
         fetchJson<{ siteMaps: NonNullable<SiteMapSummary>[] }>("/api/admin/site-maps", { method: "GET", headers: {} }),
@@ -319,7 +289,7 @@ export function AdminPage() {
   }, [backgroundFile]);
 
   useEffect(() => {
-    if (!selectedFieldDefinitionId && !isCreateFieldModalOpen) {
+    if (!selectedFieldDefinitionId) {
       return;
     }
 
@@ -329,7 +299,6 @@ export function AdminPage() {
       }
 
       setSelectedFieldDefinitionId(null);
-      setIsCreateFieldModalOpen(false);
     }
 
     window.addEventListener("keydown", handleKeyDown);
@@ -337,7 +306,7 @@ export function AdminPage() {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [selectedFieldDefinitionId, isCreateFieldModalOpen]);
+  }, [selectedFieldDefinitionId]);
 
   async function createGate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -444,6 +413,10 @@ export function AdminPage() {
 
   function downloadUserImportTemplate() {
     window.location.assign("/api/admin/users/import-template.csv");
+  }
+
+  function downloadUserExport() {
+    window.location.assign("/api/admin/users/export.csv");
   }
 
   function resetSiteMapSelection() {
@@ -833,42 +806,6 @@ export function AdminPage() {
     }
   }
 
-  async function createFieldDefinition(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    try {
-      await fetchJson("/api/admin/field-definitions", {
-        method: "POST",
-        body: JSON.stringify({
-          ...newFieldDefinition,
-          optionsJson: newFieldDefinition.optionsJson?.trim() || null
-        })
-      });
-      setMessage("Feld angelegt.");
-      setError(null);
-      setIsCreateFieldModalOpen(false);
-      setNewFieldDefinition({
-        label: "",
-        fieldType: "text",
-        section: selectedFieldSection || "Besucher",
-        helpText: "",
-        sortOrder: 100,
-        showInPublic: false,
-        showInGuard: true,
-        showInSibe: true,
-        showOnBadge: false,
-        requiredPublic: false,
-        requiredGuardCheckin: false,
-        requiredBeforePrint: false,
-        isActive: true,
-        optionsJson: ""
-      });
-      await loadAll();
-    } catch (apiError) {
-      const payload = apiError as ApiError;
-      setError(payload.message || "Feld konnte nicht angelegt werden.");
-    }
-  }
-
   async function toggleFieldDefinitionActive(field: AdminFieldDefinition) {
     try {
       await fetchJson(`/api/admin/field-definitions/${field.id}`, {
@@ -1063,7 +1000,6 @@ export function AdminPage() {
       const payload = await fetchJson<{ success: true; emailRelaySource: "database" | "yml" }>("/api/admin/system-settings/workflow-email", {
         method: "PUT",
         body: JSON.stringify({
-          approvalRequired: workflowSettings.approvalRequired,
           backgroundMode: workflowSettings.backgroundMode,
           emailRelay: {
             enabled: workflowSettings.emailRelay.enabled,
@@ -1072,8 +1008,7 @@ export function AdminPage() {
             secure: workflowSettings.emailRelay.secure,
             username: workflowSettings.emailRelay.username,
             password: workflowPassword,
-            fromAddress: workflowSettings.emailRelay.fromAddress,
-            approvalRecipients: workflowSettings.emailRelay.approvalRecipients
+            fromAddress: workflowSettings.emailRelay.fromAddress
           }
         })
       });
@@ -1113,7 +1048,7 @@ export function AdminPage() {
     { key: "dashboard" as const, label: "Dashboard", visible: true },
     { key: "wachen" as const, label: "Wachen", visible: Boolean(currentUser && hasPermission(currentUser, "admin.guards")) },
     { key: "benutzer" as const, label: "Benutzer", visible: Boolean(currentUser && hasPermission(currentUser, "admin.users")) },
-    { key: "texte" as const, label: "Texte", visible: Boolean(currentUser && hasPermission(currentUser, "admin.texts")) },
+    { key: "texte" as const, label: "Texte", visible: Boolean(currentUser && hasPermission(currentUser, "texts.manage")) },
     { key: "karte" as const, label: "Geländeplan", visible: Boolean(currentUser && hasPermission(currentUser, "admin.map")) },
     { key: "hintergrund" as const, label: "Hintergrund", visible: Boolean(currentUser && hasPermission(currentUser, "admin.system")) },
     { key: "felder" as const, label: "Felder", visible: Boolean(currentUser && hasPermission(currentUser, "admin.fields")) },
@@ -1197,6 +1132,7 @@ export function AdminPage() {
             userImporting={userImporting}
             userImportIssues={userImportIssues}
             userImportSummary={userImportSummary}
+            downloadUserExport={downloadUserExport}
             downloadUserImportTemplate={downloadUserImportTemplate}
             importUsersCsv={importUsersCsv}
             saveUser={saveUser}
@@ -1253,10 +1189,6 @@ export function AdminPage() {
             setSelectedFieldDefinitionId={setSelectedFieldDefinitionId}
             selectedFieldSection={selectedFieldSection}
             setSelectedFieldSection={setSelectedFieldSection}
-            isCreateFieldModalOpen={isCreateFieldModalOpen}
-            setIsCreateFieldModalOpen={setIsCreateFieldModalOpen}
-            newFieldDefinition={newFieldDefinition}
-            setNewFieldDefinition={setNewFieldDefinition}
             fieldImportText={fieldImportText}
             fieldImportFileName={fieldImportFileName}
             fieldImportPreview={fieldImportPreview}
@@ -1265,7 +1197,6 @@ export function AdminPage() {
             confirmFieldImport={confirmFieldImport}
             exportFieldConfiguration={exportFieldConfiguration}
             saveFieldDefinition={saveFieldDefinition}
-            createFieldDefinition={createFieldDefinition}
             toggleFieldDefinitionActive={toggleFieldDefinitionActive}
           />
         ) : null}

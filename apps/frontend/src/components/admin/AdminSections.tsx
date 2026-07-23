@@ -168,6 +168,7 @@ export function AdminUsersSection({
   userImporting,
   userImportIssues,
   userImportSummary,
+  downloadUserExport,
   downloadUserImportTemplate,
   importUsersCsv,
   saveUser,
@@ -217,6 +218,7 @@ export function AdminUsersSection({
   userImporting: boolean;
   userImportIssues: Array<{ lineNumber: number; username: string | null; message: string }>;
   userImportSummary: { created: number; updated: number; total: number; fileName: string } | null;
+  downloadUserExport: () => void;
   downloadUserImportTemplate: () => void;
   importUsersCsv: () => Promise<void>;
   saveUser: (userId: string) => Promise<void>;
@@ -251,6 +253,7 @@ export function AdminUsersSection({
         <div>
           <h3>Benutzer</h3>
         </div>
+        <button type="button" className="secondary-button" onClick={downloadUserExport}>Benutzer als CSV exportieren</button>
       </div>
       <div className="panel admin-user-card">
         <div className="table-section-header">
@@ -841,7 +844,6 @@ export function AdminSystemSection({
     signaturesPending: number;
     signaturesFollowUp: number;
     signaturesExceptions: number;
-    approvalsPending?: number;
     dbHost?: string;
     dbName?: string;
   } | null;
@@ -851,8 +853,8 @@ export function AdminSystemSection({
   setWorkflowPassword: Dispatch<SetStateAction<string>>;
   workflowTestRecipient: string;
   setWorkflowTestRecipient: Dispatch<SetStateAction<string>>;
-  workflowTestKind: "relay" | "approval_request" | "approval_approved" | "approval_rejected";
-  setWorkflowTestKind: Dispatch<SetStateAction<"relay" | "approval_request" | "approval_approved" | "approval_rejected">>;
+  workflowTestKind: "relay" | "nationality";
+  setWorkflowTestKind: Dispatch<SetStateAction<"relay" | "nationality">>;
   saveWorkflowSettings: () => Promise<void>;
   sendWorkflowTestMail: () => Promise<void>;
 }) {
@@ -864,7 +866,6 @@ export function AdminSystemSection({
         <article className="panel mini-card"><h3>Aktive Wachen</h3><p>{systemStatus?.activeGates ?? "-"}</p></article>
         <article className="panel mini-card"><h3>Aktive Besucher</h3><p>{systemStatus?.activeVisits ?? "-"}</p></article>
         <article className="panel mini-card"><h3>Offene Voranmeldungen heute</h3><p>{systemStatus?.openPreRegistrationsToday ?? "-"}</p></article>
-        <article className="panel mini-card"><h3>Freigaben offen</h3><p>{systemStatus?.approvalsPending ?? "-"}</p></article>
         <article className="panel mini-card"><h3>Unterschrift offen</h3><p>{systemStatus?.signaturesPending ?? "-"}</p></article>
         <article className="panel mini-card"><h3>Nachgereicht</h3><p>{systemStatus?.signaturesFollowUp ?? "-"}</p></article>
         <article className="panel mini-card"><h3>Ausnahmen</h3><p>{systemStatus?.signaturesExceptions ?? "-"}</p></article>
@@ -875,7 +876,7 @@ export function AdminSystemSection({
         </div>
 
         <div className="panel">
-          <h3>SiBe-Freigabe und E-Mail-Relay</h3>
+          <h3>E-Mail-Relay für Nationalitätsmeldungen</h3>
         <div className="form-grid two-columns">
           {workflowSettings?.emailRelay.source === "yml" ? (
             <div className="detail-span-2">
@@ -886,17 +887,6 @@ export function AdminSystemSection({
               </div>
             </div>
           ) : null}
-          <label className="checkbox-row">
-            <input
-              type="checkbox"
-              checked={workflowSettings?.approvalRequired ?? true}
-              onChange={(event) => setWorkflowSettings((current) => current ? {
-                ...current,
-                approvalRequired: event.target.checked
-              } : current)}
-            />
-            SiBe-Freigabe vor Check-in erzwingen
-          </label>
           <label className="checkbox-row">
             <input
               type="checkbox"
@@ -990,23 +980,6 @@ export function AdminSystemSection({
               } : current)}
             />
           </FormField>
-          <FormField label="SiBe-Empfänger">
-            <textarea
-              rows={3}
-              disabled={workflowSettings?.emailRelay.isReadOnly ?? false}
-              value={(workflowSettings?.emailRelay.approvalRecipients ?? []).join(", ")}
-              onChange={(event) => setWorkflowSettings((current) => current ? {
-                ...current,
-                emailRelay: {
-                  ...current.emailRelay,
-                  approvalRecipients: event.target.value
-                    .split(/[,\n;]+/)
-                    .map((entry) => entry.trim())
-                    .filter(Boolean)
-                }
-              } : current)}
-            />
-          </FormField>
         </div>
 
         <div className="row-actions action-bar">
@@ -1015,11 +988,9 @@ export function AdminSystemSection({
 
         <div className="form-grid two-columns">
           <FormField label="Testmail-Typ">
-            <select value={workflowTestKind} onChange={(event) => setWorkflowTestKind(event.target.value as "relay" | "approval_request" | "approval_approved" | "approval_rejected")}>
+            <select value={workflowTestKind} onChange={(event) => setWorkflowTestKind(event.target.value as "relay" | "nationality")}>
               <option value="relay">Relay-Test</option>
-              <option value="approval_request">Freigabe anfordern</option>
-              <option value="approval_approved">Freigabe bestätigt</option>
-              <option value="approval_rejected">Freigabe abgelehnt</option>
+              <option value="nationality">Nationalitätsmeldung</option>
             </select>
           </FormField>
           <FormField label="Testadresse">

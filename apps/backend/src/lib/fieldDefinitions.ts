@@ -81,7 +81,7 @@ export async function loadCompletenessFieldConfig(): Promise<CompletenessFieldCo
   }
 
   const requiredGuardCheckin = definitions.filter((field) => field.requiredGuardCheckin && field.showInGuard);
-  const requiredBeforePrint = definitions.filter((field) => field.requiredBeforePrint && field.showInGuard);
+  const requiredBeforePrint = definitions.filter((field) => field.requiredBeforePrint && field.showOnBadge);
   const optionalInfoGuard = definitions.filter(
     (field) =>
       field.showInGuard
@@ -137,13 +137,13 @@ export async function updateFieldDefinition(
         label = @label,
         section = @section,
         is_active = @isActive,
-        show_in_public = @showInPublic,
-        show_in_guard = @showInGuard,
+        show_in_public = CASE WHEN @requiredPublic = 1 THEN 1 ELSE @showInPublic END,
+        show_in_guard = CASE WHEN @requiredGuardCheckin = 1 THEN 1 ELSE @showInGuard END,
         show_in_sibe = @showInSibe,
-        show_on_badge = @showOnBadge,
-        required_public = CASE WHEN @showInPublic = 1 THEN @requiredPublic ELSE 0 END,
-        required_guard_checkin = CASE WHEN @showInGuard = 1 THEN @requiredGuardCheckin ELSE 0 END,
-        required_before_print = CASE WHEN @showInGuard = 1 THEN @requiredBeforePrint ELSE 0 END,
+        show_on_badge = CASE WHEN @requiredBeforePrint = 1 THEN 1 ELSE @showOnBadge END,
+        required_public = @requiredPublic,
+        required_guard_checkin = @requiredGuardCheckin,
+        required_before_print = @requiredBeforePrint,
         sort_order = @sortOrder,
         help_text = @helpText,
         options_json = @optionsJson,

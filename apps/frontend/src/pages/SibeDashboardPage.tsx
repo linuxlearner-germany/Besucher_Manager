@@ -2,22 +2,31 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { AppLayout, type ApiError, fetchJson, formatDateTime, formatStatus, statusClassName, type SibeSummary, type SibeVisitRow } from "../app/core";
 import { Alert, Card, DataTable } from "../components/ui";
+import { useCountries } from "../components/CountrySelect";
 
 export function SibeDashboardPage() {
   const [summary, setSummary] = useState<SibeSummary | null>(null);
   const [recentVisits, setRecentVisits] = useState<SibeVisitRow[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const countries = useCountries();
+  const [countrySearch, setCountrySearch] = useState("");
+  const [countryCodes, setCountryCodes] = useState<string[]>([]);
+  const [accountEmail, setAccountEmail] = useState<string | null>(null);
+  const [subscriptionsSaved, setSubscriptionsSaved] = useState(false);
 
   useEffect(() => {
     async function loadDashboard() {
       try {
-        const [summaryPayload, recentPayload] = await Promise.all([
+        const [summaryPayload, recentPayload, subscriptionPayload] = await Promise.all([
           fetchJson<SibeSummary>("/api/sibe/summary", { method: "GET", headers: {} }),
-          fetchJson<{ visits: SibeVisitRow[] }>("/api/sibe/visits?status=all", { method: "GET", headers: {} })
+          fetchJson<{ visits: SibeVisitRow[] }>("/api/sibe/visits?status=all", { method: "GET", headers: {} }),
+          fetchJson<{ countryCodes: string[]; email: string | null }>("/api/sibe/nationality-subscriptions", { method: "GET", headers: {} })
         ]);
 
         setSummary(summaryPayload);
         setRecentVisits(recentPayload.visits.slice(0, 120));
+        setCountryCodes(subscriptionPayload.countryCodes);
+        setAccountEmail(subscriptionPayload.email);
       } catch (apiError) {
         const errorPayload = apiError as ApiError;
         setError(errorPayload.message || "Die Übersicht konnte nicht geladen werden.");
@@ -39,6 +48,23 @@ export function SibeDashboardPage() {
       .slice(0, 8),
     [recentVisits]
   );
+  const filteredCountries = useMemo(() => {
+    const query = countrySearch.trim().toLocaleLowerCase("de");
+    return query ? countries.filter((country) => `${country.name} ${country.code}`.toLocaleLowerCase("de").includes(query)) : countries;
+  }, [countries, countrySearch]);
+
+  async function saveSubscriptions() {
+    setSubscriptionsSaved(false);
+    try {
+      await fetchJson("/api/sibe/nationality-subscriptions", {
+        method: "PUT",
+        body: JSON.stringify({ countryCodes })
+      });
+      setSubscriptionsSaved(true);
+    } catch (apiError) {
+      setError((apiError as ApiError).message || "Die Länderabonnements konnten nicht gespeichert werden.");
+    }
+  }
 
   return (
     <AppLayout>
@@ -69,15 +95,42 @@ export function SibeDashboardPage() {
                 <span className="hero-stat-label">Ausnahmen</span>
                 <strong className="hero-stat-value">{summary?.signaturesExceptions ?? "-"}</strong>
               </div>
-              <div className="hero-stat-card">
-                <span className="hero-stat-label">Freigaben offen</span>
-                <strong className="hero-stat-value">{summary?.approvalsPending ?? "-"}</strong>
-              </div>
             </div>
           </div>
         </section>
 
         {error ? <Alert type="error">{error}</Alert> : null}
+
+        <Card>
+          <div className="section-header">
+            <div>
+              <h3>Länderbenachrichtigungen</h3>
+              <p>Sie erhalten je Besuch eine E-Mail, wenn dessen Nationalität zu Ihrer Auswahl gehört.</p>
+            </div>
+          </div>
+          {!accountEmail ? <Alert type="warning">Für Ihr Benutzerkonto ist keine E-Mail-Adresse hinterlegt. Benachrichtigungen können nicht zugestellt werden.</Alert> : null}
+          {subscriptionsSaved ? <Alert type="success">Länderauswahl gespeichert.</Alert> : null}
+          <div className="toolbar filter-bar">
+            <input placeholder="Land oder Code suchen" value={countrySearch} onChange={(event) => setCountrySearch(event.target.value)} />
+            <button type="button" className="secondary-button" onClick={() => setCountryCodes(countries.map((country) => country.code))}>Alle auswählen</button>
+            <button type="button" className="secondary-button" onClick={() => setCountryCodes([])}>Alle abwählen</button>
+            <button type="button" onClick={() => void saveSubscriptions()}>Speichern</button>
+          </div>
+          <div className="country-checklist">
+            {filteredCountries.map((country) => (
+              <label key={country.code} className="checkbox-line">
+                <input
+                  type="checkbox"
+                  checked={countryCodes.includes(country.code)}
+                  onChange={(event) => setCountryCodes((current) => event.target.checked
+                    ? Array.from(new Set([...current, country.code]))
+                    : current.filter((code) => code !== country.code))}
+                />
+                <span>{country.name} ({country.code})</span>
+              </label>
+            ))}
+          </div>
+        </Card>
 
         <div className="split-card-grid">
           <Card>

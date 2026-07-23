@@ -5,7 +5,6 @@ import {
   AppLayout,
   type ApiError,
   fetchJson,
-  formatApprovalStatus,
   formatDateOnly,
   formatDateTime,
   formatSignatureStatus,
@@ -30,14 +29,12 @@ export function SibeVisitorsPage() {
   const [companyFilter, setCompanyFilter] = useState("");
   const [hostFilter, setHostFilter] = useState("");
   const [gateFilter, setGateFilter] = useState("");
-  const [approvalFilter, setApprovalFilter] = useState("all");
   const [licensePlateFilter, setLicensePlateFilter] = useState("");
   const [badgeFilter, setBadgeFilter] = useState("");
   const [exportDate, setExportDate] = useState(() => toDateInputValue(new Date()));
   const filteredVisitCount = visits.length;
   const filteredVisitorCount = visitors.length;
   const checkedInCount = visits.filter((visit) => visit.status === "checked_in").length;
-  const approvalsPendingCount = visits.filter((visit) => visit.approvalStatus === "pending").length;
 
   function applyRangePreset(preset: "today" | "yesterday" | "week" | "last7" | "month") {
     const now = new Date();
@@ -70,7 +67,6 @@ export function SibeVisitorsPage() {
       if (companyFilter) visitParams.set("company", companyFilter);
       if (hostFilter) visitParams.set("hostName", hostFilter);
       if (gateFilter) visitParams.set("gate", gateFilter);
-      if (approvalFilter) visitParams.set("approvalStatus", approvalFilter);
       if (licensePlateFilter) visitParams.set("licensePlate", licensePlateFilter);
       if (badgeFilter) visitParams.set("badgeNumber", badgeFilter);
 
@@ -84,7 +80,7 @@ export function SibeVisitorsPage() {
       const errorPayload = apiError as ApiError;
       setError(errorPayload.message || "Besucher konnten nicht geladen werden.");
     }
-  }, [approvalFilter, badgeFilter, companyFilter, dateFrom, dateTo, gateFilter, hostFilter, licensePlateFilter, search, status]);
+  }, [badgeFilter, companyFilter, dateFrom, dateTo, gateFilter, hostFilter, licensePlateFilter, search, status]);
 
   useEffect(() => {
     void loadData();
@@ -103,7 +99,6 @@ export function SibeVisitorsPage() {
     setCompanyFilter("");
     setHostFilter("");
     setGateFilter("");
-    setApprovalFilter("all");
     setLicensePlateFilter("");
     setBadgeFilter("");
   }
@@ -128,10 +123,6 @@ export function SibeVisitorsPage() {
               <div className="hero-stat-card">
                 <span className="hero-stat-label">Eingecheckt</span>
                 <strong className="hero-stat-value">{checkedInCount}</strong>
-              </div>
-              <div className="hero-stat-card">
-                <span className="hero-stat-label">Freigaben offen</span>
-                <strong className="hero-stat-value">{approvalsPendingCount}</strong>
               </div>
             </div>
           </div>
@@ -165,15 +156,6 @@ export function SibeVisitorsPage() {
                 <option value="checked_out">Ausgecheckt</option>
                 <option value="cancelled">Storniert</option>
                 <option value="overdue">Überfällig</option>
-              </select>
-            </FormField>
-            <FormField label="Freigabe">
-              <select value={approvalFilter} onChange={(event) => setApprovalFilter(event.target.value)}>
-                <option value="all">Alle Freigaben</option>
-                <option value="pending">Freigabe offen</option>
-                <option value="approved">Freigegeben</option>
-                <option value="rejected">Abgelehnt</option>
-                <option value="not_required">Keine Freigabe</option>
               </select>
             </FormField>
             <FormField label="Von">
@@ -232,6 +214,8 @@ export function SibeVisitorsPage() {
               <tr>
                 <th>Besuchername</th>
                 <th>Firma</th>
+                <th>Nationalität</th>
+                <th>Nationalität</th>
                 <th>Kennzeichen</th>
                 <th>Besuchsnummer</th>
                 <th>Status</th>
@@ -241,7 +225,6 @@ export function SibeVisitorsPage() {
                 <th>Gültig bis</th>
                 <th>Check-in</th>
                 <th>Check-out</th>
-                <th>Freigabe</th>
                 <th>Unterschrift</th>
                 <th>Aktion</th>
               </tr>
@@ -251,6 +234,7 @@ export function SibeVisitorsPage() {
                 <tr key={visit.id}>
                   <td>{visit.visitorName}</td>
                   <td>{visit.company}</td>
+                  <td>{visit.nationalityName || visit.nationalityCode || "-"}</td>
                   <td>{visit.licensePlate || "-"}</td>
                   <td>{visit.badgeNumber || visit.id.slice(0, 8).toUpperCase()}</td>
                   <td><span className={statusClassName(visit.status)}>{formatStatus(visit.status)}</span></td>
@@ -260,7 +244,6 @@ export function SibeVisitorsPage() {
                   <td>{formatDateOnly(visit.validUntil)}</td>
                   <td>{formatDateTime(visit.checkInAt)}</td>
                   <td>{formatDateTime(visit.checkOutAt)}</td>
-                  <td>{formatApprovalStatus(visit.approvalStatus)}</td>
                   <td>{formatSignatureStatus(visit.hostSignatureStatus)}</td>
                   <td>
                     <Link className="button-link" to={`${isCommanderView ? "/kaskdt/besucher" : "/sibe/besucher"}/${visit.id}`}>
@@ -294,6 +277,7 @@ export function SibeVisitorsPage() {
                   <td>{visitor.firstName} {visitor.lastName}</td>
                   <td>{formatDateOnly(visitor.birthDate)}</td>
                   <td>{visitor.company}</td>
+                  <td>{visitor.nationalityName || visitor.nationalityCode || "-"}</td>
                   <td>{visitor.phone || "-"}</td>
                   <td>{visitor.email || "-"}</td>
                   <td>{visitor.visitCount}</td>

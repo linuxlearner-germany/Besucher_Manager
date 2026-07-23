@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildUserImportTemplateCsv, parseUserImportCsv } from "./userCsvImport";
+import { buildUserExportCsv, buildUserImportTemplateCsv, parseUserImportCsv } from "./userCsvImport";
 
 test("user csv template contains expected header order", () => {
   assert.equal(
@@ -23,4 +23,23 @@ test("user csv parser supports comma and semicolon separated files", () => {
 
 test("user csv parser rejects files without required headers", () => {
   assert.throws(() => parseUserImportCsv("foo,bar\n1,2\n"), /user_import_missing_headers/);
+});
+
+test("user csv export contains account data without passwords and escapes cells", () => {
+  const csv = buildUserExportCsv([{
+    username: "sibe.demo",
+    role: "sibe",
+    displayName: "SiBe, Demo",
+    email: "sibe@example.local",
+    gate: null,
+    groups: ["Sicherheit", "Schicht A"],
+    menuAccess: ["sibe"],
+    isActive: true,
+    lastLoginAt: "2026-07-23T10:00:00.000Z"
+  }]);
+
+  assert.match(csv, /^\uFEFFusername,role,displayName,email,gate,groups,menuAccess,isActive,lastLoginAt/);
+  assert.match(csv, /"SiBe, Demo"/);
+  assert.match(csv, /Sicherheit\|Schicht A/);
+  assert.equal(csv.includes("password"), false);
 });

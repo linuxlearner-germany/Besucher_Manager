@@ -18,6 +18,7 @@ test("visitor import template marks required and optional fields in headers", ()
   assert.equal(headers.includes("Vorname [Pflicht]"), true);
   assert.equal(headers.includes("Nachname [Pflicht]"), true);
   assert.equal(headers.includes("Firma / Organisation [Pflicht]"), true);
+  assert.equal(headers.includes("Nationalität [Pflicht]"), true);
   assert.equal(headers.includes("Besuchszweck [Pflicht]"), true);
   assert.equal(headers.includes("Telefon [Optional]"), true);
   assert.equal(headers.includes("Ansprechpartner E-Mail [Optional]"), true);
@@ -53,10 +54,21 @@ test("excel import accepts annotated template headers", () => {
   assert.equal(rows[0]?.firstName, "Max");
   assert.equal(rows[0]?.lastName, "Muster");
   assert.equal(rows[0]?.company, "Musterfirma GmbH");
+  assert.equal(rows[0]?.nationalityCode, "Deutschland");
   assert.equal(rows[0]?.hostName, "Maria Muster");
   assert.equal(rows[0]?.purpose, "Projektbesprechung");
   assert.equal(rows[0]?.idDocumentType, "Personalausweis");
   assert.equal(rows[0]?.idDocumentValidUntil, "31.12.2030");
   assert.equal(rows[0]?.idDocumentNumber, "L01X00ABC");
   assert.equal(rows[0]?.notes, "Lieferanteneinsatz am Vormittag");
+});
+
+test("country catalog contains all ISO 3166-1 entries and accepts codes or German names", () => {
+  const { COUNTRIES, findCountryCode, normalizeCountryCode } = require("./countries") as typeof import("./countries");
+
+  assert.equal(COUNTRIES.length, 249);
+  assert.equal(new Set(COUNTRIES.map((country) => country.code)).size, 249);
+  assert.equal(normalizeCountryCode("de"), "DE");
+  assert.equal(findCountryCode("Deutschland"), "DE");
+  assert.equal(findCountryCode("Unbekannt"), null);
 });

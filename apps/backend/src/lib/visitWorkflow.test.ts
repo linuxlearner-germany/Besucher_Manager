@@ -1,12 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  APPROVAL_STATUS,
   getDefaultMenuAccessForRole,
   getDefaultPermissionsForRole,
   assertCanCheckIn,
   assertCanCheckOut,
-  assertVisitApprovedForCheckIn,
   assertReturnedBadgeNumberMatches,
   assertCanUpdateHostSignature,
   canAccessGate,
@@ -32,13 +30,6 @@ test("check-in only allows pre-registered visits", () => {
   assert.doesNotThrow(() => assertCanCheckIn(VISIT_STATUS.PRE_REGISTERED));
   assert.throws(() => assertCanCheckIn(VISIT_STATUS.CHECKED_IN));
   assert.throws(() => assertCanCheckIn(VISIT_STATUS.CHECKED_OUT));
-});
-
-test("approval gate blocks pending and rejected visits before check-in", () => {
-  assert.doesNotThrow(() => assertVisitApprovedForCheckIn(APPROVAL_STATUS.APPROVED));
-  assert.doesNotThrow(() => assertVisitApprovedForCheckIn(APPROVAL_STATUS.NOT_REQUIRED));
-  assert.throws(() => assertVisitApprovedForCheckIn(APPROVAL_STATUS.PENDING));
-  assert.throws(() => assertVisitApprovedForCheckIn(APPROVAL_STATUS.REJECTED));
 });
 
 test("check-out requires host signature confirmation", () => {
@@ -127,11 +118,8 @@ test("unassigned visits remain blocked when the workflow requires an assigned ga
   );
 });
 
-test("default menu access grants dedicated approval permission to sibe and admin", () => {
-  assert.equal(getDefaultMenuAccessForRole("admin").includes("genehmigung"), true);
-  assert.equal(getDefaultMenuAccessForRole("sibe").includes("genehmigung"), true);
-  assert.equal(getDefaultMenuAccessForRole("guard").includes("genehmigung"), false);
-  assert.equal(getDefaultMenuAccessForRole("kaskdt").includes("genehmigung"), false);
+test("default menu access gives KasKdt text management without import", () => {
   assert.equal(getDefaultMenuAccessForRole("kaskdt").includes("import"), false);
-  assert.equal(getDefaultMenuAccessForRole("kaskdt").includes("texte"), false);
+  assert.equal(getDefaultMenuAccessForRole("kaskdt").includes("texte"), true);
+  assert.equal(getDefaultPermissionsForRole("kaskdt").texts.manage, true);
 });

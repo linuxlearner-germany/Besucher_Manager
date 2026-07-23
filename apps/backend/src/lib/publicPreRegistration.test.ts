@@ -1,8 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { publicPreRegistrationSchema } from "./publicPreRegistrationSchema";
+import { createPublicPreRegistrationSchema, publicPreRegistrationSchema } from "./publicPreRegistrationSchema";
 
 const idDocumentFields = {
+  nationalityCode: "DE",
   idDocumentType: "identity_card",
   idDocumentValidUntil: "2030-12-31",
   idDocumentNumber: "A1234567"
@@ -143,4 +144,11 @@ test("public pre-registration allows empty department but requires host phone", 
     ...idDocumentFields
   });
   assert.equal(withoutHostPhone.success, false);
+});
+
+test("public pre-registration only requires fields selected by field configuration", () => {
+  const schema = createPublicPreRegistrationSchema(new Set(["visitor_nationality"]));
+  const result = schema.safeParse({ nationalityCode: "DE" });
+
+  assert.equal(result.success, true);
 });

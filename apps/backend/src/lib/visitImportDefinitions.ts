@@ -4,6 +4,7 @@ export type ImportVisitInput = {
   firstName?: string | null;
   lastName?: string | null;
   company?: string | null;
+  nationalityCode?: string | null;
   birthDate?: string | null;
   phone?: string | null;
   email?: string | null;
@@ -53,6 +54,7 @@ const visitorImportTemplateColumns: ExcelImportTemplateColumn[] = [
   { header: "Vorname [Pflicht]", samples: ["Max", "Erika"], section: "visitor", required: true },
   { header: "Nachname [Pflicht]", samples: ["Muster", "Sommer"], section: "visitor", required: true },
   { header: "Firma / Organisation [Pflicht]", samples: ["Musterfirma GmbH", "Nordwerk GmbH"], section: "visitor", required: true },
+  { header: "Nationalität [Pflicht]", samples: ["Deutschland", "Deutschland"], section: "visitor", required: true },
   { header: "Geburtsdatum [Optional]", samples: ["15.04.1988", ""], section: "visitor", required: false },
   { header: "Telefon [Optional]", samples: ["+49 151 12345678", ""], section: "visitor", required: false },
   { header: "E-Mail [Optional]", samples: ["max.beispiel@musterfirma.de", ""], section: "visitor", required: false },

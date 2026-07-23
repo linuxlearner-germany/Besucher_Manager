@@ -1,6 +1,7 @@
 import sql from "mssql";
 import { Router } from "express";
 import { z } from "zod";
+import { normalizeCountryCode } from "../lib/countries";
 import {
   checkInVisit,
   checkOutVisit,
@@ -81,7 +82,15 @@ const guardVisitUpdateSchema = z.object({
   visitorPostalCode: z.string().trim().max(20).optional().or(z.literal("")),
   visitorCity: z.string().trim().max(120).optional().or(z.literal("")),
   visitorAddress: z.string().trim().max(500).optional().or(z.literal("")),
-  idDocumentType: z.enum(["identity_card", "passport", "other"]).optional().or(z.literal("")),
+  nationalityCode: z.string().trim().transform((value, context) => {
+    const code = normalizeCountryCode(value);
+    if (!code) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "Bitte eine gültige Nationalität auswählen." });
+      return z.NEVER;
+    }
+    return code;
+  }),
+  idDocumentType: z.enum(["identity_card", "passport", "service_id", "other"]).optional().or(z.literal("")),
   idDocumentValidUntil: z.string().trim().optional().or(z.literal("")),
   idDocumentNumber: z.string().trim().max(120).optional().or(z.literal("")),
   idDocumentIssuingPlace: z.string().trim().max(255).optional().or(z.literal("")),
@@ -210,6 +219,14 @@ const guardWalkInCreateSchema = z.object({
   firstName: z.string().trim().min(1).max(120),
   lastName: z.string().trim().min(1).max(120),
   company: z.string().trim().min(1).max(255),
+  nationalityCode: z.string().trim().transform((value, context) => {
+    const code = normalizeCountryCode(value);
+    if (!code) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "Bitte eine gültige Nationalität auswählen." });
+      return z.NEVER;
+    }
+    return code;
+  }),
   birthDate: z.string().trim().optional().or(z.literal("")),
   phone: z.string().trim().optional().or(z.literal("")),
   email: z.string().trim().email("Ungueltige E-Mail-Adresse.").optional().or(z.literal("")),
@@ -226,7 +243,7 @@ const guardWalkInCreateSchema = z.object({
   visitorHouseNumber: z.string().trim().min(1).max(40),
   visitorPostalCode: z.string().trim().min(1).max(20),
   visitorCity: z.string().trim().min(1).max(120),
-  idDocumentType: z.enum(["identity_card", "passport", "other"]),
+  idDocumentType: z.enum(["identity_card", "passport", "service_id", "other"]),
   idDocumentValidUntil: z.string().trim().min(1),
   idDocumentNumber: z.string().trim().min(1).max(120)
 }).superRefine((value, context) => {
@@ -242,6 +259,12 @@ const guardWalkInCreateSchema = z.object({
 });
 
 export const guardRouter = Router();
+
+guardRouter.use("/api/guard", async (request, response, next) => {
+  const user = await requirePermission(request, response, "menu.guard");
+  if (!user) return;
+  next();
+});
 
 guardRouter.post("/api/guard/visits/walk-in", async (request, response) => {
   const user = await requirePermission(request, response, "visits.create");
@@ -398,24 +421,6 @@ guardRouter.post("/api/guard/visits/:id/check-in", async (request, response) => 
           400,
           "VALIDATION_ERROR",
           "Vor dem Check-in muss eine Wache zugeordnet werden."
-        );
-      }
-
-      if (error.message === "visit_approval_pending") {
-        return sendError(
-          response,
-          409,
-          "VISIT_APPROVAL_PENDING",
-          "Der Besuch ist noch nicht durch SiBe freigegeben."
-        );
-      }
-
-      if (error.message === "visit_approval_rejected") {
-        return sendError(
-          response,
-          409,
-          "VISIT_APPROVAL_REJECTED",
-          "Der Besuch wurde durch SiBe abgelehnt."
         );
       }
 
@@ -581,6 +586,21 @@ guardRouter.post("/api/guard/visits/:id/print-log", async (request, response) =>
     return;
   }
 
+  const parsed = z.object({ paperSize: z.enum(["A4", "A5"]) }).safeParse(request.body ?? {});
+  if (!parsed.success) return sendValidationError(response, parsed.error.flatten());
+
+  const visit = await getVisitDetailForUser(user, request.params.id);
+  if (!visit) return sendError(response, 404, "NOT_FOUND", "Der Besuch wurde nicht gefunden.");
+  if (!visit.completeness.canPrintBadge) {
+    return sendError(
+      response,
+      400,
+      "VALIDATION_ERROR",
+      "Vor dem Druck müssen fehlende Pflichtdaten ergänzt werden.",
+      visit.completeness.errors
+    );
+  }
+
   await writeAuditLog({
     user: user.username,
     userId: user.id,
@@ -588,7 +608,8 @@ guardRouter.post("/api/guard/visits/:id/print-log", async (request, response) =>
     objectType: "visit",
     objectId: request.params.id,
     ipAddress: getRequestIp(request),
-    userAgent: getRequestUserAgent(request)
+    userAgent: getRequestUserAgent(request),
+    metadata: { paperSize: parsed.data.paperSize }
   });
 
   return response.json({ success: true });

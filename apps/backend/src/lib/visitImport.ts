@@ -2,12 +2,12 @@ import sql from "mssql";
 import { writeAuditLog } from "./auditLog";
 import { generateBadgeNumberCandidate } from "./badgeNumber";
 import { getPool } from "./db";
-import { notifyApprovalRequested } from "./mailRelay";
+import { findCountryCode } from "./countries";
+import { notifyNationalitySubscribers } from "./mailRelay";
 import { findActiveGateById, listActiveGates } from "./publicPreRegistrations";
 import { getVisitCompleteness } from "./guardVisits";
 import type { ImportVisitInput, ImportVisitResult, ImportVisitsResult } from "./visitImportDefinitions";
-import { loadWorkflowSettings } from "./systemSettings";
-import { APPROVAL_STATUS, VISIT_STATUS, hasPermission, type AuthenticatedUser } from "./visitWorkflow";
+import { VISIT_STATUS, type AuthenticatedUser } from "./visitWorkflow";
 
 export const MISSING_IMPORT_VALUE = "[fehlt]";
 
@@ -61,6 +61,9 @@ function normalizeIdDocumentType(value: string | null | undefined): string | nul
   }
   if (["reisepass", "pass", "passport"].includes(normalized)) {
     return "passport";
+  }
+  if (["dienstausweis", "serviceid", "servicecard"].includes(normalized)) {
+    return "service_id";
   }
   if (["sonstiges", "sonstige", "other"].includes(normalized)) {
     return "other";
@@ -139,19 +142,26 @@ export async function createImportedPreRegistrations(
     fallbackGateId?: string | null;
   }
 ): Promise<ImportVisitsResult> {
+  const invalidNationalityRows = rows.flatMap((row, index) =>
+    findCountryCode(row.nationalityCode) ? [] : [index + 2]
+  );
+  if (invalidNationalityRows.length > 0) {
+    const error = new Error("invalid_import_nationalities") as Error & { rows: number[] };
+    error.rows = invalidNationalityRows;
+    throw error;
+  }
+
   const pool = await getPool();
   const transaction = new sql.Transaction(pool);
   await transaction.begin();
 
   try {
-    const workflowSettings = await loadWorkflowSettings({ transaction });
-    const shouldAutoApprove = options.createdBy ? hasPermission(options.createdBy, "approvals.approve") : false;
     const importedRows: ImportVisitResult[] = [];
-    const pendingApprovals: Array<{
+    const nationalityNotifications: Array<{
       visitId: string;
+      nationalityCode: string;
       visitorName: string;
       company: string;
-      hostName: string;
       validFrom: string;
       validUntil: string;
       gateName: string | null;
@@ -165,16 +175,13 @@ export async function createImportedPreRegistrations(
       const idDocumentType = normalizeIdDocumentType(row.idDocumentType);
       const birthDate = normalizeDateOnly(row.birthDate);
       const gateId = await resolveGateId(row, options.fallbackGateId);
-      const approvalStatus = workflowSettings.approvalRequired && !shouldAutoApprove
-        ? APPROVAL_STATUS.PENDING
-        : shouldAutoApprove
-          ? APPROVAL_STATUS.APPROVED
-          : APPROVAL_STATUS.NOT_REQUIRED;
+      const nationalityCode = findCountryCode(row.nationalityCode)!;
 
       const visitorInsert = await new sql.Request(transaction)
         .input("firstName", sql.NVarChar(120), requiredOrPlaceholder(row.firstName))
         .input("lastName", sql.NVarChar(120), requiredOrPlaceholder(row.lastName))
         .input("company", sql.NVarChar(255), requiredOrPlaceholder(row.company))
+        .input("nationalityCode", sql.NChar(2), nationalityCode)
         .input("birthDate", sql.Date, birthDate)
         .input("phone", sql.NVarChar(80), cleanOptional(row.phone))
         .input("email", sql.NVarChar(255), cleanOptional(row.email))
@@ -186,6 +193,7 @@ export async function createImportedPreRegistrations(
             first_name,
             last_name,
             company,
+            nationality_code,
             birth_date,
             phone_optional,
             email_optional,
@@ -198,6 +206,7 @@ export async function createImportedPreRegistrations(
             @firstName,
             @lastName,
             @company,
+            @nationalityCode,
             @birthDate,
             @phone,
             @email,
@@ -226,7 +235,6 @@ export async function createImportedPreRegistrations(
         .input("badgeNumber", sql.NVarChar(64), badgeNumber)
         .input("notes", sql.NVarChar(sql.MAX), cleanOptional(row.notes))
         .input("createdBy", sql.UniqueIdentifier, options.createdBy?.id ?? null)
-        .input("approvalStatus", sql.NVarChar(32), approvalStatus)
         .input("submittedIpAddress", sql.NVarChar(64), cleanOptional(options.submittedIpAddress))
         .query<{ id: string; status: string }>(`
           INSERT INTO dbo.visits (
@@ -242,7 +250,6 @@ export async function createImportedPreRegistrations(
             license_plate,
             badge_number,
             status,
-            approval_status,
             created_by,
             created_via_public_form,
             submitted_ip_address,
@@ -262,7 +269,6 @@ export async function createImportedPreRegistrations(
             @licensePlate,
             @badgeNumber,
             '${VISIT_STATUS.PRE_REGISTERED}',
-            @approvalStatus,
             @createdBy,
             ${options.source === "public_group_form" ? "1" : "0"},
             @submittedIpAddress,
@@ -277,10 +283,10 @@ export async function createImportedPreRegistrations(
 
       const completeness = getVisitCompleteness({
         status: VISIT_STATUS.PRE_REGISTERED,
-        approvalStatus,
         firstName: requiredOrPlaceholder(row.firstName),
         lastName: requiredOrPlaceholder(row.lastName),
         company: requiredOrPlaceholder(row.company),
+        nationalityCode,
         hostName: requiredOrPlaceholder(row.hostName),
         hostPhone: cleanOptional(row.hostPhone),
         purpose: requiredOrPlaceholder(row.purpose),
@@ -311,18 +317,16 @@ export async function createImportedPreRegistrations(
         needsReview: completeness.errors.length > 0 || completeness.warnings.length > 0
       });
 
-      if (approvalStatus === APPROVAL_STATUS.PENDING) {
-        const gates = gateId ? await findActiveGateById(gateId) : null;
-        pendingApprovals.push({
-          visitId: visit.id,
-          visitorName: `${requiredOrPlaceholder(row.firstName)} ${requiredOrPlaceholder(row.lastName)}`,
-          company: requiredOrPlaceholder(row.company),
-          hostName: requiredOrPlaceholder(row.hostName),
-          validFrom,
-          validUntil,
-          gateName: gates?.name ?? null
-        });
-      }
+      const gate = gateId ? await findActiveGateById(gateId) : null;
+      nationalityNotifications.push({
+        visitId: visit.id,
+        nationalityCode,
+        visitorName: `${requiredOrPlaceholder(row.firstName)} ${requiredOrPlaceholder(row.lastName)}`,
+        company: requiredOrPlaceholder(row.company),
+        validFrom,
+        validUntil,
+        gateName: gate?.name ?? null
+      });
     }
 
     await writeAuditLog(
@@ -345,8 +349,8 @@ export async function createImportedPreRegistrations(
 
     await transaction.commit();
 
-    for (const pendingApproval of pendingApprovals) {
-      void notifyApprovalRequested(pendingApproval);
+    for (const notification of nationalityNotifications) {
+      void notifyNationalitySubscribers(notification);
     }
 
     return {

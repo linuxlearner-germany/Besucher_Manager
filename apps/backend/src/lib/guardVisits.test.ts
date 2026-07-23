@@ -7,10 +7,10 @@ function createBaseVisit() {
     firstName: "Max",
     lastName: "Mustermann",
     company: "Muster GmbH",
+    nationalityCode: "DE" as string | null,
     hostName: "Erika Beispiel",
     hostPhone: "01234",
     purpose: "Besprechung",
-    approvalStatus: "approved" as string,
     validFrom: "2026-05-26T08:00:00.000Z",
     validUntil: "2026-05-26T10:00:00.000Z",
     gateId: null as string | null,
@@ -147,20 +147,11 @@ test("completeness respects required fields from configuration", () => {
   assert.equal(completeness.errors.some((issue: { field: string }) => issue.field === "Ansprechpartner Telefon"), false);
 });
 
-test("completeness blocks pending approvals before check-in", () => {
+test("completeness blocks missing nationality", () => {
   const { getVisitCompleteness } = require("./guardVisits");
   const visit = createBaseVisit();
-  visit.approvalStatus = "pending";
+  visit.nationalityCode = null;
   const completeness = getVisitCompleteness(visit);
   assert.equal(completeness.canCheckIn, false);
-  assert.equal(completeness.errors.some((issue: { field: string; message: string }) => issue.field === "approval_status" && issue.message.includes("SiBe-Genehmigung")), true);
-});
-
-test("completeness blocks rejected approvals before check-in", () => {
-  const { getVisitCompleteness } = require("./guardVisits");
-  const visit = createBaseVisit();
-  visit.approvalStatus = "rejected";
-  const completeness = getVisitCompleteness(visit);
-  assert.equal(completeness.canCheckIn, false);
-  assert.equal(completeness.errors.some((issue: { field: string; message: string }) => issue.field === "approval_status" && issue.message.includes("abgelehnt")), true);
+  assert.equal(completeness.errors.some((issue: { field: string }) => issue.field === "Nationalität"), true);
 });

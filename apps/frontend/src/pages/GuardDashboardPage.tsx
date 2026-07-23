@@ -16,11 +16,13 @@ import {
   type VisitRow
 } from "../app/core";
 import { FormField } from "../components/ui";
+import { CountrySelect } from "../components/CountrySelect";
 
 type WalkInFormState = {
   firstName: string;
   lastName: string;
   company: string;
+  nationalityCode: string;
   birthDate: string;
   phone: string;
   email: string;
@@ -37,7 +39,7 @@ type WalkInFormState = {
   visitorHouseNumber: string;
   visitorPostalCode: string;
   visitorCity: string;
-  idDocumentType: "identity_card" | "passport" | "other";
+  idDocumentType: "identity_card" | "passport" | "service_id" | "other";
   idDocumentValidUntil: string;
   idDocumentNumber: string;
 };
@@ -48,6 +50,7 @@ function buildInitialWalkInForm(): WalkInFormState {
     firstName: "",
     lastName: "",
     company: "",
+    nationalityCode: "DE",
     birthDate: "",
     phone: "",
     email: "",
@@ -367,6 +370,7 @@ export function GuardDashboardPage() {
                   <th className="cell-nowrap">Uhrzeit</th>
                   <th className="cell-nowrap">Besucher</th>
                   <th>Firma</th>
+                  <th>Nationalität</th>
                   <th>Ansprechpartner</th>
                   <th>Abteilung</th>
                   <th className="cell-wrap">Besuchszweck</th>
@@ -389,6 +393,7 @@ export function GuardDashboardPage() {
                       <td className="cell-nowrap">{formatDateTime(visitTime)}</td>
                       <td className="cell-nowrap">{visit.firstName} {visit.lastName}</td>
                       <td>{visit.company}</td>
+                      <td>{visit.nationalityName || visit.nationalityCode || "-"}</td>
                       <td>{visit.hostName}</td>
                       <td>{visit.hostDepartment}</td>
                       <td className="cell-wrap">{visit.purpose}</td>
@@ -569,6 +574,7 @@ export function GuardDashboardPage() {
                 <FormField label="Vorname" required><input value={walkInForm.firstName} onChange={(event) => setWalkInForm((current) => ({ ...current, firstName: event.target.value }))} /></FormField>
                 <FormField label="Nachname" required><input value={walkInForm.lastName} onChange={(event) => setWalkInForm((current) => ({ ...current, lastName: event.target.value }))} /></FormField>
                 <FormField label="Firma / Organisation" required><input value={walkInForm.company} onChange={(event) => setWalkInForm((current) => ({ ...current, company: event.target.value }))} /></FormField>
+                <FormField label="Nationalität" required><CountrySelect required value={walkInForm.nationalityCode} onChange={(value) => setWalkInForm((current) => ({ ...current, nationalityCode: value }))} /></FormField>
                 <FormField label="Geburtsdatum"><input type="date" value={walkInForm.birthDate} onChange={(event) => setWalkInForm((current) => ({ ...current, birthDate: event.target.value }))} /></FormField>
                 <FormField label="Telefon Besucher"><input value={walkInForm.phone} onChange={(event) => setWalkInForm((current) => ({ ...current, phone: event.target.value }))} /></FormField>
                 <FormField label="E-Mail Besucher"><input value={walkInForm.email} onChange={(event) => setWalkInForm((current) => ({ ...current, email: event.target.value }))} /></FormField>
@@ -588,6 +594,7 @@ export function GuardDashboardPage() {
                   <select value={walkInForm.idDocumentType} onChange={(event) => setWalkInForm((current) => ({ ...current, idDocumentType: event.target.value as WalkInFormState["idDocumentType"] }))}>
                     <option value="identity_card">Personalausweis</option>
                     <option value="passport">Reisepass</option>
+                    <option value="service_id">Dienstausweis</option>
                     <option value="other">Sonstiges</option>
                   </select>
                 </FormField>

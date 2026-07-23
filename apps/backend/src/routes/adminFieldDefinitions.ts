@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import sql from "mssql";
 import { Router } from "express";
 import { z } from "zod";
@@ -6,7 +5,6 @@ import { listAdminFieldDefinitions, listFieldDefinitions, updateFieldDefinition 
 import { getPool } from "../lib/db";
 import { writeAuditLog } from "../lib/auditLog";
 import {
-  buildFieldKeyFromLabel,
   getRequestIp,
   getRequestUserAgent,
   handleUnexpectedError,
@@ -35,39 +33,6 @@ const adminFieldDefinitionUpdateSchema = z.object({
   sortOrder: z.number().int().min(0).max(9999),
   helpText: z.string().trim().max(500).optional().nullable().or(z.literal("")),
   optionsJson: z.string().trim().optional().nullable().or(z.literal(""))
-}).superRefine((value, context) => {
-  if (!value.showInPublic && value.requiredPublic) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["requiredPublic"],
-      message: "Ein Feld kann nur Pflicht sein, wenn es im Kontext sichtbar ist."
-    });
-  }
-  if (!value.showInGuard && (value.requiredGuardCheckin || value.requiredBeforePrint)) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["requiredGuardCheckin"],
-      message: "Ein Feld kann nur Pflicht sein, wenn es im Guard-Kontext sichtbar ist."
-    });
-  }
-});
-
-const adminFieldDefinitionCreateSchema = z.object({
-  label: z.string().trim().min(1).max(200),
-  fieldType: z.enum(allowedFieldTypes),
-  section: z.enum(allowedSections),
-  isActive: z.boolean().optional().default(true),
-  showInPublic: z.boolean().optional().default(false),
-  showInGuard: z.boolean().optional().default(true),
-  showInSibe: z.boolean().optional().default(true),
-  showOnBadge: z.boolean().optional().default(false),
-  requiredPublic: z.boolean().optional().default(false),
-  requiredGuardCheckin: z.boolean().optional().default(false),
-  requiredBeforePrint: z.boolean().optional().default(false),
-  sortOrder: z.number().int().min(0).max(9999).optional().default(100),
-  helpText: z.string().trim().max(500).optional().nullable().or(z.literal("")),
-  optionsJson: z.string().trim().max(8000).optional().nullable().or(z.literal("")),
-  fieldKey: fieldDefinitionKeySchema.optional()
 });
 
 const fieldConfigImportFieldSchema = z.object({
@@ -87,13 +52,6 @@ const fieldConfigImportFieldSchema = z.object({
   sortOrder: z.number().int().min(0).max(9999),
   helpText: z.string().trim().max(500).nullable().optional(),
   options: z.unknown().nullable().optional()
-}).superRefine((value, context) => {
-  if (!value.showInPublic && value.requiredPublic) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["requiredPublic"], message: "requiredPublic erfordert showInPublic=true." });
-  }
-  if (!value.showInGuard && (value.requiredGuardCheckin || value.requiredBeforePrint)) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["requiredGuardCheckin"], message: "Guard-Pflichten erfordern showInGuard=true." });
-  }
 });
 
 const fieldConfigImportSchema = z.object({
@@ -199,80 +157,6 @@ adminFieldDefinitionsRouter.get("/api/admin/field-definitions/export", async (re
   }
 });
 
-adminFieldDefinitionsRouter.post("/api/admin/field-definitions", async (request, response) => {
-  const user = await requirePermission(request, response, "admin.fields");
-  if (!user) return;
-
-  const parsed = adminFieldDefinitionCreateSchema.safeParse(request.body);
-  if (!parsed.success) {
-    return sendValidationError(response, parsed.error.issues);
-  }
-
-  const payload = parsed.data;
-  const fieldKeyBase = payload.fieldKey || buildFieldKeyFromLabel(payload.label);
-  const fieldKey = fieldKeyBase.slice(0, 100);
-  if (!/^[a-z][a-z0-9_]{1,99}$/.test(fieldKey)) {
-    return sendValidationError(response, [{ field: "fieldKey", message: "Ungueltiger technischer Feldschluessel." }]);
-  }
-
-  try {
-    const pool = await getPool();
-    const exists = await pool.request()
-      .input("fieldKey", sql.NVarChar(100), fieldKey)
-      .query<{ count: number }>("SELECT COUNT(1) AS count FROM dbo.field_definitions WHERE field_key = @fieldKey");
-    if ((exists.recordset[0]?.count || 0) > 0) {
-      return sendError(response, 409, "CONFLICT", "Ein Feld mit diesem technischen Schluessel existiert bereits.");
-    }
-
-    await pool.request()
-      .input("id", sql.UniqueIdentifier, crypto.randomUUID())
-      .input("fieldKey", sql.NVarChar(100), fieldKey)
-      .input("label", sql.NVarChar(200), payload.label)
-      .input("fieldType", sql.NVarChar(50), payload.fieldType)
-      .input("section", sql.NVarChar(50), payload.section)
-      .input("isActive", sql.Bit, payload.isActive)
-      .input("showInPublic", sql.Bit, payload.showInPublic)
-      .input("showInGuard", sql.Bit, payload.showInGuard)
-      .input("showInSibe", sql.Bit, payload.showInSibe)
-      .input("showOnBadge", sql.Bit, payload.showOnBadge)
-      .input("requiredPublic", sql.Bit, payload.showInPublic ? payload.requiredPublic : false)
-      .input("requiredGuardCheckin", sql.Bit, payload.showInGuard ? payload.requiredGuardCheckin : false)
-      .input("requiredBeforePrint", sql.Bit, payload.showInGuard ? payload.requiredBeforePrint : false)
-      .input("sortOrder", sql.Int, payload.sortOrder)
-      .input("helpText", sql.NVarChar(500), payload.helpText || null)
-      .input("optionsJson", sql.NVarChar(sql.MAX), payload.optionsJson || null)
-      .query(`
-        INSERT INTO dbo.field_definitions (
-          id, field_key, label, field_type, section, is_system, is_active,
-          show_in_public, show_in_guard, show_in_sibe, show_on_badge,
-          required_public, required_guard_checkin, required_before_print,
-          sort_order, help_text, options_json
-        )
-        VALUES (
-          @id, @fieldKey, @label, @fieldType, @section, 0, @isActive,
-          @showInPublic, @showInGuard, @showInSibe, @showOnBadge,
-          @requiredPublic, @requiredGuardCheckin, @requiredBeforePrint,
-          @sortOrder, @helpText, @optionsJson
-        )
-      `);
-
-    await writeAuditLog({
-      user: user.username,
-      userId: user.id,
-      action: "FIELD_CONFIG_CREATED",
-      objectType: "field_definition",
-      objectId: fieldKey,
-      ipAddress: getRequestIp(request),
-      userAgent: getRequestUserAgent(request),
-      metadata: { fieldKey, section: payload.section }
-    });
-
-    return response.status(201).json({ created: true, fieldKey });
-  } catch (error) {
-    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Das Feld konnte nicht angelegt werden.");
-  }
-});
-
 adminFieldDefinitionsRouter.post("/api/admin/field-definitions/import/preview", async (request, response) => {
   const user = await requirePermission(request, response, "admin.fields");
   if (!user) return;
@@ -284,7 +168,9 @@ adminFieldDefinitionsRouter.post("/api/admin/field-definitions/import/preview", 
 
   try {
     const pool = await getPool();
-    const existing = await pool.request().query<{ fieldKey: string }>("SELECT field_key AS fieldKey FROM dbo.field_definitions");
+    const existing = await pool.request().query<{ fieldKey: string }>(
+      "SELECT field_key AS fieldKey FROM dbo.field_definitions WHERE is_system = 1"
+    );
     const existingKeys = new Set(existing.recordset.map((row) => row.fieldKey));
     const seen = new Set<string>();
     const changes: Array<{ fieldKey: string; action: "update" | "create"; label: string }> = [];
@@ -294,23 +180,22 @@ adminFieldDefinitionsRouter.post("/api/admin/field-definitions/import/preview", 
         return sendValidationError(response, [{ field: "fieldKey", message: `Doppelter fieldKey im Import: ${field.fieldKey}` }]);
       }
       seen.add(field.fieldKey);
-      changes.push({
-        fieldKey: field.fieldKey,
-        action: existingKeys.has(field.fieldKey) ? "update" : "create",
-        label: field.label
-      });
+      if (existingKeys.has(field.fieldKey)) {
+        changes.push({ fieldKey: field.fieldKey, action: "update", label: field.label });
+      }
     }
 
     const willUpdate = changes.filter((item) => item.action === "update").length;
-    const willCreate = changes.filter((item) => item.action === "create").length;
+    const willCreate = 0;
+    const willSkip = parsed.data.fields.length - changes.length;
     return response.json({
       valid: true,
       summary: {
         total: parsed.data.fields.length,
         willUpdate,
         willCreate,
-        willSkip: 0,
-        warnings: [] as string[]
+        willSkip,
+        warnings: willSkip ? [`${willSkip} unbekannte Feldschlüssel werden ignoriert.`] : []
       },
       changes
     });
@@ -352,12 +237,13 @@ adminFieldDefinitionsRouter.post("/api/admin/field-definitions/import", async (r
 
     let updated = 0;
     let created = 0;
+    let skipped = 0;
 
     for (const field of payload.fields) {
       const existing = existingMap.get(field.fieldKey);
       const optionsJson = normalizeImportOptions(field.options);
-      if (existing) {
-        const fieldTypeForUpdate = existing.isSystem ? existing.fieldType : field.fieldType;
+      if (existing?.isSystem) {
+        const fieldTypeForUpdate = existing.fieldType;
         await pool.request()
           .input("id", sql.UniqueIdentifier, existing.id)
           .input("label", sql.NVarChar(200), field.label)
@@ -396,38 +282,7 @@ adminFieldDefinitionsRouter.post("/api/admin/field-definitions/import", async (r
           `);
         updated += 1;
       } else {
-        await pool.request()
-          .input("id", sql.UniqueIdentifier, crypto.randomUUID())
-          .input("fieldKey", sql.NVarChar(100), field.fieldKey)
-          .input("label", sql.NVarChar(200), field.label)
-          .input("fieldType", sql.NVarChar(50), field.fieldType)
-          .input("section", sql.NVarChar(50), field.section)
-          .input("isActive", sql.Bit, field.isActive)
-          .input("showInPublic", sql.Bit, field.showInPublic)
-          .input("showInGuard", sql.Bit, field.showInGuard)
-          .input("showInSibe", sql.Bit, field.showInSibe)
-          .input("showOnBadge", sql.Bit, field.showOnBadge)
-          .input("requiredPublic", sql.Bit, field.showInPublic ? field.requiredPublic : false)
-          .input("requiredGuardCheckin", sql.Bit, field.showInGuard ? field.requiredGuardCheckin : false)
-          .input("requiredBeforePrint", sql.Bit, field.showInGuard ? field.requiredBeforePrint : false)
-          .input("sortOrder", sql.Int, field.sortOrder)
-          .input("helpText", sql.NVarChar(500), field.helpText || null)
-          .input("optionsJson", sql.NVarChar(sql.MAX), optionsJson)
-          .query(`
-            INSERT INTO dbo.field_definitions (
-              id, field_key, label, field_type, section, is_system, is_active,
-              show_in_public, show_in_guard, show_in_sibe, show_on_badge,
-              required_public, required_guard_checkin, required_before_print,
-              sort_order, help_text, options_json
-            )
-            VALUES (
-              @id, @fieldKey, @label, @fieldType, @section, 0, @isActive,
-              @showInPublic, @showInGuard, @showInSibe, @showOnBadge,
-              @requiredPublic, @requiredGuardCheckin, @requiredBeforePrint,
-              @sortOrder, @helpText, @optionsJson
-            )
-          `);
-        created += 1;
+        skipped += 1;
       }
     }
 
@@ -443,7 +298,7 @@ adminFieldDefinitionsRouter.post("/api/admin/field-definitions/import", async (r
         total: payload.fields.length,
         updated,
         created,
-        skipped: 0,
+        skipped,
         version: payload.version
       }
     });
@@ -454,7 +309,7 @@ adminFieldDefinitionsRouter.post("/api/admin/field-definitions/import", async (r
         total: payload.fields.length,
         updated,
         created,
-        skipped: 0
+        skipped
       }
     });
   } catch (error) {

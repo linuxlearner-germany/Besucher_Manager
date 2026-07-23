@@ -3,8 +3,8 @@ import { Router } from "express";
 import { z } from "zod";
 import { writeAuditLog } from "../lib/auditLog";
 import { getPool } from "../lib/db";
-import { notifyApprovalDecision } from "../lib/mailRelay";
-import { APPROVAL_STATUS, HOST_SIGNATURE_STATUS, VISIT_STATUS, hasPermission } from "../lib/visitWorkflow";
+import { COUNTRIES, getCountryName, normalizeCountryCode } from "../lib/countries";
+import { HOST_SIGNATURE_STATUS, VISIT_STATUS } from "../lib/visitWorkflow";
 import { getRequestIp, getRequestUserAgent, handleUnexpectedError, requireAnyPermission, requirePermission, requireRole, sendError, sendValidationError } from "./shared";
 import { handleVisitorImportUpload, sendVisitorImportTemplateWorkbook } from "./visitorImport";
 
@@ -16,17 +16,15 @@ const importRoles = ["admin", "guard", "sibe"] as const;
 const sibeVisitNotesSchema = z.object({
   notes: z.string().trim().max(4000, "Die Anmerkung darf maximal 4000 Zeichen enthalten.").optional().or(z.literal(""))
 });
-const sibeApprovalDecisionSchema = z.object({
-  status: z.enum([APPROVAL_STATUS.APPROVED, APPROVAL_STATUS.REJECTED]),
-  note: z.string().trim().max(1000, "Der Hinweis darf maximal 1000 Zeichen enthalten.").optional().or(z.literal(""))
-}).superRefine((value, context) => {
-  if (value.status === APPROVAL_STATUS.REJECTED && !value.note?.trim()) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["note"],
-      message: "Bitte begruenden Sie die Ablehnung."
-    });
-  }
+const nationalitySubscriptionsSchema = z.object({
+  countryCodes: z.array(z.string()).max(COUNTRIES.length).transform((values, context) => {
+    const normalized = values.map(normalizeCountryCode);
+    if (normalized.some((code) => !code)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "Die Länderauswahl enthält einen ungültigen Code." });
+      return z.NEVER;
+    }
+    return Array.from(new Set(normalized as string[]));
+  })
 });
 
 function csvEscape(value: unknown): string {
@@ -41,6 +39,7 @@ function buildCsv(rows: Array<Record<string, unknown>>): string {
   const headers = [
     "Besucher",
     "Firma",
+    "Nationalität",
     "Kennzeichen",
     "Besuchsnummer",
     "Status",
@@ -56,6 +55,7 @@ function buildCsv(rows: Array<Record<string, unknown>>): string {
   const keys = [
     "visitorName",
     "company",
+    "nationalityName",
     "licensePlate",
     "badgeNumber",
     "status",
@@ -81,7 +81,7 @@ sibeRouter.get("/api/sibe/summary", async (request, response) => {
 
   try {
     const pool = await getPool();
-    const [visitorsTotal, activeVisitors, todaysVisits, checkedInVisitors, usersTotal, activeUsers, signaturesPending, signaturesFollowUp, signaturesExceptions, approvalsPending] = await Promise.all([
+    const [visitorsTotal, activeVisitors, todaysVisits, checkedInVisitors, usersTotal, activeUsers, signaturesPending, signaturesFollowUp, signaturesExceptions] = await Promise.all([
       pool.request().query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.visitors WHERE is_deleted = 0"),
       pool.request().query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.visitors WHERE is_deleted = 0 AND is_active = 1"),
       pool.request().query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.visits WHERE CAST(valid_from AS date) = CAST(SYSUTCDATETIME() AS date)"),
@@ -90,8 +90,7 @@ sibeRouter.get("/api/sibe/summary", async (request, response) => {
       pool.request().query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.users WHERE is_active = 1"),
       pool.request().query<{ count: number }>(`SELECT COUNT(*) AS count FROM dbo.visits WHERE ISNULL(host_signature_status, '${HOST_SIGNATURE_STATUS.PENDING}') = '${HOST_SIGNATURE_STATUS.PENDING}'`),
       pool.request().query<{ count: number }>(`SELECT COUNT(*) AS count FROM dbo.visits WHERE host_signature_status = '${HOST_SIGNATURE_STATUS.SIGNED_LATER}'`),
-      pool.request().query<{ count: number }>(`SELECT COUNT(*) AS count FROM dbo.visits WHERE host_signature_status = '${HOST_SIGNATURE_STATUS.MISSING_EXCEPTION}'`),
-      pool.request().query<{ count: number }>(`SELECT COUNT(*) AS count FROM dbo.visits WHERE ISNULL(approval_status, '${APPROVAL_STATUS.NOT_REQUIRED}') = '${APPROVAL_STATUS.PENDING}'`)
+      pool.request().query<{ count: number }>(`SELECT COUNT(*) AS count FROM dbo.visits WHERE host_signature_status = '${HOST_SIGNATURE_STATUS.MISSING_EXCEPTION}'`)
     ]);
 
     return response.json({
@@ -103,8 +102,7 @@ sibeRouter.get("/api/sibe/summary", async (request, response) => {
       activeUsers: activeUsers.recordset[0]?.count ?? 0,
       signaturesPending: signaturesPending.recordset[0]?.count ?? 0,
       signaturesFollowUp: signaturesFollowUp.recordset[0]?.count ?? 0,
-      signaturesExceptions: signaturesExceptions.recordset[0]?.count ?? 0,
-      approvalsPending: approvalsPending.recordset[0]?.count ?? 0
+      signaturesExceptions: signaturesExceptions.recordset[0]?.count ?? 0
     });
   } catch (error) {
     return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die SiBe-Uebersicht konnte nicht geladen werden.");
@@ -222,6 +220,7 @@ sibeRouter.get("/api/sibe/visitors", async (request, response) => {
       firstName: string;
       lastName: string;
       company: string;
+      nationalityCode: string | null;
       birthDate: string | null;
       phone: string | null;
       email: string | null;
@@ -234,6 +233,7 @@ sibeRouter.get("/api/sibe/visitors", async (request, response) => {
         v.first_name AS firstName,
         v.last_name AS lastName,
         v.company,
+        v.nationality_code AS nationalityCode,
         CONVERT(NVARCHAR(10), v.birth_date, 23) AS birthDate,
         v.phone_optional AS phone,
         v.email_optional AS email,
@@ -243,7 +243,7 @@ sibeRouter.get("/api/sibe/visitors", async (request, response) => {
       FROM dbo.visitors v
       LEFT JOIN dbo.visits vi ON vi.visitor_id = v.id
       WHERE ${whereClause}
-      GROUP BY v.id, v.first_name, v.last_name, v.company, v.birth_date, v.phone_optional, v.email_optional, v.archived_at
+      GROUP BY v.id, v.first_name, v.last_name, v.company, v.nationality_code, v.birth_date, v.phone_optional, v.email_optional, v.archived_at
       ORDER BY v.last_name ASC, v.first_name ASC
     `);
 
@@ -256,7 +256,12 @@ sibeRouter.get("/api/sibe/visitors", async (request, response) => {
       ipAddress: getRequestIp(request)
     });
 
-    return response.json({ visitors: result.recordset });
+    return response.json({
+      visitors: result.recordset.map((visitor) => ({
+        ...visitor,
+        nationalityName: getCountryName(visitor.nationalityCode)
+      }))
+    });
   } catch (error) {
     return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Besucher konnten nicht geladen werden.");
   }
@@ -273,7 +278,6 @@ sibeRouter.get("/api/sibe/visits", async (request, response) => {
     const search = typeof request.query.search === "string" ? request.query.search.trim() : "";
     const status = typeof request.query.status === "string" ? request.query.status.trim() : "";
     const signatureStatus = typeof request.query.signatureStatus === "string" ? request.query.signatureStatus.trim() : "";
-    const approvalStatus = typeof request.query.approvalStatus === "string" ? request.query.approvalStatus.trim() : "";
     const gateId = typeof request.query.gateId === "string" ? request.query.gateId.trim() : "";
     const gate = typeof request.query.gate === "string" ? request.query.gate.trim() : "";
     const from = typeof request.query.from === "string"
@@ -326,11 +330,6 @@ sibeRouter.get("/api/sibe/visits", async (request, response) => {
       conditions.push(`ISNULL(vt.host_signature_status, '${HOST_SIGNATURE_STATUS.PENDING}') = @signatureStatus`);
     }
 
-    if (approvalStatus && approvalStatus !== "all") {
-      requestBuilder.input("approvalStatus", sql.NVarChar(32), approvalStatus);
-      conditions.push(`ISNULL(vt.approval_status, '${APPROVAL_STATUS.NOT_REQUIRED}') = @approvalStatus`);
-    }
-
     if (gateId) {
       requestBuilder.input("gateId", sql.UniqueIdentifier, gateId);
       conditions.push("vt.gate_id = @gateId");
@@ -376,6 +375,8 @@ sibeRouter.get("/api/sibe/visits", async (request, response) => {
       visitorId: string;
       visitorName: string;
       company: string;
+      nationalityCode: string | null;
+      nationalityName: string | null;
       licensePlate: string | null;
       badgeNumber: string | null;
       status: string;
@@ -388,13 +389,14 @@ sibeRouter.get("/api/sibe/visits", async (request, response) => {
       checkInAt: string | null;
       checkOutAt: string | null;
       hostSignatureStatus: string;
-      approvalStatus: string;
     }>(`
       SELECT
         vt.id,
         vis.id AS visitorId,
         CONCAT(vis.first_name, ' ', vis.last_name) AS visitorName,
         vis.company,
+        vis.nationality_code AS nationalityCode,
+        vis.nationality_code AS nationalityName,
         vt.license_plate AS licensePlate,
         vt.badge_number AS badgeNumber,
         vt.status,
@@ -406,8 +408,7 @@ sibeRouter.get("/api/sibe/visits", async (request, response) => {
         CONVERT(NVARCHAR(10), vis.id_document_valid_until, 23) AS idDocumentValidUntil,
         CONVERT(NVARCHAR(30), vt.check_in_at, 127) AS checkInAt,
         CONVERT(NVARCHAR(30), vt.check_out_at, 127) AS checkOutAt,
-        ISNULL(vt.host_signature_status, '${HOST_SIGNATURE_STATUS.PENDING}') AS hostSignatureStatus,
-        ISNULL(vt.approval_status, '${APPROVAL_STATUS.NOT_REQUIRED}') AS approvalStatus
+        ISNULL(vt.host_signature_status, '${HOST_SIGNATURE_STATUS.PENDING}') AS hostSignatureStatus
       FROM dbo.visits vt
       INNER JOIN dbo.visitors vis ON vis.id = vt.visitor_id
       LEFT JOIN dbo.gates g ON g.id = vt.gate_id
@@ -415,7 +416,12 @@ sibeRouter.get("/api/sibe/visits", async (request, response) => {
       ORDER BY vt.valid_from DESC
     `);
 
-    return response.json({ visits: result.recordset });
+    return response.json({
+      visits: result.recordset.map((visit) => ({
+        ...visit,
+        nationalityName: getCountryName(visit.nationalityCode)
+      }))
+    });
   } catch (error) {
     return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Besuchshistorie konnte nicht geladen werden.");
   }
@@ -469,6 +475,7 @@ sibeRouter.get("/api/sibe/visits/export", async (request, response) => {
       SELECT
         CONCAT(vis.first_name, ' ', vis.last_name) AS visitorName,
         vis.company,
+        vis.nationality_code AS nationalityCode,
         vt.license_plate AS licensePlate,
         vt.badge_number AS badgeNumber,
         vt.status,
@@ -499,7 +506,10 @@ sibeRouter.get("/api/sibe/visits/export", async (request, response) => {
 
     response.setHeader("Content-Type", "text/csv; charset=utf-8");
     response.setHeader("Content-Disposition", `attachment; filename=\"besucher-export-${range}-${dateText}.csv\"`);
-    return response.send(`\uFEFF${buildCsv(result.recordset)}`);
+    return response.send(`\uFEFF${buildCsv(result.recordset.map((row) => ({
+      ...row,
+      nationalityName: getCountryName(typeof row.nationalityCode === "string" ? row.nationalityCode : null)
+    })))}`);
   } catch (error) {
     return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der Besucherexport konnte nicht erstellt werden.");
   }
@@ -534,10 +544,6 @@ sibeRouter.get("/api/sibe/visits/:id", async (request, response) => {
         SELECT
           vt.id,
           vt.status,
-          ISNULL(vt.approval_status, '${APPROVAL_STATUS.NOT_REQUIRED}') AS approvalStatus,
-          vt.approval_note AS approvalNote,
-          approver.username AS approvalDecidedBy,
-          CONVERT(NVARCHAR(30), vt.approval_decided_at, 127) AS approvalDecidedAt,
           CONVERT(NVARCHAR(30), vt.valid_from, 127) AS validFrom,
           CONVERT(NVARCHAR(30), vt.valid_until, 127) AS validUntil,
           CONVERT(NVARCHAR(30), vt.check_in_at, 127) AS checkInAt,
@@ -545,6 +551,7 @@ sibeRouter.get("/api/sibe/visits/:id", async (request, response) => {
           vis.first_name AS firstName,
           vis.last_name AS lastName,
           vis.company,
+          vis.nationality_code AS nationalityCode,
           CONVERT(NVARCHAR(10), vis.birth_date, 23) AS birthDate,
           vis.phone_optional AS visitorPhone,
           vis.email_optional AS visitorEmail,
@@ -597,7 +604,6 @@ sibeRouter.get("/api/sibe/visits/:id", async (request, response) => {
         FROM dbo.visits vt
         INNER JOIN dbo.visitors vis ON vis.id = vt.visitor_id
         LEFT JOIN dbo.gates g ON g.id = vt.gate_id
-        LEFT JOIN dbo.users approver ON approver.id = vt.approval_decided_by
         LEFT JOIN dbo.users confirmer ON confirmer.id = vt.host_signature_confirmed_by
         LEFT JOIN dbo.users confirmerIn ON confirmerIn.id = vt.check_in_by
         LEFT JOIN dbo.users confirmerOut ON confirmerOut.id = vt.check_out_by
@@ -610,14 +616,19 @@ sibeRouter.get("/api/sibe/visits/:id", async (request, response) => {
       return sendError(response, 404, "NOT_FOUND", "Der Besuch wurde nicht gefunden.");
     }
 
-    return response.json({ visit });
+    return response.json({
+      visit: {
+        ...visit,
+        nationalityName: getCountryName(visit.nationalityCode)
+      }
+    });
   } catch (error) {
     return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Besuchsdetails konnten nicht geladen werden.");
   }
 });
 
 sibeRouter.put("/api/sibe/visits/:id/notes", async (request, response) => {
-  const user = await requirePermission(request, response, "approvals.review");
+  const user = await requirePermission(request, response, "visits.update");
   if (!user) return;
 
   const parsed = sibeVisitNotesSchema.safeParse(request.body ?? {});
@@ -673,118 +684,62 @@ sibeRouter.put("/api/sibe/visits/:id/notes", async (request, response) => {
   }
 });
 
-sibeRouter.put("/api/sibe/visits/:id/approval", async (request, response) => {
-  const user = await requireAnyPermission(request, response, ["approvals.approve", "approvals.reject"]);
+sibeRouter.get("/api/sibe/nationality-subscriptions", async (request, response) => {
+  const user = await requireRole(request, response, [...sibeWriteRoles]);
   if (!user) return;
-
-  const parsed = sibeApprovalDecisionSchema.safeParse(request.body ?? {});
-  if (!parsed.success) {
-    return sendValidationError(response, parsed.error.flatten());
-  }
-
-  if (parsed.data.status === APPROVAL_STATUS.APPROVED && !hasPermission(user, "approvals.approve")) {
-    return sendError(response, 403, "FORBIDDEN", "Freigeben ist fuer diesen Benutzer nicht erlaubt.");
-  }
-
-  if (parsed.data.status === APPROVAL_STATUS.REJECTED && !hasPermission(user, "approvals.reject")) {
-    return sendError(response, 403, "FORBIDDEN", "Ablehnen ist fuer diesen Benutzer nicht erlaubt.");
-  }
-
   try {
     const pool = await getPool();
-    const visitResult = await pool.request()
-      .input("id", sql.UniqueIdentifier, request.params.id)
-      .query<{
-        id: string;
-        status: string;
-        approvalStatus: string | null;
-        approvalNote: string | null;
-        firstName: string;
-        lastName: string;
-        company: string;
-        hostName: string;
-        hostEmail: string | null;
-        visitorEmail: string | null;
-        createdByEmail: string | null;
-      }>(`
-        SELECT TOP 1
-          vt.id,
-          vt.status,
-          vt.approval_status AS approvalStatus,
-          vt.approval_note AS approvalNote,
-          vis.first_name AS firstName,
-          vis.last_name AS lastName,
-          vis.company,
-          vt.host_name AS hostName,
-          vt.host_email AS hostEmail,
-          vis.email_optional AS visitorEmail,
-          creator.user_email AS createdByEmail
-        FROM dbo.visits vt
-        INNER JOIN dbo.visitors vis ON vis.id = vt.visitor_id
-        LEFT JOIN dbo.users creator ON creator.id = vt.created_by
-        WHERE vt.id = @id
-      `);
+    const [subscriptions, account] = await Promise.all([
+      pool.request()
+        .input("userId", sql.UniqueIdentifier, user.id)
+        .query<{ countryCode: string }>("SELECT RTRIM(country_code) AS countryCode FROM dbo.user_nationality_subscriptions WHERE user_id = @userId ORDER BY country_code"),
+      pool.request()
+        .input("userId", sql.UniqueIdentifier, user.id)
+        .query<{ email: string | null }>("SELECT user_email AS email FROM dbo.users WHERE id = @userId")
+    ]);
+    return response.json({
+      countryCodes: subscriptions.recordset.map((row) => row.countryCode),
+      email: account.recordset[0]?.email ?? null
+    });
+  } catch (error) {
+    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Länderabonnements konnten nicht geladen werden.");
+  }
+});
 
-    const visit = visitResult.recordset[0];
-    if (!visit) {
-      return sendError(response, 404, "NOT_FOUND", "Der Besuch wurde nicht gefunden.");
+sibeRouter.put("/api/sibe/nationality-subscriptions", async (request, response) => {
+  const user = await requireRole(request, response, [...sibeWriteRoles]);
+  if (!user) return;
+  const parsed = nationalitySubscriptionsSchema.safeParse(request.body ?? {});
+  if (!parsed.success) return sendValidationError(response, parsed.error.flatten());
+
+  const pool = await getPool();
+  const transaction = new sql.Transaction(pool);
+  try {
+    await transaction.begin();
+    await new sql.Request(transaction)
+      .input("userId", sql.UniqueIdentifier, user.id)
+      .query("DELETE FROM dbo.user_nationality_subscriptions WHERE user_id = @userId");
+    for (const countryCode of parsed.data.countryCodes) {
+      await new sql.Request(transaction)
+        .input("userId", sql.UniqueIdentifier, user.id)
+        .input("countryCode", sql.NChar(2), countryCode)
+        .query("INSERT INTO dbo.user_nationality_subscriptions (user_id, country_code) VALUES (@userId, @countryCode)");
     }
-
-    if (visit.status !== VISIT_STATUS.PRE_REGISTERED) {
-      return sendError(response, 409, "INVALID_STATUS_TRANSITION", "Nur vorangemeldete Besuche koennen freigegeben oder abgelehnt werden.");
-    }
-
-    const note = parsed.data.note?.trim() || null;
-    await pool.request()
-      .input("id", sql.UniqueIdentifier, request.params.id)
-      .input("approvalStatus", sql.NVarChar(32), parsed.data.status)
-      .input("approvalNote", sql.NVarChar(1000), note)
-      .input("approvalDecidedBy", sql.UniqueIdentifier, user.id)
-      .query(`
-        UPDATE dbo.visits
-        SET
-          approval_status = @approvalStatus,
-          approval_note = @approvalNote,
-          approval_decided_by = @approvalDecidedBy,
-          approval_decided_at = SYSUTCDATETIME(),
-          updated_at = SYSUTCDATETIME()
-        WHERE id = @id
-      `);
-
     await writeAuditLog({
       user: user.username,
       userId: user.id,
-      action: parsed.data.status === APPROVAL_STATUS.APPROVED ? "VISIT_APPROVED" : "VISIT_REJECTED",
-      objectType: "visit",
-      objectId: request.params.id,
+      action: "NATIONALITY_SUBSCRIPTIONS_UPDATED",
+      objectType: "user",
+      objectId: user.id,
       ipAddress: getRequestIp(request),
       userAgent: getRequestUserAgent(request),
-      metadata: {
-        approval_status: parsed.data.status,
-        approval_note_present: Boolean(note)
-      }
-    });
-
-    const recipientEmails = Array.from(
-      new Set([visit.hostEmail?.trim(), visit.visitorEmail?.trim(), visit.createdByEmail?.trim()].filter((entry): entry is string => Boolean(entry)))
-    );
-    void notifyApprovalDecision({
-      visitId: visit.id,
-      visitorName: `${visit.firstName} ${visit.lastName}`,
-      company: visit.company,
-      hostName: visit.hostName,
-      decision: parsed.data.status,
-      note,
-      recipientEmails
-    });
-
-    return response.json({
-      success: true,
-      approvalStatus: parsed.data.status,
-      approvalNote: note
-    });
+      metadata: { countryCodes: parsed.data.countryCodes }
+    }, transaction);
+    await transaction.commit();
+    return response.json({ success: true, countryCodes: parsed.data.countryCodes });
   } catch (error) {
-    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Freigabe konnte nicht gespeichert werden.");
+    try { await transaction.rollback(); } catch {}
+    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Länderabonnements konnten nicht gespeichert werden.");
   }
 });
 

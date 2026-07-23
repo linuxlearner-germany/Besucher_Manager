@@ -27,10 +27,9 @@ import { loadWorkflowSettings, upsertSystemSettings, WORKFLOW_SETTING_KEYS } fro
 import { writeAuditLog } from "../lib/auditLog";
 import { env } from "../config/env";
 import { sendMailRelayPreview, verifyMailRelayConnection, type MailRelayTestKind } from "../lib/mailRelay";
-import { buildUserImportTemplateCsv, parseUserImportCsv, type UserCsvImportRawRow } from "../lib/userCsvImport";
+import { buildUserExportCsv, buildUserImportTemplateCsv, parseUserImportCsv, type UserCsvImportRawRow } from "../lib/userCsvImport";
 import { adminFieldDefinitionsRouter } from "./adminFieldDefinitions";
 import {
-  APPROVAL_STATUS,
   APP_MENU_KEYS,
   getAllowedMenuAccessForRole,
   getDefaultMenuAccessForRole,
@@ -67,7 +66,6 @@ const permissionFlagsSchema = z.object({
     guard: z.boolean().optional(),
     import: z.boolean().optional(),
     admin: z.boolean().optional(),
-    approvals: z.boolean().optional(),
     sibe: z.boolean().optional(),
     commander: z.boolean().optional(),
     texts: z.boolean().optional()
@@ -84,12 +82,7 @@ const permissionFlagsSchema = z.object({
   imports: z.object({
     execute: z.boolean().optional()
   }).optional(),
-  approvals: z.object({
-    read: z.boolean().optional(),
-    review: z.boolean().optional(),
-    approve: z.boolean().optional(),
-    reject: z.boolean().optional()
-  }).optional(),
+  texts: z.object({ manage: z.boolean().optional() }).optional(),
   dashboards: z.object({
     sibe: z.boolean().optional(),
     commander: z.boolean().optional()
@@ -97,7 +90,6 @@ const permissionFlagsSchema = z.object({
   admin: z.object({
     users: z.boolean().optional(),
     guards: z.boolean().optional(),
-    texts: z.boolean().optional(),
     map: z.boolean().optional(),
     fields: z.boolean().optional(),
     system: z.boolean().optional()
@@ -173,7 +165,6 @@ const retentionSettingsSchema = z.object({
   days: z.number().int().positive().max(3650).optional()
 });
 const workflowSettingsUpdateSchema = z.object({
-  approvalRequired: z.boolean(),
   backgroundMode: z.enum(["image", "subtle", "plain"]),
   emailRelay: z.object({
     enabled: z.boolean(),
@@ -182,13 +173,12 @@ const workflowSettingsUpdateSchema = z.object({
     secure: z.boolean(),
     username: z.string().trim().max(255).optional().or(z.literal("")),
     password: z.string().max(500).optional().or(z.literal("")),
-    fromAddress: z.string().trim().email("Ungueltige Absenderadresse.").optional().or(z.literal("")),
-    approvalRecipients: z.array(z.string().trim().email("Ungueltige E-Mail-Adresse.")).max(20)
+    fromAddress: z.string().trim().email("Ungueltige Absenderadresse.").optional().or(z.literal(""))
   })
 });
 const mailRelayTestSchema = z.object({
   recipient: z.string().trim().email("Ungueltige Testadresse.").optional().or(z.literal("")),
-  kind: z.enum(["relay", "approval_request", "approval_approved", "approval_rejected"]).optional()
+  kind: z.enum(["relay", "nationality"]).optional()
 });
 
 export const apiRouter = Router();
@@ -540,8 +530,8 @@ async function getRetentionSettings() {
 export const adminRouter = Router();
 adminRouter.use(adminFieldDefinitionsRouter);
 
-adminRouter.get("/api/admin/badge-texts", async (request, response) => {
-  const user = await requirePermission(request, response, "admin.texts");
+adminRouter.get("/api/texts", async (request, response) => {
+  const user = await requirePermission(request, response, "texts.manage");
 
   if (!user) {
     return;
@@ -564,8 +554,8 @@ adminRouter.get("/api/admin/badge-texts", async (request, response) => {
   });
 });
 
-adminRouter.post("/api/admin/badge-texts", async (request, response) => {
-  const user = await requirePermission(request, response, "admin.texts");
+adminRouter.post("/api/texts", async (request, response) => {
+  const user = await requirePermission(request, response, "texts.manage");
   if (!user) return;
 
   const parsed = badgeTextCreateSchema.safeParse(request.body);
@@ -601,7 +591,7 @@ adminRouter.post("/api/admin/badge-texts", async (request, response) => {
 
 
 adminRouter.get("/api/admin/bootstrap", async (request, response) => {
-  const user = await requireAnyPermission(request, response, ["admin.users", "admin.guards", "admin.texts", "admin.map", "admin.fields", "admin.system", "logs.audit", "logs.errors"]);
+  const user = await requireAnyPermission(request, response, ["admin.users", "admin.guards", "texts.manage", "admin.map", "admin.fields", "admin.system", "logs.audit", "logs.errors"]);
 
   if (!user) {
     return;
@@ -864,6 +854,69 @@ adminRouter.get("/api/admin/users/import-template.csv", async (request, response
   const user = await requirePermission(request, response, "admin.users");
   if (!user) return;
   return sendUserImportTemplate(response);
+});
+
+adminRouter.get("/api/admin/users/export.csv", async (request, response) => {
+  const user = await requirePermission(request, response, "admin.users");
+  if (!user) return;
+
+  try {
+    const pool = await getPool();
+    const result = await pool.request().query<{
+      id: string;
+      username: string;
+      displayName: string;
+      email: string | null;
+      role: string;
+      gate: string | null;
+      isActive: boolean;
+      lastLoginAt: string | null;
+    }>(`
+      SELECT
+        u.id,
+        u.username,
+        u.display_name AS displayName,
+        u.user_email AS email,
+        u.role,
+        g.name AS gate,
+        u.is_active AS isActive,
+        CONVERT(NVARCHAR(30), u.last_login_at, 127) AS lastLoginAt
+      FROM dbo.users u
+      LEFT JOIN dbo.gates g ON g.id = u.gate_id
+      ORDER BY u.username ASC
+    `);
+    const { groupsByUserId, menuAccessByUserId } = await loadUserGroupsAndMenuAccess(
+      result.recordset.map((entry) => entry.id)
+    );
+    const csv = buildUserExportCsv(result.recordset.map((entry) => ({
+      ...entry,
+      groups: groupsByUserId[entry.id] ?? [],
+      menuAccess: normalizeMenuAccess(
+        entry.role as AuthenticatedUser["role"],
+        menuAccessByUserId[entry.id]?.length
+          ? menuAccessByUserId[entry.id]
+          : getDefaultMenuAccessForRole(entry.role as AuthenticatedUser["role"])
+      )
+    })));
+
+    await writeAuditLog({
+      user: user.username,
+      userId: user.id,
+      action: "ADMIN_USERS_EXPORTED_CSV",
+      objectType: "users",
+      objectId: "all",
+      ipAddress: getRequestIp(request),
+      userAgent: getRequestUserAgent(request),
+      metadata: { count: result.recordset.length }
+    });
+
+    const date = new Date().toISOString().slice(0, 10);
+    response.setHeader("Content-Type", "text/csv; charset=utf-8");
+    response.setHeader("Content-Disposition", `attachment; filename="benutzer-export-${date}.csv"`);
+    return response.status(200).send(csv);
+  } catch (error) {
+    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der Benutzerexport konnte nicht erstellt werden.");
+  }
 });
 
 adminRouter.post("/api/admin/users/import-csv", async (request, response) => {
@@ -1479,8 +1532,8 @@ adminRouter.delete("/api/admin/users/:id", async (request, response) => {
   }
 });
 
-adminRouter.put("/api/admin/badge-texts/:id", async (request, response) => {
-  const user = await requirePermission(request, response, "admin.texts");
+adminRouter.put("/api/texts/:id", async (request, response) => {
+  const user = await requirePermission(request, response, "texts.manage");
   if (!user) return;
   const parsed = badgeTextUpdateSchema.safeParse(request.body);
   if (!parsed.success) return sendValidationError(response, parsed.error.flatten());
@@ -1515,8 +1568,8 @@ adminRouter.put("/api/admin/badge-texts/:id", async (request, response) => {
   }
 });
 
-adminRouter.post("/api/admin/badge-texts/:id/deactivate", async (request, response) => {
-  const user = await requirePermission(request, response, "admin.texts");
+adminRouter.post("/api/texts/:id/deactivate", async (request, response) => {
+  const user = await requirePermission(request, response, "texts.manage");
   if (!user) return;
 
   try {
@@ -1549,8 +1602,8 @@ adminRouter.post("/api/admin/badge-texts/:id/deactivate", async (request, respon
   }
 });
 
-adminRouter.post("/api/admin/badge-texts/:id/reactivate", async (request, response) => {
-  const user = await requirePermission(request, response, "admin.texts");
+adminRouter.post("/api/texts/:id/reactivate", async (request, response) => {
+  const user = await requirePermission(request, response, "texts.manage");
   if (!user) return;
 
   try {
@@ -1998,7 +2051,7 @@ adminRouter.get("/api/admin/system-status", async (request, response) => {
   try {
     const pool = await getPool();
     const retention = await getRetentionSettings();
-    const [activeVisits, configuredGates, staleVisits, openPreRegistrationsToday, signaturesPending, signaturesFollowUp, signaturesExceptions, approvalsPending] = await Promise.all([
+    const [activeVisits, configuredGates, staleVisits, openPreRegistrationsToday, signaturesPending, signaturesFollowUp, signaturesExceptions] = await Promise.all([
       pool.request().query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.visits WHERE status = 'checked_in'"),
       pool.request().query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.gates WHERE is_active = 1"),
       pool.request()
@@ -2016,8 +2069,7 @@ adminRouter.get("/api/admin/system-status", async (request, response) => {
       `),
       pool.request().query<{ count: number }>(`SELECT COUNT(*) AS count FROM dbo.visits WHERE ISNULL(host_signature_status, '${HOST_SIGNATURE_STATUS.PENDING}') = '${HOST_SIGNATURE_STATUS.PENDING}'`),
       pool.request().query<{ count: number }>(`SELECT COUNT(*) AS count FROM dbo.visits WHERE host_signature_status = '${HOST_SIGNATURE_STATUS.SIGNED_LATER}'`),
-      pool.request().query<{ count: number }>(`SELECT COUNT(*) AS count FROM dbo.visits WHERE host_signature_status = '${HOST_SIGNATURE_STATUS.MISSING_EXCEPTION}'`),
-      pool.request().query<{ count: number }>(`SELECT COUNT(*) AS count FROM dbo.visits WHERE ISNULL(approval_status, '${APPROVAL_STATUS.NOT_REQUIRED}') = '${APPROVAL_STATUS.PENDING}'`)
+      pool.request().query<{ count: number }>(`SELECT COUNT(*) AS count FROM dbo.visits WHERE host_signature_status = '${HOST_SIGNATURE_STATUS.MISSING_EXCEPTION}'`)
     ]);
     response.json({
       app: "ok",
@@ -2028,7 +2080,6 @@ adminRouter.get("/api/admin/system-status", async (request, response) => {
       signaturesPending: signaturesPending.recordset[0]?.count ?? 0,
       signaturesFollowUp: signaturesFollowUp.recordset[0]?.count ?? 0,
       signaturesExceptions: signaturesExceptions.recordset[0]?.count ?? 0,
-      approvalsPending: approvalsPending.recordset[0]?.count ?? 0,
       staleVisits: retention.enabled ? staleVisits.recordset[0]?.count ?? 0 : 0,
       retentionDays: retention.days,
       retentionEnabled: retention.enabled,
@@ -2047,7 +2098,6 @@ adminRouter.get("/api/admin/system-settings/workflow-email", async (request, res
   try {
     const settings = await loadWorkflowSettings();
     return response.json({
-      approvalRequired: settings.approvalRequired,
       backgroundMode: settings.backgroundMode,
       backgroundImageUrl: settings.backgroundImageUrl,
       backgroundImageName: settings.backgroundImageName,
@@ -2062,7 +2112,6 @@ adminRouter.get("/api/admin/system-settings/workflow-email", async (request, res
         secure: settings.emailRelay.secure,
         username: settings.emailRelay.username,
         fromAddress: settings.emailRelay.fromAddress,
-        approvalRecipients: settings.emailRelay.approvalRecipients,
         hasPassword: settings.emailRelay.hasPassword
       }
     });
@@ -2083,7 +2132,6 @@ adminRouter.put("/api/admin/system-settings/workflow-email", async (request, res
   try {
     const currentSettings = await loadWorkflowSettings({ includeSecrets: true });
     const settingsToPersist: Record<string, string> = {
-      [WORKFLOW_SETTING_KEYS.approvalRequired]: String(parsed.data.approvalRequired),
       [WORKFLOW_SETTING_KEYS.uiBackgroundMode]: parsed.data.backgroundMode
     };
 
@@ -2107,8 +2155,7 @@ adminRouter.put("/api/admin/system-settings/workflow-email", async (request, res
         [WORKFLOW_SETTING_KEYS.relaySecure]: String(parsed.data.emailRelay.secure),
         [WORKFLOW_SETTING_KEYS.relayUsername]: parsed.data.emailRelay.username?.trim() || "",
         [WORKFLOW_SETTING_KEYS.relayPassword]: nextPassword,
-        [WORKFLOW_SETTING_KEYS.relayFrom]: parsed.data.emailRelay.fromAddress?.trim() || "",
-        [WORKFLOW_SETTING_KEYS.relayApprovalTo]: parsed.data.emailRelay.approvalRecipients.join(", ")
+        [WORKFLOW_SETTING_KEYS.relayFrom]: parsed.data.emailRelay.fromAddress?.trim() || ""
       });
     }
 

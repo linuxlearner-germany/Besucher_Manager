@@ -3,7 +3,6 @@ import { getPool } from "./db";
 import { loadMailRelayFileConfig } from "./mailRelayFileConfig";
 
 export const WORKFLOW_SETTING_KEYS = {
-  approvalRequired: "sibe_approval_required",
   relayEnabled: "mail_relay_enabled",
   relayHost: "mail_relay_host",
   relayPort: "mail_relay_port",
@@ -11,7 +10,6 @@ export const WORKFLOW_SETTING_KEYS = {
   relayUsername: "mail_relay_username",
   relayPassword: "mail_relay_password",
   relayFrom: "mail_relay_from",
-  relayApprovalTo: "mail_relay_approval_to",
   uiBackgroundMode: "ui_background_mode",
   uiBackgroundImageUrl: "ui_background_image_url",
   uiBackgroundImageName: "ui_background_image_name",
@@ -19,7 +17,6 @@ export const WORKFLOW_SETTING_KEYS = {
 } as const;
 
 export type WorkflowSettings = {
-  approvalRequired: boolean;
   backgroundMode: "image" | "subtle" | "plain";
   backgroundImageUrl: string;
   backgroundImageName: string | null;
@@ -35,7 +32,6 @@ export type WorkflowSettings = {
     username: string;
     password: string;
     fromAddress: string;
-    approvalRecipients: string[];
     hasPassword: boolean;
   };
 };
@@ -66,21 +62,6 @@ function toNumber(value: string | null | undefined, fallback: number): number {
     return fallback;
   }
   return parsed;
-}
-
-function splitRecipients(value: string | null | undefined): string[] {
-  if (typeof value !== "string") {
-    return [];
-  }
-
-  return Array.from(
-    new Set(
-      value
-        .split(/[,\n;]+/)
-        .map((entry) => entry.trim())
-        .filter(Boolean)
-    )
-  );
 }
 
 function toBackgroundMode(value: string | null | undefined, fallback: "image" | "subtle" | "plain"): "image" | "subtle" | "plain" {
@@ -156,7 +137,6 @@ export async function loadWorkflowSettings(options?: {
 
   if (fileRelayConfig) {
     return {
-      approvalRequired: toBoolean(settingMap.get(WORKFLOW_SETTING_KEYS.approvalRequired), true),
       ...backgroundState,
       emailRelay: {
         source: "yml",
@@ -169,14 +149,12 @@ export async function loadWorkflowSettings(options?: {
         username: fileRelayConfig.username,
         password: options?.includeSecrets ? fileRelayConfig.password : "",
         fromAddress: fileRelayConfig.fromAddress,
-        approvalRecipients: fileRelayConfig.approvalRecipients,
         hasPassword: fileRelayConfig.hasPassword
       }
     };
   }
 
   return {
-    approvalRequired: toBoolean(settingMap.get(WORKFLOW_SETTING_KEYS.approvalRequired), true),
     ...backgroundState,
     emailRelay: {
       source: "database",
@@ -189,7 +167,6 @@ export async function loadWorkflowSettings(options?: {
       username: settingMap.get(WORKFLOW_SETTING_KEYS.relayUsername)?.trim() || "",
       password: options?.includeSecrets ? password : "",
       fromAddress: settingMap.get(WORKFLOW_SETTING_KEYS.relayFrom)?.trim() || "",
-      approvalRecipients: splitRecipients(settingMap.get(WORKFLOW_SETTING_KEYS.relayApprovalTo)),
       hasPassword: password.length > 0
     }
   };
