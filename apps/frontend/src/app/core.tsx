@@ -10,7 +10,7 @@ import {
 import { Navigate, NavLink, useLocation, useNavigate } from "react-router-dom";
 
 export type AppRole = "admin" | "guard" | "sibe" | "kaskdt" | "custom";
-export type AppMenuKey = "voranmeldung" | "wache" | "import" | "admin" | "sibe" | "kaskdt" | "texte";
+export type AppMenuKey = "voranmeldung" | "wache" | "import" | "admin" | "sibe" | "laenderbenachrichtigungen" | "kaskdt" | "texte";
 export type AppPermission =
   | "visits.read"
   | "visits.create"
@@ -319,19 +319,19 @@ export type AuthContextValue = {
 };
 
 const defaultMenuAccessByRole: Record<User["role"], AppMenuKey[]> = {
-  admin: ["voranmeldung", "wache", "import", "admin", "sibe", "kaskdt", "texte"],
+  admin: ["voranmeldung", "wache", "import", "admin", "sibe", "laenderbenachrichtigungen", "kaskdt", "texte"],
   guard: ["voranmeldung", "wache", "import"],
-  sibe: ["sibe", "import"],
+  sibe: ["sibe", "import", "laenderbenachrichtigungen"],
   kaskdt: ["kaskdt", "texte"],
   custom: []
 };
 
 const allowedMenuAccessByRole: Record<User["role"], AppMenuKey[]> = {
-  admin: ["voranmeldung", "wache", "import", "admin", "sibe", "kaskdt", "texte"],
+  admin: ["voranmeldung", "wache", "import", "admin", "sibe", "laenderbenachrichtigungen", "kaskdt", "texte"],
   guard: ["voranmeldung", "wache", "import"],
-  sibe: ["sibe", "import"],
+  sibe: ["sibe", "import", "laenderbenachrichtigungen"],
   kaskdt: ["kaskdt", "texte"],
-  custom: ["voranmeldung", "wache", "import", "admin", "sibe", "kaskdt", "texte"]
+  custom: ["voranmeldung", "wache", "import", "admin", "sibe", "laenderbenachrichtigungen", "kaskdt", "texte"]
 };
 
 function createEmptyPermissions(): UserPermissions {
@@ -1190,6 +1190,7 @@ export function AppLayout({ children }: PropsWithChildren) {
     { to: "/import", label: "Import", visible: Boolean(!user || (user && hasMenuAccess(user, "import") && hasPermission(user, "imports.execute"))) },
     { to: "/admin", label: "Admin", visible: Boolean(user && hasMenuAccess(user, "admin") && (hasPermission(user, "admin.users") || hasPermission(user, "admin.guards") || hasPermission(user, "admin.fields") || hasPermission(user, "admin.map") || hasPermission(user, "admin.system") || hasPermission(user, "logs.audit") || hasPermission(user, "logs.errors"))) },
     { to: "/sibe", label: "SiBe", visible: Boolean(user && hasMenuAccess(user, "sibe") && hasPermission(user, "dashboards.sibe")) },
+    { to: "/sibe/benachrichtigungen", label: "Länderbenachrichtigungen", visible: Boolean(user && hasMenuAccess(user, "laenderbenachrichtigungen") && hasPermission(user, "dashboards.sibe")) },
     { to: "/kaskdt", label: "KasKdt", visible: Boolean(user && hasMenuAccess(user, "kaskdt") && hasPermission(user, "dashboards.commander")) },
     { to: "/texte", label: "Texte", visible: Boolean(user && hasMenuAccess(user, "texte") && hasPermission(user, "texts.manage")) },
     { to: "/login", label: "Login", visible: !user }

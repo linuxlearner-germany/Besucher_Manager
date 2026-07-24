@@ -17,7 +17,7 @@ export type VisitStatus = (typeof VISIT_STATUS)[keyof typeof VISIT_STATUS] | "vo
 export type HostSignatureStatus = (typeof HOST_SIGNATURE_STATUS)[keyof typeof HOST_SIGNATURE_STATUS];
 
 export type AppRole = "admin" | "guard" | "sibe" | "kaskdt" | "custom";
-export const APP_MENU_KEYS = ["voranmeldung", "wache", "import", "admin", "sibe", "kaskdt", "texte"] as const;
+export const APP_MENU_KEYS = ["voranmeldung", "wache", "import", "admin", "sibe", "laenderbenachrichtigungen", "kaskdt", "texte"] as const;
 export type AppMenuKey = (typeof APP_MENU_KEYS)[number];
 
 export type UserPermissions = {
@@ -197,7 +197,7 @@ function mergePermissions(base: UserPermissions, override?: UserPermissionsInput
 const defaultMenuAccessByRole: Record<AppRole, AppMenuKey[]> = {
   admin: [...APP_MENU_KEYS],
   guard: ["voranmeldung", "wache", "import"],
-  sibe: ["sibe", "import"],
+  sibe: ["sibe", "import", "laenderbenachrichtigungen"],
   kaskdt: ["kaskdt", "texte"],
   custom: []
 };
@@ -205,7 +205,7 @@ const defaultMenuAccessByRole: Record<AppRole, AppMenuKey[]> = {
 const allowedMenuAccessByRole: Record<AppRole, AppMenuKey[]> = {
   admin: [...APP_MENU_KEYS],
   guard: ["voranmeldung", "wache", "import"],
-  sibe: ["import", "sibe"],
+  sibe: ["import", "sibe", "laenderbenachrichtigungen"],
   kaskdt: ["kaskdt", "texte"],
   custom: [...APP_MENU_KEYS]
 };

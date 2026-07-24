@@ -53,6 +53,7 @@ export function AdminPage() {
     { key: "import", label: "Import" },
     { key: "admin", label: "Admin" },
     { key: "sibe", label: "SiBe" },
+    { key: "laenderbenachrichtigungen", label: "Länderbenachrichtigungen" },
     { key: "kaskdt", label: "KasKdt" },
     { key: "texte", label: "Texte" }
   ];

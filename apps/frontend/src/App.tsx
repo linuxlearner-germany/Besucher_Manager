@@ -8,6 +8,7 @@ import { PrintViewPage } from "./pages/PrintViewPage";
 import { PublicPreRegistrationPage } from "./pages/PublicPreRegistrationPage";
 import { CommanderDashboardPage } from "./pages/CommanderDashboardPage";
 import { SibeDashboardPage } from "./pages/SibeDashboardPage";
+import { SibeNationalityNotificationsPage } from "./pages/SibeNationalityNotificationsPage";
 import { SibeUsersPage } from "./pages/SibeUsersPage";
 import { SibeVisitDetailPage } from "./pages/SibeVisitDetailPage";
 import { SibeVisitorsPage } from "./pages/SibeVisitorsPage";
@@ -64,6 +65,14 @@ function AppRoutes() {
         element={
           <RequireRoles allowedRoles={["admin", "sibe"]} requiredMenuKey="sibe" requiredPermissions={["dashboards.sibe"]} redirectTo="/" >
             <SibeDashboardPage />
+          </RequireRoles>
+        }
+      />
+      <Route
+        path="/sibe/benachrichtigungen"
+        element={
+          <RequireRoles allowedRoles={["admin", "sibe"]} requiredMenuKey="laenderbenachrichtigungen" requiredPermissions={["dashboards.sibe"]} redirectTo="/" >
+            <SibeNationalityNotificationsPage />
           </RequireRoles>
         }
       />
