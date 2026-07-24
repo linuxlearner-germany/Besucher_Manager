@@ -1,6 +1,5 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import crypto from "node:crypto";
 import multer, { MulterError } from "multer";
 import sql from "mssql";
 import { Router, type Request, type Response } from "express";
@@ -46,6 +45,7 @@ import {
   isBadgeTextSectionType,
   toBadgeTextResponseRecord
 } from "../lib/badgeTexts";
+import { getUiBackgroundById, listUiBackgrounds } from "../lib/uiBackgrounds";
 import {
   countUserReferences,
   getRequestIp,
@@ -223,6 +223,10 @@ const workflowSettingsUpdateSchema = z.object({
     fromAddress: z.string().trim().email("Ungueltige Absenderadresse.").optional().or(z.literal(""))
   })
 });
+const uiBackgroundSelectionSchema = z.object({
+  backgroundId: z.string().trim().regex(/^[a-z0-9][a-z0-9-]{0,79}$/, "Ungültige Hintergrund-ID."),
+  backgroundMode: z.enum(["image", "subtle", "plain"])
+});
 const mailRelayTestSchema = z.object({
   recipient: z.string().trim().email("Ungueltige Testadresse.").optional().or(z.literal("")),
   kind: z.enum(["relay", "nationality"]).optional()
@@ -281,68 +285,6 @@ const userCsvUpload = multer({
     files: 1
   }
 });
-
-const UI_BACKGROUND_UPLOAD_SUBDIRECTORY = "ui-backgrounds";
-
-function buildStoredUiBackgroundFileName(extension: string): string {
-  return `ui-background-${Date.now()}-${crypto.randomUUID()}${extension}`;
-}
-
-function buildUiBackgroundPublicPath(storedFileName: string): string {
-  return `/uploads/${UI_BACKGROUND_UPLOAD_SUBDIRECTORY}/${storedFileName}`;
-}
-
-async function ensureUiBackgroundUploadDirectory(): Promise<string> {
-  const uploadDirectory = path.join(env.uploadDir, UI_BACKGROUND_UPLOAD_SUBDIRECTORY);
-  await fs.mkdir(uploadDirectory, { recursive: true });
-  return uploadDirectory;
-}
-
-async function parseSingleUiBackgroundUpload(request: Request, response: Response): Promise<Express.Multer.File | null> {
-  return await new Promise((resolve) => {
-    siteMapUpload.array("file", 1)(request, response, (error) => {
-      if (!error) {
-        const files = request.files;
-        if (!Array.isArray(files) || files.length === 0) {
-          sendValidationError(response, { fieldErrors: { file: ["Bitte wählen Sie eine Bilddatei aus."] } });
-          return resolve(null);
-        }
-
-        if (files.length > 1) {
-          sendValidationError(response, { fieldErrors: { file: ["Bitte nur eine Bilddatei hochladen."] } });
-          return resolve(null);
-        }
-
-        return resolve(files[0]);
-      }
-
-      if (error instanceof MulterError) {
-        if (error.code === "LIMIT_FILE_SIZE") {
-          sendError(response, 400, "FILE_TOO_LARGE", "Die Bilddatei ist größer als 10 MB.");
-          return resolve(null);
-        }
-
-        if (error.code === "LIMIT_FILE_COUNT" || error.code === "LIMIT_UNEXPECTED_FILE") {
-          sendValidationError(response, { fieldErrors: { file: ["Bitte nur eine Bilddatei hochladen."] } });
-          return resolve(null);
-        }
-      }
-
-      if (error instanceof Error && error.message === "invalid_site_map_file") {
-        sendValidationError(response, {
-          fieldErrors: {
-            file: ["Erlaubt sind nur PNG-, JPG- und WEBP-Dateien."]
-          }
-        });
-        return resolve(null);
-      }
-
-      console.error(error);
-      sendError(response, 500, "UPLOAD_ERROR", "Die Bilddatei konnte nicht verarbeitet werden.");
-      return resolve(null);
-    });
-  });
-}
 
 type UserImportIssue = {
   lineNumber: number;
@@ -1906,8 +1848,82 @@ adminRouter.post("/api/admin/ui-background/upload", async (request, response) =>
     response,
     410,
     "BACKGROUND_UPLOAD_DISABLED",
-    "Der Upload ist deaktiviert. Bitte legen Sie die Bilddatei direkt im Ordner /app/uploads/ui-backgrounds ab und starten Sie die App neu."
+    "Der Upload ist deaktiviert. Hintergründe werden kontrolliert über den Projektkatalog bereitgestellt."
   );
+});
+
+adminRouter.get("/api/admin/ui-backgrounds", async (request, response) => {
+  const user = await requirePermission(request, response, "admin.system");
+  if (!user) return;
+
+  try {
+    const [backgrounds, settings] = await Promise.all([
+      listUiBackgrounds(),
+      loadWorkflowSettings()
+    ]);
+
+    return response.json({
+      backgrounds: backgrounds.map((background) => ({
+        ...background,
+        isActive: background.id === settings.backgroundId
+      })),
+      activeBackgroundId: settings.backgroundId,
+      backgroundMode: settings.backgroundMode
+    });
+  } catch (error) {
+    return handleUnexpectedError(response, error, "BACKGROUND_CATALOG_ERROR", "Der Hintergrundkatalog konnte nicht geladen werden.");
+  }
+});
+
+adminRouter.put("/api/admin/ui-backgrounds/active", async (request, response) => {
+  const user = await requirePermission(request, response, "admin.system");
+  if (!user) return;
+
+  const parsed = uiBackgroundSelectionSchema.safeParse(request.body ?? {});
+  if (!parsed.success) {
+    return sendValidationError(response, parsed.error.flatten());
+  }
+
+  try {
+    const background = await getUiBackgroundById(parsed.data.backgroundId);
+    if (!background) {
+      return sendError(response, 400, "UNKNOWN_BACKGROUND", "Der ausgewählte Hintergrund ist nicht im Katalog vorhanden.");
+    }
+
+    await upsertSystemSettings({
+      [WORKFLOW_SETTING_KEYS.uiBackgroundMode]: parsed.data.backgroundMode,
+      [WORKFLOW_SETTING_KEYS.uiBackgroundId]: background.id,
+      [WORKFLOW_SETTING_KEYS.uiBackgroundImageUrl]: background.imageUrl,
+      [WORKFLOW_SETTING_KEYS.uiBackgroundImageName]: background.name,
+      [WORKFLOW_SETTING_KEYS.uiBackgroundImageOriginalFileName]: background.fileName
+    });
+
+    await writeAuditLog({
+      user: user.username,
+      userId: user.id,
+      action: "ADMIN_UI_BACKGROUND_SELECTED",
+      objectType: "ui_background",
+      objectId: background.id,
+      ipAddress: getRequestIp(request),
+      userAgent: getRequestUserAgent(request),
+      metadata: {
+        background_id: background.id,
+        file_name: background.fileName,
+        background_mode: parsed.data.backgroundMode
+      }
+    });
+
+    return response.json({
+      success: true,
+      backgroundId: background.id,
+      backgroundMode: parsed.data.backgroundMode,
+      backgroundImageUrl: background.imageUrl,
+      backgroundImageName: background.name,
+      backgroundImageOriginalFileName: background.fileName
+    });
+  } catch (error) {
+    return handleUnexpectedError(response, error, "BACKGROUND_SELECTION_ERROR", "Der Hintergrund konnte nicht gespeichert werden.");
+  }
 });
 
 adminRouter.get("/api/admin/site-map/active", async (request, response) => {
@@ -2198,6 +2214,7 @@ adminRouter.get("/api/admin/system-settings/workflow-email", async (request, res
     const settings = await loadWorkflowSettings();
     return response.json({
       backgroundMode: settings.backgroundMode,
+      backgroundId: settings.backgroundId,
       backgroundImageUrl: settings.backgroundImageUrl,
       backgroundImageName: settings.backgroundImageName,
       backgroundImageOriginalFileName: settings.backgroundImageOriginalFileName,
@@ -2233,14 +2250,6 @@ adminRouter.put("/api/admin/system-settings/workflow-email", async (request, res
     const settingsToPersist: Record<string, string> = {
       [WORKFLOW_SETTING_KEYS.uiBackgroundMode]: parsed.data.backgroundMode
     };
-
-    if (parsed.data.backgroundMode === "plain") {
-      Object.assign(settingsToPersist, {
-        [WORKFLOW_SETTING_KEYS.uiBackgroundImageUrl]: "",
-        [WORKFLOW_SETTING_KEYS.uiBackgroundImageName]: "",
-        [WORKFLOW_SETTING_KEYS.uiBackgroundImageOriginalFileName]: ""
-      });
-    }
 
     if (currentSettings.emailRelay.source !== "yml") {
       const nextPassword = parsed.data.emailRelay.password?.trim()

@@ -94,7 +94,7 @@ Solange das SQL-Volume und das eingebundene Hostverzeichnis `uploads/` erhalten 
 - SQL-Datenbank im Volume `sqlserver_data`
 - Uploads unter `./uploads`
 - Gelaendeplaene unter `./uploads/site-maps`
-- Hintergruende unter `./uploads/ui-backgrounds`
+- Hintergrundkatalog unter `./uploads/ui-backgrounds` einschließlich `backgrounds.json`, `catalog/` und `previews/`
 - importierte Dateien in persistenten Speicherbereichen
 
 Das Uploadverzeichnis vor dem Update separat sichern:
@@ -112,6 +112,14 @@ tar -czf "archive/backups/uploads_$(date +%Y%m%d_%H%M%S).tar.gz" -C uploads .
 cd /opt/Besucher_Manager
 docker compose ps
 docker compose logs --tail=100 app
+```
+
+Den mitgelieferten Hintergrundkatalog nach dem Pull prüfen:
+
+```bash
+test -r uploads/ui-backgrounds/backgrounds.json
+test -d uploads/ui-backgrounds/catalog
+test -d uploads/ui-backgrounds/previews
 ```
 
 ### Health-Check

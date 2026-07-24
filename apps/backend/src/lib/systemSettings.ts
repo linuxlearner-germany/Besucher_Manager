@@ -1,9 +1,7 @@
-import fs from "node:fs/promises";
-import path from "node:path";
 import sql from "mssql";
 import { getPool } from "./db";
 import { loadMailRelayFileConfig } from "./mailRelayFileConfig";
-import { env } from "../config/env";
+import { listUiBackgrounds, selectConfiguredUiBackground } from "./uiBackgrounds";
 
 export const WORKFLOW_SETTING_KEYS = {
   relayEnabled: "mail_relay_enabled",
@@ -14,6 +12,7 @@ export const WORKFLOW_SETTING_KEYS = {
   relayPassword: "mail_relay_password",
   relayFrom: "mail_relay_from",
   uiBackgroundMode: "ui_background_mode",
+  uiBackgroundId: "ui_background_id",
   uiBackgroundImageUrl: "ui_background_image_url",
   uiBackgroundImageName: "ui_background_image_name",
   uiBackgroundImageOriginalFileName: "ui_background_image_original_file_name"
@@ -21,6 +20,7 @@ export const WORKFLOW_SETTING_KEYS = {
 
 export type WorkflowSettings = {
   backgroundMode: "image" | "subtle" | "plain";
+  backgroundId: string | null;
   backgroundImageUrl: string;
   backgroundImageName: string | null;
   backgroundImageOriginalFileName: string | null;
@@ -75,71 +75,35 @@ function toBackgroundMode(value: string | null | undefined, fallback: "image" | 
   return fallback;
 }
 
-const uiBackgroundDirectory = path.join(env.uploadDir, "ui-backgrounds");
-const allowedBackgroundExtensions = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".svg"]);
-
-async function loadLatestBackgroundImageFromFolder(): Promise<{
-  url: string;
-  fileName: string;
-} | null> {
-  try {
-    const entries = await fs.readdir(uiBackgroundDirectory, { withFileTypes: true });
-    const candidates = await Promise.all(entries
-      .filter((entry) => entry.isFile() && allowedBackgroundExtensions.has(path.extname(entry.name).toLowerCase()))
-      .map(async (entry) => {
-        const absolutePath = path.join(uiBackgroundDirectory, entry.name);
-        const stats = await fs.stat(absolutePath);
-        return {
-          fileName: entry.name,
-          modifiedAt: stats.mtimeMs
-        };
-      }));
-
-    if (candidates.length === 0) {
-      return null;
-    }
-
-    candidates.sort((left, right) => right.modifiedAt - left.modifiedAt || right.fileName.localeCompare(left.fileName, "de"));
-    const selected = candidates[0];
-
-    return {
-      url: `/uploads/ui-backgrounds/${selected.fileName}`,
-      fileName: selected.fileName
-    };
-  } catch {
-    return null;
-  }
-}
-
-async function loadBackgroundState(settingMap: Map<string, string>): Promise<Pick<WorkflowSettings, "backgroundMode" | "backgroundImageUrl" | "backgroundImageName" | "backgroundImageOriginalFileName">> {
+async function loadBackgroundState(settingMap: Map<string, string>): Promise<Pick<WorkflowSettings, "backgroundMode" | "backgroundId" | "backgroundImageUrl" | "backgroundImageName" | "backgroundImageOriginalFileName">> {
   const storedMode = toBackgroundMode(settingMap.get(WORKFLOW_SETTING_KEYS.uiBackgroundMode), "plain");
+  const backgroundId = settingMap.get(WORKFLOW_SETTING_KEYS.uiBackgroundId)?.trim() || "";
   const imageUrl = settingMap.get(WORKFLOW_SETTING_KEYS.uiBackgroundImageUrl)?.trim() || "";
   const imageName = settingMap.get(WORKFLOW_SETTING_KEYS.uiBackgroundImageName)?.trim() || "";
   const originalFileName = settingMap.get(WORKFLOW_SETTING_KEYS.uiBackgroundImageOriginalFileName)?.trim() || "";
   const isLegacyDefaultBackground = imageUrl === "/branding/background.png";
-  const folderBackground = await loadLatestBackgroundImageFromFolder();
+  const backgrounds = await listUiBackgrounds().catch(() => []);
+  const selectedBackground = selectConfiguredUiBackground(
+    backgrounds,
+    backgroundId,
+    imageUrl,
+    originalFileName || imageName
+  );
 
-  if (storedMode === "plain") {
-    return {
-      backgroundMode: "plain",
-      backgroundImageUrl: "",
-      backgroundImageName: null,
-      backgroundImageOriginalFileName: null
-    };
-  }
-
-  if (folderBackground) {
+  if (selectedBackground) {
     return {
       backgroundMode: storedMode,
-      backgroundImageUrl: folderBackground.url,
-      backgroundImageName: folderBackground.fileName,
-      backgroundImageOriginalFileName: folderBackground.fileName
+      backgroundId: selectedBackground.id,
+      backgroundImageUrl: selectedBackground.imageUrl,
+      backgroundImageName: selectedBackground.name,
+      backgroundImageOriginalFileName: selectedBackground.fileName
     };
   }
 
   if (!imageUrl || isLegacyDefaultBackground) {
     return {
       backgroundMode: "plain",
+      backgroundId: null,
       backgroundImageUrl: "",
       backgroundImageName: null,
       backgroundImageOriginalFileName: null
@@ -148,6 +112,7 @@ async function loadBackgroundState(settingMap: Map<string, string>): Promise<Pic
 
   return {
     backgroundMode: storedMode,
+    backgroundId: backgroundId || null,
     backgroundImageUrl: imageUrl,
     backgroundImageName: imageName || null,
     backgroundImageOriginalFileName: originalFileName || null

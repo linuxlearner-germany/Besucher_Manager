@@ -18,6 +18,7 @@ Die Anwendung bildet den vollständigen Ablauf vom Erfassen eines Besuchs über 
 - [E-Mail und Länderbenachrichtigungen](#e-mail-und-länderbenachrichtigungen)
 - [Import und Export](#import-und-export)
 - [Feldkonfiguration](#feldkonfiguration)
+- [Hintergrundkatalog](#hintergrundkatalog)
 - [Besucherschein und Druck](#besucherschein-und-druck)
 - [Wichtige Routen und APIs](#wichtige-routen-und-apis)
 - [Tests und Qualitätssicherung](#tests-und-qualitätssicherung)
@@ -80,7 +81,8 @@ Die Anwendung bildet den vollständigen Ablauf vom Erfassen eines Besuchs über 
 - Benutzerimport per CSV
 - Benutzerexport per CSV ohne Passwörter oder Passwort-Hashes
 - Systemfeld- und Pflichtfeldkonfiguration
-- Geländeplan- und Hintergrunddateien aus den Projektordnern `uploads/site-maps` und `uploads/ui-backgrounds`
+- Geländepläne aus `uploads/site-maps`
+- Auswahl aus 17 versionierten Hintergrundbildern mit Vorschaubildern
 - SMTP-Konfiguration und Testmails
 - Audit- und Fehlerlog
 - Systemstatus
@@ -335,6 +337,29 @@ Ein Pflichtschalter aktiviert automatisch die zugehörige Sichtbarkeit. Versteck
 
 Die Feldkonfiguration kann als versioniertes JSON exportiert und wieder importiert werden. Beim Import werden nur bekannte Systemfeldschlüssel aktualisiert; unbekannte Schlüssel werden übersprungen.
 
+## Hintergrundkatalog
+
+Admins wählen den Anwendungshintergrund im Admincenter unter **Hintergrund** aus. Der Katalog enthält 17 vorbereitete Bilder einschließlich des bisherigen Standardbilds. Die Galerie zeigt zu jedem Eintrag eine schnelle WebP-Vorschau, den Namen, die Auflösung und die Dateigröße.
+
+Zusätzlich stehen drei Darstellungsmodi zur Verfügung:
+
+- **Bild voll anzeigen**
+- **Bild dezent abdunkeln**
+- **Kein Hintergrundbild**
+
+Bildauswahl und Darstellungsmodus werden gemeinsam in den Systemeinstellungen gespeichert und im Auditlog als `ADMIN_UI_BACKGROUND_SELECTED` dokumentiert. Die Auswahl gilt anwendungsweit und wird ohne Neustart wirksam.
+
+Die versionierten Dateien liegen unter:
+
+```text
+uploads/ui-backgrounds/
+├── backgrounds.json   # erlaubte IDs, Namen, Dateinamen und Abmessungen
+├── catalog/           # Originalbilder
+└── previews/          # verkleinerte WebP-Vorschaubilder
+```
+
+Der Server akzeptiert ausschließlich IDs aus `backgrounds.json`. Unsichere Dateinamen, doppelte IDs und nicht katalogisierte Bilder werden nicht auswählbar. Neue Hintergründe werden kontrolliert zusammen mit Manifest und Vorschaubild als Codeänderung ausgeliefert; ein freier Upload über die Adminoberfläche ist bewusst deaktiviert.
+
 ## Besucherschein und Druck
 
 Die Druckansicht befindet sich unter `/wache/besuche/:id/druck`.
@@ -389,6 +414,8 @@ Die letzte Formatwahl wird im Browser gespeichert. Das gewählte Format wird im 
 | `POST /api/guard/visits/:id/print-log` | Druckaudit mit Papierformat |
 | `GET /api/admin/users/export.csv` | Benutzerexport |
 | `GET /api/admin/users/import-template.csv` | Benutzerimportvorlage |
+| `GET /api/admin/ui-backgrounds` | Hintergrundkatalog und aktive Auswahl |
+| `PUT /api/admin/ui-backgrounds/active` | Hintergrund und Darstellung speichern |
 
 ## Tests und Qualitätssicherung
 

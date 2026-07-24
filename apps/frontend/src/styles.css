@@ -2169,6 +2169,62 @@ input[type="checkbox"] {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 16px;
+  margin-top: 18px;
+}
+
+.background-catalog-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.background-catalog-card {
+  display: grid;
+  overflow: hidden;
+  padding: 0;
+  color: var(--text-primary);
+  text-align: left;
+  border: 2px solid transparent;
+  border-radius: 12px;
+  background: var(--surface-subtle);
+  box-shadow: 0 0 0 1px var(--panel-border);
+}
+
+.background-catalog-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  transform: translateY(-1px);
+}
+
+.background-catalog-card.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.background-catalog-card img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.background-catalog-content {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+}
+
+.background-catalog-content > span {
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+}
+
+.background-active-badge {
+  justify-self: start;
+  padding: 3px 8px;
+  color: var(--accent-strong) !important;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
 .admin-site-map-preview {

@@ -546,6 +546,7 @@ export type SibeVisitRow = {
 
 export type AdminWorkflowSettings = {
   backgroundMode: "image" | "subtle" | "plain";
+  backgroundId: string | null;
   backgroundImageUrl: string;
   backgroundImageName: string | null;
   backgroundImageOriginalFileName: string | null;
@@ -561,6 +562,19 @@ export type AdminWorkflowSettings = {
     fromAddress: string;
     hasPassword: boolean;
   };
+};
+
+export type AdminUiBackground = {
+  id: string;
+  name: string;
+  fileName: string;
+  previewFileName: string;
+  imageUrl: string;
+  previewUrl: string;
+  width: number;
+  height: number;
+  fileSizeBytes: number;
+  isActive: boolean;
 };
 
 export type SibeVisitorRow = {

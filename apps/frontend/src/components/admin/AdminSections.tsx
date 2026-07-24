@@ -5,6 +5,7 @@ import {
   type AdminErrorLog,
   type AdminFieldDefinition,
   type AdminGate,
+  type AdminUiBackground,
   type AdminWorkflowSettings,
   type AdminUser,
   type AppPermission,
@@ -706,17 +707,37 @@ export function AdminSiteMapSection({
 export function AdminBackgroundSection({
   workflowSettings,
   setWorkflowSettings,
-  saveWorkflowSettings
+  backgrounds,
+  saving,
+  saveBackgroundSettings
 }: {
   workflowSettings: AdminWorkflowSettings | null;
   setWorkflowSettings: Dispatch<SetStateAction<AdminWorkflowSettings | null>>;
-  saveWorkflowSettings: () => Promise<void>;
+  backgrounds: AdminUiBackground[];
+  saving: boolean;
+  saveBackgroundSettings: () => Promise<void>;
 }) {
+  const selectedBackground = backgrounds.find((background) => background.id === workflowSettings?.backgroundId)
+    ?? backgrounds.find((background) => background.isActive)
+    ?? backgrounds[0]
+    ?? null;
+
+  function selectBackground(background: AdminUiBackground) {
+    setWorkflowSettings((current) => current ? {
+      ...current,
+      backgroundId: background.id,
+      backgroundImageUrl: background.imageUrl,
+      backgroundImageName: background.name,
+      backgroundImageOriginalFileName: background.fileName
+    } : current);
+  }
+
   return (
     <Card className="admin-section-stack">
       <div className="section-header">
         <div>
           <h3>Hintergrundbild</h3>
+          <p>Wählen Sie ein vorbereitetes Hintergrundbild und die gewünschte Darstellung aus.</p>
         </div>
       </div>
 
@@ -736,41 +757,73 @@ export function AdminBackgroundSection({
             </select>
           </FormField>
           <div className="meta-list">
-            <span><strong>Aktiver Name:</strong> {workflowSettings?.backgroundImageName || "Kein Hintergrundbild aktiv"}</span>
-            <span><strong>Datei:</strong> {workflowSettings?.backgroundImageOriginalFileName || "Keine Datei hinterlegt"}</span>
-            <span><strong>Ordner im Container:</strong> /app/uploads/ui-backgrounds</span>
-            <span><strong>Ordner im Projekt:</strong> ./uploads/ui-backgrounds</span>
+            <span><strong>Auswahl:</strong> {selectedBackground?.name || "Kein Hintergrund verfügbar"}</span>
+            <span><strong>Datei:</strong> {selectedBackground?.fileName || "Keine Datei hinterlegt"}</span>
+            {selectedBackground ? (
+              <span><strong>Auflösung:</strong> {selectedBackground.width} × {selectedBackground.height} Pixel</span>
+            ) : null}
           </div>
         </div>
         <div className="row-actions action-bar">
-          <button type="button" onClick={() => void saveWorkflowSettings()}>Darstellung speichern</button>
+          <button
+            type="button"
+            disabled={!selectedBackground || saving}
+            onClick={() => void saveBackgroundSettings()}
+          >
+            {saving ? "Wird gespeichert …" : "Auswahl speichern"}
+          </button>
         </div>
       </div>
 
       <div className="panel admin-user-card">
         <div className="table-section-header">
           <div>
-            <h4>Hintergrundbild aus Ordner verwenden</h4>
+            <h4>Verfügbare Hintergründe</h4>
+            <p>{backgrounds.length} Bilder stehen zur Auswahl.</p>
           </div>
         </div>
-        <div className="empty-state-box">
-          <strong>Kein Upload in der Oberfläche</strong>
-          <span>Bilddatei direkt im Hintergrund-Ordner ablegen. Beim nächsten Neustart oder Neubuild wird automatisch die zuletzt geänderte Bilddatei verwendet.</span>
-        </div>
+
+        {backgrounds.length ? (
+          <div className="background-catalog-grid">
+            {backgrounds.map((background) => {
+              const isSelected = background.id === selectedBackground?.id;
+              return (
+                <button
+                  key={background.id}
+                  type="button"
+                  className={`background-catalog-card${isSelected ? " selected" : ""}`}
+                  aria-pressed={isSelected}
+                  onClick={() => selectBackground(background)}
+                >
+                  <img src={background.previewUrl} alt="" loading="lazy" />
+                  <span className="background-catalog-content">
+                    <strong>{background.name}</strong>
+                    <span>{background.width} × {background.height} · {formatFileSize(background.fileSizeBytes)}</span>
+                    {background.isActive ? <span className="background-active-badge">Aktiv gespeichert</span> : null}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="empty-state-box">
+            <strong>Keine Hintergründe verfügbar</strong>
+            <span>Der Hintergrundkatalog konnte keine verwendbaren Bilddateien laden.</span>
+          </div>
+        )}
+
         <div className="background-preview-grid">
           <div className="site-map-preview-card">
-            {workflowSettings?.backgroundImageUrl ? (
-              <img
-                className="admin-site-map-preview"
-                src={workflowSettings.backgroundImageUrl}
-                alt={workflowSettings?.backgroundImageName || "Aktiver Hintergrund"}
-              />
-            ) : (
-              <div className="empty-state-box">
-                <strong>Kein Hintergrundbild aktiv</strong>
-                <span>Die Anwendung nutzt aktuell nur die ruhige Standardfläche ohne Bild.</span>
-              </div>
-            )}
+            {selectedBackground ? (
+              <>
+                <strong>Vorschau: {selectedBackground.name}</strong>
+                <img
+                  className="admin-site-map-preview"
+                  src={selectedBackground.imageUrl}
+                  alt={`Vorschau des Hintergrunds ${selectedBackground.name}`}
+                />
+              </>
+            ) : null}
           </div>
         </div>
       </div>

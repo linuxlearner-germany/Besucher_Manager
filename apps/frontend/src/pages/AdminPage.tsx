@@ -29,6 +29,7 @@ import {
   type AdminErrorLog,
   type AdminFieldDefinition,
   type AdminGate,
+  type AdminUiBackground,
   type AdminWorkflowSettings,
   type AdminUser,
   type ApiError,
@@ -110,6 +111,8 @@ export function AdminPage() {
     dbName?: string;
   } | null>(null);
   const [workflowSettings, setWorkflowSettings] = useState<AdminWorkflowSettings | null>(null);
+  const [uiBackgrounds, setUiBackgrounds] = useState<AdminUiBackground[]>([]);
+  const [uiBackgroundSaving, setUiBackgroundSaving] = useState(false);
   const [workflowPassword, setWorkflowPassword] = useState("");
   const [workflowTestRecipient, setWorkflowTestRecipient] = useState("");
   const [workflowTestKind, setWorkflowTestKind] = useState<"relay" | "nationality">("relay");
@@ -211,12 +214,13 @@ export function AdminPage() {
   const loadAll = useCallback(async () => {
     setError(null);
     try {
-      const [gatePayload, userPayload, textPayload, statusPayload, workflowPayload, siteMapPayload, siteMapsPayload, fieldDefinitionsPayload] = await Promise.all([
+      const [gatePayload, userPayload, textPayload, statusPayload, workflowPayload, backgroundPayload, siteMapPayload, siteMapsPayload, fieldDefinitionsPayload] = await Promise.all([
         fetchJson<{ gates: AdminGate[] }>("/api/admin/gates", { method: "GET", headers: {} }),
         fetchJson<{ users: AdminUser[] }>("/api/admin/users", { method: "GET", headers: {} }),
         fetchJson<{ texts: AdminBadgeText[] }>("/api/texts", { method: "GET", headers: {} }),
         fetchJson<{ app: string; activeVisits: number; activeGates: number; openPreRegistrationsToday: number; signaturesPending: number; signaturesFollowUp: number; signaturesExceptions: number; dbHost?: string; dbName?: string }>("/api/admin/system-status", { method: "GET", headers: {} }),
         fetchJson<AdminWorkflowSettings>("/api/admin/system-settings/workflow-email", { method: "GET", headers: {} }),
+        fetchJson<{ backgrounds: AdminUiBackground[] }>("/api/admin/ui-backgrounds", { method: "GET", headers: {} }),
         fetchJson<{ siteMap: SiteMapSummary }>("/api/admin/site-map", { method: "GET", headers: {} }),
         fetchJson<{ siteMaps: NonNullable<SiteMapSummary>[] }>("/api/admin/site-maps", { method: "GET", headers: {} }),
         fetchJson<{ definitions: AdminFieldDefinition[] }>("/api/admin/field-definitions", { method: "GET", headers: {} })
@@ -227,6 +231,7 @@ export function AdminPage() {
       setTexts(textPayload.texts);
       setSystemStatus(statusPayload);
       setWorkflowSettings(workflowPayload);
+      setUiBackgrounds(backgroundPayload.backgrounds);
       setBackgroundMode(workflowPayload.backgroundMode);
       setBackgroundImageUrl(workflowPayload.backgroundImageUrl);
       setWorkflowPassword("");
@@ -933,6 +938,52 @@ export function AdminPage() {
     }
   }
 
+  async function saveUiBackgroundSettings() {
+    if (!workflowSettings?.backgroundId) {
+      setError("Bitte wählen Sie zuerst einen Hintergrund aus.");
+      return;
+    }
+
+    setUiBackgroundSaving(true);
+    try {
+      const payload = await fetchJson<{
+        backgroundId: string;
+        backgroundMode: "image" | "subtle" | "plain";
+        backgroundImageUrl: string;
+        backgroundImageName: string;
+        backgroundImageOriginalFileName: string;
+      }>("/api/admin/ui-backgrounds/active", {
+        method: "PUT",
+        body: JSON.stringify({
+          backgroundId: workflowSettings.backgroundId,
+          backgroundMode: workflowSettings.backgroundMode
+        })
+      });
+
+      setWorkflowSettings((current) => current ? {
+        ...current,
+        backgroundId: payload.backgroundId,
+        backgroundMode: payload.backgroundMode,
+        backgroundImageUrl: payload.backgroundImageUrl,
+        backgroundImageName: payload.backgroundImageName,
+        backgroundImageOriginalFileName: payload.backgroundImageOriginalFileName
+      } : current);
+      setUiBackgrounds((current) => current.map((background) => ({
+        ...background,
+        isActive: background.id === payload.backgroundId
+      })));
+      setBackgroundMode(payload.backgroundMode);
+      setBackgroundImageUrl(payload.backgroundImageUrl);
+      setMessage(`Hintergrund „${payload.backgroundImageName}“ gespeichert.`);
+      setError(null);
+    } catch (apiError) {
+      const payload = apiError as ApiError;
+      setError(payload.message || "Der Hintergrund konnte nicht gespeichert werden.");
+    } finally {
+      setUiBackgroundSaving(false);
+    }
+  }
+
   async function sendWorkflowTestMail() {
     try {
       const payload = await fetchJson<{ message: string }>("/api/admin/system-settings/workflow-email/test", {
@@ -1071,7 +1122,9 @@ export function AdminPage() {
           <AdminBackgroundSection
             workflowSettings={workflowSettings}
             setWorkflowSettings={setWorkflowSettings}
-            saveWorkflowSettings={saveWorkflowSettings}
+            backgrounds={uiBackgrounds}
+            saving={uiBackgroundSaving}
+            saveBackgroundSettings={saveUiBackgroundSettings}
           />
         ) : null}
 
