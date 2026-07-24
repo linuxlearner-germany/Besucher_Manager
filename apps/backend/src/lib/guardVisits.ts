@@ -21,6 +21,9 @@ import {
 const MISSING_IMPORT_VALUE = "[fehlt]";
 
 export type GuardWalkInVisitInput = {
+  clientRequestId?: string | null;
+  existingVisitorId?: string | null;
+  action?: "save" | "check_in" | "check_in_and_print";
   firstName: string;
   lastName: string;
   company: string;
@@ -44,7 +47,78 @@ export type GuardWalkInVisitInput = {
   idDocumentType: string;
   idDocumentValidUntil: string;
   idDocumentNumber: string;
+  devicePhotoApp?: boolean | null;
+  deviceFilmApp?: boolean | null;
+  deviceVideoCamera?: boolean | null;
+  deviceManufacturer?: string | null;
+  deviceSerialNumber?: string | null;
+  deviceAccessories?: string | null;
+  deviceDepositNote?: string | null;
 };
+
+export type GuardVisitorSearchQuery = {
+  query?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  company?: string | null;
+  birthDate?: string | null;
+  city?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  licensePlate?: string | null;
+  badgeNumber?: string | null;
+  page?: number;
+  limit?: number;
+};
+
+export type GuardVisitorHistoryItem = {
+  visitId: string;
+  validFrom: string;
+  validUntil: string;
+  hostName: string;
+  hostDepartment: string | null;
+  purpose: string;
+  checkInAt: string | null;
+  checkOutAt: string | null;
+  status: string;
+  gateName: string | null;
+};
+
+export type GuardVisitorSearchResult = {
+  visitorId: string;
+  firstName: string;
+  lastName: string;
+  company: string;
+  nationalityCode: string | null;
+  nationalityName?: string | null;
+  birthDate: string | null;
+  phone: string | null;
+  email: string | null;
+  visitorStreet: string | null;
+  visitorHouseNumber: string | null;
+  visitorPostalCode: string | null;
+  visitorCity: string | null;
+  idDocumentType: string | null;
+  idDocumentValidUntil: string | null;
+  idDocumentNumber: string | null;
+  lastLicensePlate: string | null;
+  visitCount: number;
+  lastVisitAt: string | null;
+  lastVisitStatus: string | null;
+  lastHostName: string | null;
+  lastHostDepartment: string | null;
+  lastPurpose: string | null;
+  devicePhotoApp: boolean | null;
+  deviceFilmApp: boolean | null;
+  deviceVideoCamera: boolean | null;
+  deviceManufacturer: string | null;
+  deviceSerialNumber: string | null;
+  deviceAccessories: string | null;
+  deviceDepositNote: string | null;
+  history: GuardVisitorHistoryItem[];
+};
+
+export const GUARD_VISITOR_SEARCH_MIN_LENGTH = 2;
 
 export type GuardVisitListItem = {
   id: string;
@@ -112,7 +186,7 @@ export type VisitDetail = GuardVisitListItem & {
   notes: string | null;
   badgeNumber: string | null;
   siteMap: { id: string; name: string; filePath: string } | null;
-  badgeTexts: Array<{ id: string; name: string; textType: string; content: string }>;
+  badgeTexts: Array<{ id: string; name: string; textType: string; sectionType: string; customHeading: string | null; content: string; sortOrder: number }>;
   completeness: VisitCompleteness;
 };
 
@@ -171,6 +245,17 @@ const normalizedStatusSql = `
   END
 `;
 
+function normalizedStatusForAlias(alias: string): string {
+  return `
+    CASE
+      WHEN ${alias}.status = 'vorangemeldet' THEN '${VISIT_STATUS.PRE_REGISTERED}'
+      WHEN ${alias}.status = 'eingecheckt' THEN '${VISIT_STATUS.CHECKED_IN}'
+      WHEN ${alias}.status = 'ausgecheckt' THEN '${VISIT_STATUS.CHECKED_OUT}'
+      ELSE ${alias}.status
+    END
+  `;
+}
+
 function buildTodayQuery(status?: string, search?: string, signatureStatus?: string) {
   const predicates = [
     `(
@@ -221,6 +306,35 @@ function cleanOptional(value: string | null | undefined): string | null {
   }
   const normalized = value.trim();
   return normalized.length > 0 ? normalized : null;
+}
+
+function sanitizeSearchText(value: string | null | undefined): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+export function canUseGuardVisitorSearch(user: Pick<AuthenticatedUser, "role" | "permissions">): boolean {
+  return (user.role === "guard" || user.role === "admin")
+    && Boolean(user.permissions?.visits?.create);
+}
+
+export function hasGuardVisitorSearchCriteria(input: GuardVisitorSearchQuery): boolean {
+  const textFields = [
+    input.query,
+    input.firstName,
+    input.lastName,
+    input.company,
+    input.city,
+    input.phone,
+    input.email,
+    input.licensePlate,
+    input.badgeNumber
+  ].map(sanitizeSearchText);
+
+  if (textFields.some((value) => value.length >= GUARD_VISITOR_SEARCH_MIN_LENGTH)) {
+    return true;
+  }
+
+  return sanitizeSearchText(input.birthDate).length === 10;
 }
 
 function normalizeDateOnlyStart(value: string): Date {
@@ -779,15 +893,18 @@ export async function getVisitDetailForUser(user: AuthenticatedUser, visitId: st
     ORDER BY created_at DESC
   `);
 
-  const badgeTextsResult = await pool.request().query<{ id: string; name: string; textType: string; content: string }>(`
+  const badgeTextsResult = await pool.request().query<{ id: string; name: string; textType: string; sectionType: string; customHeading: string | null; content: string; sortOrder: number }>(`
     SELECT
       id,
       name,
       text_type AS textType,
-      content
+      text_type AS sectionType,
+      custom_heading AS customHeading,
+      content,
+      sort_order AS sortOrder
     FROM dbo.badge_text_templates
     WHERE is_active = 1
-    ORDER BY text_type ASC, name ASC
+    ORDER BY sort_order ASC, updated_at ASC, name ASC
   `);
 
   return {
@@ -796,6 +913,288 @@ export async function getVisitDetailForUser(user: AuthenticatedUser, visitId: st
     siteMap: siteMapResult.recordset[0] ?? null,
     badgeTexts: badgeTextsResult.recordset,
     completeness: await getConfiguredVisitCompleteness(visit)
+  };
+}
+
+export async function searchVisitorsForGuard(
+  user: AuthenticatedUser,
+  input: GuardVisitorSearchQuery
+): Promise<{ visitors: GuardVisitorSearchResult[]; page: number; limit: number }> {
+  if (!canUseGuardVisitorSearch(user)) {
+    throw new Error("guard_visitor_search_forbidden");
+  }
+
+  if (!hasGuardVisitorSearchCriteria(input)) {
+    return { visitors: [], page: 1, limit: Math.min(Math.max(input.limit ?? 8, 1), 20) };
+  }
+
+  const page = Math.max(input.page ?? 1, 1);
+  const limit = Math.min(Math.max(input.limit ?? 8, 1), 20);
+  const offset = (page - 1) * limit;
+  const request = (await getPool()).request()
+    .input("offset", sql.Int, offset)
+    .input("limit", sql.Int, limit);
+  const conditions = ["ISNULL(vis.is_deleted, 0) = 0"];
+
+  const firstName = sanitizeSearchText(input.firstName);
+  const query = sanitizeSearchText(input.query);
+  if (query.length >= GUARD_VISITOR_SEARCH_MIN_LENGTH) {
+    request.input("query", sql.NVarChar(255), `%${query}%`);
+    conditions.push(`(
+      vis.first_name LIKE @query
+      OR vis.last_name LIKE @query
+      OR vis.company LIKE @query
+      OR ISNULL(vis.visitor_city, '') LIKE @query
+      OR ISNULL(vis.phone_optional, '') LIKE @query
+      OR ISNULL(vis.email_optional, '') LIKE @query
+      OR EXISTS (
+        SELECT 1
+        FROM dbo.visits free_visit
+        WHERE free_visit.visitor_id = vis.id
+          AND (
+            UPPER(ISNULL(free_visit.license_plate, '')) LIKE UPPER(@query)
+            OR UPPER(ISNULL(free_visit.badge_number, '')) LIKE UPPER(@query)
+          )
+      )
+    )`);
+  }
+
+  if (firstName.length >= GUARD_VISITOR_SEARCH_MIN_LENGTH) {
+    request.input("firstName", sql.NVarChar(120), `%${firstName}%`);
+    conditions.push("vis.first_name LIKE @firstName");
+  }
+
+  const lastName = sanitizeSearchText(input.lastName);
+  if (lastName.length >= GUARD_VISITOR_SEARCH_MIN_LENGTH) {
+    request.input("lastName", sql.NVarChar(120), `%${lastName}%`);
+    conditions.push("vis.last_name LIKE @lastName");
+  }
+
+  const company = sanitizeSearchText(input.company);
+  if (company.length >= GUARD_VISITOR_SEARCH_MIN_LENGTH) {
+    request.input("company", sql.NVarChar(255), `%${company}%`);
+    conditions.push("vis.company LIKE @company");
+  }
+
+  const birthDate = sanitizeSearchText(input.birthDate);
+  if (birthDate.length === 10) {
+    request.input("birthDate", sql.Date, birthDate);
+    conditions.push("vis.birth_date = @birthDate");
+  }
+
+  const city = sanitizeSearchText(input.city);
+  if (city.length >= GUARD_VISITOR_SEARCH_MIN_LENGTH) {
+    request.input("city", sql.NVarChar(120), `%${city}%`);
+    conditions.push("ISNULL(vis.visitor_city, '') LIKE @city");
+  }
+
+  const phone = sanitizeSearchText(input.phone);
+  if (phone.length >= GUARD_VISITOR_SEARCH_MIN_LENGTH) {
+    request.input("phone", sql.NVarChar(80), `%${phone}%`);
+    conditions.push("ISNULL(vis.phone_optional, '') LIKE @phone");
+  }
+
+  const email = sanitizeSearchText(input.email);
+  if (email.length >= GUARD_VISITOR_SEARCH_MIN_LENGTH) {
+    request.input("email", sql.NVarChar(255), `%${email}%`);
+    conditions.push("ISNULL(vis.email_optional, '') LIKE @email");
+  }
+
+  const licensePlate = sanitizeSearchText(input.licensePlate).toUpperCase();
+  if (licensePlate.length >= GUARD_VISITOR_SEARCH_MIN_LENGTH) {
+    request.input("licensePlate", sql.NVarChar(40), `%${licensePlate}%`);
+    conditions.push(`
+      EXISTS (
+        SELECT 1
+        FROM dbo.visits plate_visit
+        WHERE plate_visit.visitor_id = vis.id
+          AND UPPER(ISNULL(plate_visit.license_plate, '')) LIKE @licensePlate
+      )
+    `);
+  }
+
+  const badgeNumber = sanitizeSearchText(input.badgeNumber).toUpperCase();
+  if (badgeNumber.length >= GUARD_VISITOR_SEARCH_MIN_LENGTH) {
+    request.input("badgeNumber", sql.NVarChar(64), `%${badgeNumber}%`);
+    conditions.push(`
+      EXISTS (
+        SELECT 1
+        FROM dbo.visits badge_visit
+        WHERE badge_visit.visitor_id = vis.id
+          AND UPPER(ISNULL(badge_visit.badge_number, '')) LIKE @badgeNumber
+      )
+    `);
+  }
+
+  const result = await request.query<GuardVisitorSearchResult & { historyJson: string | null }>(`
+    WITH matched_visitors AS (
+      SELECT
+        vis.id AS visitorId,
+        vis.first_name AS firstName,
+        vis.last_name AS lastName,
+        vis.company,
+        vis.nationality_code AS nationalityCode,
+        CONVERT(NVARCHAR(10), vis.birth_date, 23) AS birthDate,
+        vis.phone_optional AS phone,
+        vis.email_optional AS email,
+        vis.visitor_street AS visitorStreet,
+        vis.visitor_house_number AS visitorHouseNumber,
+        vis.visitor_postal_code AS visitorPostalCode,
+        vis.visitor_city AS visitorCity,
+        vis.id_document_type AS idDocumentType,
+        CONVERT(NVARCHAR(10), vis.id_document_valid_until, 23) AS idDocumentValidUntil,
+        vis.id_document_number AS idDocumentNumber,
+        latest_visit.license_plate AS lastLicensePlate,
+        COUNT(all_visits.id) AS visitCount,
+        CONVERT(NVARCHAR(30), latest_visit.valid_from, 127) AS lastVisitAt,
+        ${normalizedStatusForAlias("latest_visit")} AS lastVisitStatus,
+        latest_visit.host_name AS lastHostName,
+        latest_visit.host_department AS lastHostDepartment,
+        latest_visit.purpose AS lastPurpose,
+        latest_visit.device_photo_app AS devicePhotoApp,
+        latest_visit.device_film_app AS deviceFilmApp,
+        latest_visit.device_video_camera AS deviceVideoCamera,
+        latest_visit.device_manufacturer AS deviceManufacturer,
+        latest_visit.device_serial_number AS deviceSerialNumber,
+        latest_visit.device_accessories AS deviceAccessories,
+        latest_visit.device_deposit_note AS deviceDepositNote
+      FROM dbo.visitors vis
+      LEFT JOIN dbo.visits all_visits ON all_visits.visitor_id = vis.id
+      OUTER APPLY (
+        SELECT TOP 1
+          visit.id,
+          visit.status,
+          visit.valid_from,
+          visit.license_plate,
+          visit.host_name,
+          visit.host_department,
+          visit.purpose,
+          visit.device_photo_app,
+          visit.device_film_app,
+          visit.device_video_camera,
+          visit.device_manufacturer,
+          visit.device_serial_number,
+          visit.device_accessories,
+          visit.device_deposit_note
+        FROM dbo.visits visit
+        WHERE visit.visitor_id = vis.id
+        ORDER BY COALESCE(visit.check_in_at, visit.valid_from) DESC, visit.created_at DESC
+      ) latest_visit
+      WHERE ${conditions.join(" AND ")}
+      GROUP BY
+        vis.id,
+        vis.first_name,
+        vis.last_name,
+        vis.company,
+        vis.nationality_code,
+        vis.birth_date,
+        vis.phone_optional,
+        vis.email_optional,
+        vis.visitor_street,
+        vis.visitor_house_number,
+        vis.visitor_postal_code,
+        vis.visitor_city,
+        vis.id_document_type,
+        vis.id_document_valid_until,
+        vis.id_document_number,
+        latest_visit.status,
+        latest_visit.valid_from,
+        latest_visit.license_plate,
+        latest_visit.host_name,
+        latest_visit.host_department,
+        latest_visit.purpose,
+        latest_visit.device_photo_app,
+        latest_visit.device_film_app,
+        latest_visit.device_video_camera,
+        latest_visit.device_manufacturer,
+        latest_visit.device_serial_number,
+        latest_visit.device_accessories,
+        latest_visit.device_deposit_note
+    ),
+    paged_visitors AS (
+      SELECT *
+      FROM matched_visitors
+      ORDER BY lastVisitAt DESC, lastName ASC, firstName ASC
+      OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
+    ),
+    visitor_history AS (
+      SELECT
+        visit.visitor_id AS visitorId,
+        visit.id AS visitId,
+        CONVERT(NVARCHAR(30), visit.valid_from, 127) AS validFrom,
+        CONVERT(NVARCHAR(30), visit.valid_until, 127) AS validUntil,
+        visit.host_name AS hostName,
+        visit.host_department AS hostDepartment,
+        visit.purpose,
+        CONVERT(NVARCHAR(30), visit.check_in_at, 127) AS checkInAt,
+        CONVERT(NVARCHAR(30), visit.check_out_at, 127) AS checkOutAt,
+        ${normalizedStatusForAlias("visit")} AS status,
+        gate.name AS gateName,
+        ROW_NUMBER() OVER (PARTITION BY visit.visitor_id ORDER BY COALESCE(visit.check_in_at, visit.valid_from) DESC, visit.created_at DESC) AS rowNumber
+      FROM dbo.visits visit
+      LEFT JOIN dbo.gates gate ON gate.id = visit.gate_id
+      WHERE visit.visitor_id IN (SELECT visitorId FROM paged_visitors)
+    )
+    SELECT
+      visitorId,
+      firstName,
+      lastName,
+      company,
+      nationalityCode,
+      birthDate,
+      phone,
+      email,
+      visitorStreet,
+      visitorHouseNumber,
+      visitorPostalCode,
+      visitorCity,
+      idDocumentType,
+      idDocumentValidUntil,
+      idDocumentNumber,
+      lastLicensePlate,
+      visitCount,
+      lastVisitAt,
+      lastVisitStatus,
+      lastHostName,
+      lastHostDepartment,
+      lastPurpose,
+      devicePhotoApp,
+      deviceFilmApp,
+      deviceVideoCamera,
+      deviceManufacturer,
+      deviceSerialNumber,
+      deviceAccessories,
+      deviceDepositNote,
+      (
+        SELECT
+          history.visitId,
+          history.validFrom,
+          history.validUntil,
+          history.hostName,
+          history.hostDepartment,
+          history.purpose,
+          history.checkInAt,
+          history.checkOutAt,
+          history.status,
+          history.gateName
+        FROM visitor_history history
+        WHERE history.visitorId = paged_visitors.visitorId
+          AND history.rowNumber <= 5
+        ORDER BY history.validFrom DESC
+        FOR JSON PATH
+      ) AS historyJson
+    FROM paged_visitors
+    ORDER BY lastVisitAt DESC, lastName ASC, firstName ASC
+  `);
+
+  return {
+    page,
+    limit,
+    visitors: result.recordset.map((row) => ({
+      ...row,
+      nationalityName: getCountryName(row.nationalityCode),
+      history: row.historyJson ? JSON.parse(row.historyJson) as GuardVisitorHistoryItem[] : []
+    }))
   };
 }
 
@@ -963,7 +1362,7 @@ export async function createWalkInVisit(
   input: GuardWalkInVisitInput,
   ipAddress?: string | null,
   userAgent?: string | null
-): Promise<{ visitId: string; visitorId: string; badgeNumber: string; status: string }> {
+): Promise<{ visitId: string; visitorId: string; badgeNumber: string; status: string; alreadyExisted?: boolean }> {
   if (!user.gateId) {
     throw new Error("visit_gate_required_for_checkin");
   }
@@ -973,65 +1372,186 @@ export async function createWalkInVisit(
   await transaction.begin();
 
   try {
-    const badgeNumber = await generateUniqueBadgeNumber(transaction);
+    const action = input.action === "save" || input.action === "check_in_and_print"
+      ? input.action
+      : "check_in";
 
-    const visitorInsert = await new sql.Request(transaction)
-      .input("firstName", sql.NVarChar(120), input.firstName.trim())
-      .input("lastName", sql.NVarChar(120), input.lastName.trim())
-      .input("company", sql.NVarChar(255), input.company.trim())
-      .input("nationalityCode", sql.NChar(2), input.nationalityCode)
-      .input("birthDate", sql.Date, cleanOptional(input.birthDate))
-      .input("phone", sql.NVarChar(80), cleanOptional(input.phone))
-      .input("email", sql.NVarChar(255), cleanOptional(input.email))
-      .input("visitorStreet", sql.NVarChar(255), input.visitorStreet.trim())
-      .input("visitorHouseNumber", sql.NVarChar(40), input.visitorHouseNumber.trim())
-      .input("visitorPostalCode", sql.NVarChar(20), input.visitorPostalCode.trim())
-      .input("visitorCity", sql.NVarChar(120), input.visitorCity.trim())
-      .input("idDocumentType", sql.NVarChar(40), input.idDocumentType.trim())
-      .input("idDocumentValidUntil", sql.Date, input.idDocumentValidUntil.trim())
-      .input("idDocumentNumber", sql.NVarChar(120), input.idDocumentNumber.trim())
-      .query<{ id: string }>(`
-        INSERT INTO dbo.visitors (
-          first_name,
-          last_name,
-          company,
-          nationality_code,
-          birth_date,
-          phone_optional,
-          email_optional,
-          visitor_street,
-          visitor_house_number,
-          visitor_postal_code,
-          visitor_city,
-          id_document_type,
-          id_document_valid_until,
-          id_document_number
-        )
-        OUTPUT inserted.id
-        VALUES (
-          @firstName,
-          @lastName,
-          @company,
-          @nationalityCode,
-          @birthDate,
-          @phone,
-          @email,
-          @visitorStreet,
-          @visitorHouseNumber,
-          @visitorPostalCode,
-          @visitorCity,
-          @idDocumentType,
-          @idDocumentValidUntil,
-          @idDocumentNumber
-        )
-      `);
+    const clientRequestId = cleanOptional(input.clientRequestId);
+    if (clientRequestId) {
+      const existingRequest = await new sql.Request(transaction)
+        .input("clientRequestId", sql.NVarChar(64), clientRequestId)
+        .query<{ id: string; visitorId: string; badgeNumber: string; status: string }>(`
+          SELECT TOP 1
+            id,
+            visitor_id AS visitorId,
+            badge_number AS badgeNumber,
+            ${normalizedStatusSql} AS status
+          FROM dbo.visits
+          WHERE client_request_id = @clientRequestId
+          ORDER BY created_at DESC
+        `);
 
-    const visitorId = visitorInsert.recordset[0]?.id;
-    if (!visitorId) {
-      throw new Error("visitor_insert_failed");
+      const existingVisit = existingRequest.recordset[0];
+      if (existingVisit) {
+        await transaction.commit();
+        return {
+          visitId: existingVisit.id,
+          visitorId: existingVisit.visitorId,
+          badgeNumber: existingVisit.badgeNumber,
+          status: existingVisit.status,
+          alreadyExisted: true
+        };
+      }
     }
 
+    let visitorId = cleanOptional(input.existingVisitorId);
+    let visitorWasReused = false;
+
+    if (visitorId) {
+      const visitorExists = await new sql.Request(transaction)
+        .input("visitorId", sql.UniqueIdentifier, visitorId)
+        .query<{ id: string }>(`
+          SELECT TOP 1 id
+          FROM dbo.visitors
+          WHERE id = @visitorId AND ISNULL(is_deleted, 0) = 0
+        `);
+
+      if (!visitorExists.recordset[0]) {
+        throw new Error("existing_visitor_not_found");
+      }
+
+      visitorWasReused = true;
+
+      await new sql.Request(transaction)
+        .input("visitorId", sql.UniqueIdentifier, visitorId)
+        .input("firstName", sql.NVarChar(120), input.firstName.trim())
+        .input("lastName", sql.NVarChar(120), input.lastName.trim())
+        .input("company", sql.NVarChar(255), input.company.trim())
+        .input("nationalityCode", sql.NChar(2), input.nationalityCode)
+        .input("birthDate", sql.Date, cleanOptional(input.birthDate))
+        .input("phone", sql.NVarChar(80), cleanOptional(input.phone))
+        .input("email", sql.NVarChar(255), cleanOptional(input.email))
+        .input("visitorStreet", sql.NVarChar(255), cleanOptional(input.visitorStreet))
+        .input("visitorHouseNumber", sql.NVarChar(40), cleanOptional(input.visitorHouseNumber))
+        .input("visitorPostalCode", sql.NVarChar(20), cleanOptional(input.visitorPostalCode))
+        .input("visitorCity", sql.NVarChar(120), cleanOptional(input.visitorCity))
+        .input("idDocumentType", sql.NVarChar(40), cleanOptional(input.idDocumentType))
+        .input("idDocumentValidUntil", sql.Date, cleanOptional(input.idDocumentValidUntil))
+        .input("idDocumentNumber", sql.NVarChar(120), cleanOptional(input.idDocumentNumber))
+        .query(`
+          UPDATE dbo.visitors
+          SET
+            first_name = @firstName,
+            last_name = @lastName,
+            company = @company,
+            nationality_code = @nationalityCode,
+            birth_date = @birthDate,
+            phone_optional = @phone,
+            email_optional = @email,
+            visitor_street = @visitorStreet,
+            visitor_house_number = @visitorHouseNumber,
+            visitor_postal_code = @visitorPostalCode,
+            visitor_city = @visitorCity,
+            id_document_type = @idDocumentType,
+            id_document_valid_until = @idDocumentValidUntil,
+            id_document_number = @idDocumentNumber,
+            updated_at = SYSUTCDATETIME()
+          WHERE id = @visitorId
+        `);
+
+      await writeAuditLog(
+        {
+          user: user.username,
+          userId: user.id,
+          action: "guard_existing_visitor_selected",
+          objectType: "visitor",
+          objectId: visitorId,
+          ipAddress,
+          userAgent,
+          metadata: {
+            gateId: user.gateId
+          }
+        },
+        transaction
+      );
+    } else {
+      const visitorInsert = await new sql.Request(transaction)
+        .input("firstName", sql.NVarChar(120), input.firstName.trim())
+        .input("lastName", sql.NVarChar(120), input.lastName.trim())
+        .input("company", sql.NVarChar(255), input.company.trim())
+        .input("nationalityCode", sql.NChar(2), input.nationalityCode)
+        .input("birthDate", sql.Date, cleanOptional(input.birthDate))
+        .input("phone", sql.NVarChar(80), cleanOptional(input.phone))
+        .input("email", sql.NVarChar(255), cleanOptional(input.email))
+        .input("visitorStreet", sql.NVarChar(255), input.visitorStreet.trim())
+        .input("visitorHouseNumber", sql.NVarChar(40), input.visitorHouseNumber.trim())
+        .input("visitorPostalCode", sql.NVarChar(20), input.visitorPostalCode.trim())
+        .input("visitorCity", sql.NVarChar(120), input.visitorCity.trim())
+        .input("idDocumentType", sql.NVarChar(40), input.idDocumentType.trim())
+        .input("idDocumentValidUntil", sql.Date, input.idDocumentValidUntil.trim())
+        .input("idDocumentNumber", sql.NVarChar(120), input.idDocumentNumber.trim())
+        .query<{ id: string }>(`
+          INSERT INTO dbo.visitors (
+            first_name,
+            last_name,
+            company,
+            nationality_code,
+            birth_date,
+            phone_optional,
+            email_optional,
+            visitor_street,
+            visitor_house_number,
+            visitor_postal_code,
+            visitor_city,
+            id_document_type,
+            id_document_valid_until,
+            id_document_number
+          )
+          OUTPUT inserted.id
+          VALUES (
+            @firstName,
+            @lastName,
+            @company,
+            @nationalityCode,
+            @birthDate,
+            @phone,
+            @email,
+            @visitorStreet,
+            @visitorHouseNumber,
+            @visitorPostalCode,
+            @visitorCity,
+            @idDocumentType,
+            @idDocumentValidUntil,
+            @idDocumentNumber
+          )
+        `);
+
+      visitorId = visitorInsert.recordset[0]?.id;
+      if (!visitorId) {
+        throw new Error("visitor_insert_failed");
+      }
+
+      await writeAuditLog(
+        {
+          user: user.username,
+          userId: user.id,
+          action: "guard_new_visitor_created",
+          objectType: "visitor",
+          objectId: visitorId,
+          ipAddress,
+          userAgent,
+          metadata: {
+            gateId: user.gateId
+          }
+        },
+        transaction
+      );
+    }
+
+    const badgeNumber = await generateUniqueBadgeNumber(transaction);
+    const visitStatus = action === "save" ? VISIT_STATUS.PRE_REGISTERED : VISIT_STATUS.CHECKED_IN;
     const visitInsert = await new sql.Request(transaction)
+      .input("clientRequestId", sql.NVarChar(64), clientRequestId)
       .input("visitorId", sql.UniqueIdentifier, visitorId)
       .input("gateId", sql.UniqueIdentifier, user.gateId)
       .input("hostName", sql.NVarChar(255), input.hostName.trim())
@@ -1045,8 +1565,16 @@ export async function createWalkInVisit(
       .input("badgeNumber", sql.NVarChar(64), badgeNumber)
       .input("notes", sql.NVarChar(sql.MAX), cleanOptional(input.notes))
       .input("checkInBy", sql.UniqueIdentifier, user.id)
+      .input("devicePhotoApp", sql.Bit, input.devicePhotoApp ?? null)
+      .input("deviceFilmApp", sql.Bit, input.deviceFilmApp ?? null)
+      .input("deviceVideoCamera", sql.Bit, input.deviceVideoCamera ?? null)
+      .input("deviceManufacturer", sql.NVarChar(255), cleanOptional(input.deviceManufacturer))
+      .input("deviceSerialNumber", sql.NVarChar(120), cleanOptional(input.deviceSerialNumber))
+      .input("deviceAccessories", sql.NVarChar(500), cleanOptional(input.deviceAccessories))
+      .input("deviceDepositNote", sql.NVarChar(500), cleanOptional(input.deviceDepositNote))
       .query<{ id: string; status: string }>(`
         INSERT INTO dbo.visits (
+          client_request_id,
           visitor_id,
           gate_id,
           host_name,
@@ -1062,11 +1590,19 @@ export async function createWalkInVisit(
           created_by,
           created_via_public_form,
           notes,
+          device_photo_app,
+          device_film_app,
+          device_video_camera,
+          device_manufacturer,
+          device_serial_number,
+          device_accessories,
+          device_deposit_note,
           check_in_at,
           check_in_by
         )
         OUTPUT inserted.id, inserted.status
         VALUES (
+          @clientRequestId,
           @visitorId,
           @gateId,
           @hostName,
@@ -1078,12 +1614,19 @@ export async function createWalkInVisit(
           @validUntil,
           @licensePlate,
           @badgeNumber,
-          '${VISIT_STATUS.CHECKED_IN}',
+          '${visitStatus}',
           @checkInBy,
           0,
           @notes,
-          SYSUTCDATETIME(),
-          @checkInBy
+          @devicePhotoApp,
+          @deviceFilmApp,
+          @deviceVideoCamera,
+          @deviceManufacturer,
+          @deviceSerialNumber,
+          @deviceAccessories,
+          @deviceDepositNote,
+          ${action === "save" ? "NULL" : "SYSUTCDATETIME()"},
+          ${action === "save" ? "NULL" : "@checkInBy"}
         )
       `);
 
@@ -1096,18 +1639,42 @@ export async function createWalkInVisit(
       {
         user: user.username,
         userId: user.id,
-        action: "VISIT_WALK_IN_CREATED",
+        action: "guard_visit_created",
         objectType: "visit",
         objectId: visit.id,
         ipAddress,
         userAgent,
         metadata: {
           source: "guard_walk_in",
-          badgeNumber
+          badgeNumber,
+          gateId: user.gateId,
+          visitorId,
+          reusedVisitor: visitorWasReused,
+          status: visit.status
         }
       },
       transaction
     );
+
+    if (action !== "save") {
+      await writeAuditLog(
+        {
+          user: user.username,
+          userId: user.id,
+          action: "guard_visitor_checked_in",
+          objectType: "visit",
+          objectId: visit.id,
+          ipAddress,
+          userAgent,
+          metadata: {
+            gateId: user.gateId,
+            visitorId,
+            badgeNumber
+          }
+        },
+        transaction
+      );
+    }
 
     await transaction.commit();
     void notifyNationalitySubscribers({
@@ -1121,7 +1688,7 @@ export async function createWalkInVisit(
     });
     return {
       visitId: visit.id,
-      visitorId,
+      visitorId: visitorId as string,
       badgeNumber,
       status: visit.status
     };

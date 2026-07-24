@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router-dom";
 import { AppLayout, BRANDING, type ApiError, fetchJson, formatDateOnly, formatIdDocumentType, type VisitDetail } from "../app/core";
 
 export function PrintViewPage() {
   const { id } = useParams();
+  const location = useLocation();
   const [visit, setVisit] = useState<VisitDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -37,15 +38,35 @@ export function PrintViewPage() {
     void loadVisit();
   }, [id]);
 
+  useEffect(() => {
+    if (!visit) {
+      return;
+    }
+
+    const params = new URLSearchParams(location.search);
+    if (params.get("autoprint") !== "1") {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      void handlePrint();
+    }, 250);
+
+    return () => window.clearTimeout(timeout);
+  }, [location.search, visit]);
+
   async function handlePrint() {
     if (!id) {
       return;
     }
 
+    const params = new URLSearchParams(location.search);
+    const isReprint = params.get("reprint") === "1";
+
     try {
       await fetchJson<{ success: boolean }>(`/api/guard/visits/${id}/print-log`, {
         method: "POST",
-        body: JSON.stringify({ paperSize })
+        body: JSON.stringify({ paperSize, reprint: isReprint })
       });
       window.print();
     } catch (apiError) {
@@ -58,18 +79,16 @@ export function PrintViewPage() {
     .replace("Der Besucherschein ist sichtbar zu tragen.", "")
     .replace(/\s{2,}/g, " ")
     .trim();
-  const securityTexts = (visit?.badgeTexts ?? [])
-    .filter((text) => text.textType === "security_notice" || text.textType === "footer")
-    .map((text) => ({ ...text, content: cleanPrintText(text.content) }))
-    .filter((text) => text.content.length > 0);
-  const photoBanText = cleanPrintText(
-    visit?.badgeTexts.find((text) => text.textType === "photo_ban")?.content
-      || "Fotografieren und Filmen auf dem Gelände ist verboten."
-  );
-  const signatureText = cleanPrintText(
-    visit?.badgeTexts.find((text) => text.textType === "signature_notice")?.content
-      || "Vor Ausfahrt / Verlassen des Geländes durch den Ansprechpartner zu unterschreiben."
-  );
+  const printableSections = (visit?.badgeTexts ?? [])
+    .map((text) => ({
+      ...text,
+      heading: text.customHeading?.trim() || text.name,
+      content: cleanPrintText(text.content)
+    }))
+    .filter((text) => text.content.length > 0)
+    .sort((left, right) => left.sortOrder - right.sortOrder || left.name.localeCompare(right.name, "de"));
+  const signatureText = printableSections.find((text) => text.sectionType === "signature_notice")?.content
+    || "Vor Ausfahrt / Verlassen des Geländes durch den Ansprechpartner zu unterschreiben.";
 
   return (
     <AppLayout>
@@ -225,39 +244,17 @@ export function PrintViewPage() {
                   </div>
                 ) : null}
 
-                <div className="print-block avoid-break">
-                  <h3>Sicherheitshinweise</h3>
-                  {securityTexts.length ? (
-                    <ul className="text-list compact-list">
-                      {securityTexts.map((text) => (
-                        <li key={text.id}>
-                          <strong>{text.name}:</strong> {text.content}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <ul className="text-list compact-list">
-                      <li>Fotografieren und Filmen nur mit ausdrücklicher Erlaubnis.</li>
-                      <li>Aufenthalt nur in freigegebenen Bereichen.</li>
-                      <li>Beim Verlassen an der Wache abmelden.</li>
-                    </ul>
-                  )}
-                </div>
-
-                <div className="print-callout avoid-break">
-                  <strong>Fotografierverbot</strong>
-                  <p>{photoBanText}</p>
-                </div>
-
-                <div className="print-callout avoid-break">
-                  <strong>Rückgabe und Unterschrift</strong>
-                  <p>{signatureText}</p>
-                </div>
-
-                <div className="print-callout avoid-break">
-                  <strong>Hinweis für Besucher</strong>
-                  <p>Besucherschein und ausgegebene Unterlagen oder Ausweise bei Aufforderung jederzeit vorzeigen.</p>
-                </div>
+                {printableSections.length ? printableSections.map((text) => (
+                  <div key={text.id} className="print-callout avoid-break">
+                    <strong>{text.heading}</strong>
+                    <p>{text.content}</p>
+                  </div>
+                )) : (
+                  <div className="print-callout avoid-break">
+                    <strong>Sicherheitshinweise</strong>
+                    <p>Für diesen Besucherschein sind aktuell keine aktiven Hinweistexte hinterlegt.</p>
+                  </div>
+                )}
               </section>
             </div>
           </div>

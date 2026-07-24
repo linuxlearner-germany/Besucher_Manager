@@ -74,7 +74,7 @@ services:
     ports:
       - "${PORT:-3030}:3030"
     volumes:
-      - uploads_data:/app/uploads
+      - ./uploads:/app/uploads
       - ./config:/app/config:ro
     healthcheck:
       test:
@@ -89,5 +89,4 @@ services:
       retries: 5
 
 volumes:
-  uploads_data:
   sqlserver_data:

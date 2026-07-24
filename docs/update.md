@@ -18,7 +18,8 @@ Diese Anleitung beschreibt den sicheren Update-Ablauf fuer den produktiven `Besu
 
 ## Wichtige Regeln
 
-- Keine Volumes loeschen
+- Das SQL-Volume nicht loeschen
+- Das Hostverzeichnis `uploads/` nicht loeschen oder ueberschreiben
 - Kein `docker compose down -v`
 - Keine `.env` aus Git ueberschreiben
 - Vor jedem Update ein Backup erstellen
@@ -88,13 +89,20 @@ npm run ops:update
 
 ## Was erhalten bleibt
 
-Solange die Volumes nicht geloescht werden, bleiben erhalten:
+Solange das SQL-Volume und das eingebundene Hostverzeichnis `uploads/` erhalten bleiben, bleiben erhalten:
 
-- SQL-Datenbank
-- Uploads
-- Gelaendeplaene
-- Hintergruende
+- SQL-Datenbank im Volume `sqlserver_data`
+- Uploads unter `./uploads`
+- Gelaendeplaene unter `./uploads/site-maps`
+- Hintergruende unter `./uploads/ui-backgrounds`
 - importierte Dateien in persistenten Speicherbereichen
+
+Das Uploadverzeichnis vor dem Update separat sichern:
+
+```bash
+mkdir -p archive/backups
+tar -czf "archive/backups/uploads_$(date +%Y%m%d_%H%M%S).tar.gz" -C uploads .
+```
 
 ## Pruefung nach dem Update
 

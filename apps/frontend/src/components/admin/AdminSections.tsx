@@ -706,25 +706,11 @@ export function AdminSiteMapSection({
 export function AdminBackgroundSection({
   workflowSettings,
   setWorkflowSettings,
-  saveWorkflowSettings,
-  backgroundFile,
-  backgroundFieldError,
-  backgroundPreviewUrl,
-  backgroundUploading,
-  uploadBackgroundImage,
-  handleBackgroundFileInput,
-  resetBackgroundSelection
+  saveWorkflowSettings
 }: {
   workflowSettings: AdminWorkflowSettings | null;
   setWorkflowSettings: Dispatch<SetStateAction<AdminWorkflowSettings | null>>;
   saveWorkflowSettings: () => Promise<void>;
-  backgroundFile: File | null;
-  backgroundFieldError: string | null;
-  backgroundPreviewUrl: string | null;
-  backgroundUploading: boolean;
-  uploadBackgroundImage: (event: FormEvent<HTMLFormElement>) => Promise<void>;
-  handleBackgroundFileInput: (event: ChangeEvent<HTMLInputElement>) => void;
-  resetBackgroundSelection: () => void;
 }) {
   return (
     <Card className="admin-section-stack">
@@ -752,6 +738,8 @@ export function AdminBackgroundSection({
           <div className="meta-list">
             <span><strong>Aktiver Name:</strong> {workflowSettings?.backgroundImageName || "Kein Hintergrundbild aktiv"}</span>
             <span><strong>Datei:</strong> {workflowSettings?.backgroundImageOriginalFileName || "Keine Datei hinterlegt"}</span>
+            <span><strong>Ordner im Container:</strong> /app/uploads/ui-backgrounds</span>
+            <span><strong>Ordner im Projekt:</strong> ./uploads/ui-backgrounds</span>
           </div>
         </div>
         <div className="row-actions action-bar">
@@ -759,36 +747,16 @@ export function AdminBackgroundSection({
         </div>
       </div>
 
-      <form className="panel admin-user-card" onSubmit={uploadBackgroundImage}>
+      <div className="panel admin-user-card">
         <div className="table-section-header">
           <div>
-            <h4>Neues Hintergrundbild hochladen</h4>
+            <h4>Hintergrundbild aus Ordner verwenden</h4>
           </div>
         </div>
-        <label className="dropzone compact-dropzone">
-          <input
-            className="visually-hidden"
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            onChange={handleBackgroundFileInput}
-          />
-          <div className="dropzone-copy">
-            <strong>Bild auswählen</strong>
-            <span>Das neue Bild wird sofort als verfügbarer Anwendungshintergrund gesetzt.</span>
-          </div>
-          {backgroundFile ? (
-            <div className="dropzone-selected">
-              <span>{backgroundFile.name}</span>
-              <span>{formatFileSize(backgroundFile.size)}</span>
-            </div>
-          ) : (
-            <div className="dropzone-selected dropzone-selected-muted">
-              <span>Keine Bilddatei ausgewählt</span>
-              <span>Nur PNG, JPG oder WEBP</span>
-            </div>
-          )}
-        </label>
-        {backgroundFieldError ? <Alert type="error">{backgroundFieldError}</Alert> : null}
+        <div className="empty-state-box">
+          <strong>Kein Upload in der Oberfläche</strong>
+          <span>Bilddatei direkt im Hintergrund-Ordner ablegen. Beim nächsten Neustart oder Neubuild wird automatisch die zuletzt geänderte Bilddatei verwendet.</span>
+        </div>
         <div className="background-preview-grid">
           <div className="site-map-preview-card">
             {workflowSettings?.backgroundImageUrl ? (
@@ -804,21 +772,8 @@ export function AdminBackgroundSection({
               </div>
             )}
           </div>
-          {backgroundPreviewUrl ? (
-            <div className="site-map-preview-card">
-              <img className="admin-site-map-preview" src={backgroundPreviewUrl} alt="Neue Hintergrundvorschau" />
-            </div>
-          ) : null}
         </div>
-        <div className="row-actions action-bar">
-          <button type="submit" disabled={backgroundUploading || !backgroundFile}>
-            {backgroundUploading ? "Upload läuft..." : "Hintergrundbild hochladen"}
-          </button>
-          <button type="button" className="secondary-button" onClick={resetBackgroundSelection} disabled={backgroundUploading}>
-            Auswahl leeren
-          </button>
-        </div>
-      </form>
+      </div>
     </Card>
   );
 }

@@ -3,12 +3,15 @@ import { Router } from "express";
 import { z } from "zod";
 import { normalizeCountryCode } from "../lib/countries";
 import {
+  canUseGuardVisitorSearch,
   checkInVisit,
   checkOutVisit,
   createWalkInVisit,
   getCalendarVisitsForUser,
   getTodayVisitsForUser,
   getVisitDetailForUser,
+  hasGuardVisitorSearchCriteria,
+  searchVisitorsForGuard,
   updateHostSignatureForGuard,
   updateVisitForGuard
 } from "../lib/guardVisits";
@@ -216,6 +219,9 @@ const guardCalendarQuerySchema = z.object({
   }
 });
 const guardWalkInCreateSchema = z.object({
+  clientRequestId: z.string().trim().min(8).max(64).optional().or(z.literal("")),
+  existingVisitorId: z.string().uuid().optional().or(z.literal("")),
+  action: z.enum(["save", "check_in", "check_in_and_print"]).optional(),
   firstName: z.string().trim().min(1).max(120),
   lastName: z.string().trim().min(1).max(120),
   company: z.string().trim().min(1).max(255),
@@ -245,7 +251,14 @@ const guardWalkInCreateSchema = z.object({
   visitorCity: z.string().trim().min(1).max(120),
   idDocumentType: z.enum(["identity_card", "passport", "service_id", "other"]),
   idDocumentValidUntil: z.string().trim().min(1),
-  idDocumentNumber: z.string().trim().min(1).max(120)
+  idDocumentNumber: z.string().trim().min(1).max(120),
+  devicePhotoApp: z.boolean().optional(),
+  deviceFilmApp: z.boolean().optional(),
+  deviceVideoCamera: z.boolean().optional(),
+  deviceManufacturer: z.string().trim().max(255).optional().or(z.literal("")),
+  deviceSerialNumber: z.string().trim().max(120).optional().or(z.literal("")),
+  deviceAccessories: z.string().trim().max(500).optional().or(z.literal("")),
+  deviceDepositNote: z.string().trim().max(500).optional().or(z.literal(""))
 }).superRefine((value, context) => {
   const validFrom = new Date(value.validFrom);
   const validUntil = new Date(value.validUntil);
@@ -258,6 +271,21 @@ const guardWalkInCreateSchema = z.object({
   }
 });
 
+const guardVisitorSearchSchema = z.object({
+  query: z.string().trim().max(255).optional().or(z.literal("")),
+  firstName: z.string().trim().max(120).optional().or(z.literal("")),
+  lastName: z.string().trim().max(120).optional().or(z.literal("")),
+  company: z.string().trim().max(255).optional().or(z.literal("")),
+  birthDate: z.string().trim().optional().or(z.literal("")),
+  city: z.string().trim().max(120).optional().or(z.literal("")),
+  phone: z.string().trim().max(80).optional().or(z.literal("")),
+  email: z.string().trim().max(255).optional().or(z.literal("")),
+  licensePlate: z.string().trim().max(40).optional().or(z.literal("")),
+  badgeNumber: z.string().trim().max(64).optional().or(z.literal("")),
+  page: z.coerce.number().int().min(1).max(100).optional(),
+  limit: z.coerce.number().int().min(1).max(20).optional()
+});
+
 export const guardRouter = Router();
 
 guardRouter.use("/api/guard", async (request, response, next) => {
@@ -266,10 +294,59 @@ guardRouter.use("/api/guard", async (request, response, next) => {
   next();
 });
 
+guardRouter.get("/api/guard/visitors/search", async (request, response) => {
+  const user = await requirePermission(request, response, "visits.create");
+  if (!user) {
+    return;
+  }
+
+  if (!canUseGuardVisitorSearch(user)) {
+    return sendForbidden(response);
+  }
+
+  const parsed = guardVisitorSearchSchema.safeParse(request.query);
+  if (!parsed.success) {
+    return sendValidationError(response, parsed.error.flatten());
+  }
+
+  if (!hasGuardVisitorSearchCriteria(parsed.data)) {
+    return response.json({ visitors: [], page: parsed.data.page ?? 1, limit: parsed.data.limit ?? 8 });
+  }
+
+  try {
+    const payload = await searchVisitorsForGuard(user, parsed.data);
+
+    await writeAuditLog({
+      user: user.username,
+      userId: user.id,
+      action: "guard_visitor_search",
+      objectType: "visitor",
+      objectId: "search",
+      ipAddress: getRequestIp(request),
+      userAgent: getRequestUserAgent(request),
+      metadata: {
+        gateId: user.gateId,
+        resultCount: payload.visitors.length
+      }
+    });
+
+    return response.json(payload);
+  } catch (error) {
+    if (error instanceof Error && error.message === "guard_visitor_search_forbidden") {
+      return sendForbidden(response);
+    }
+    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Besuchersuche konnte nicht ausgeführt werden.");
+  }
+});
+
 guardRouter.post("/api/guard/visits/walk-in", async (request, response) => {
   const user = await requirePermission(request, response, "visits.create");
   if (!user) {
     return;
+  }
+
+  if (user.role !== "guard" && user.role !== "admin") {
+    return sendForbidden(response);
   }
 
   const parsed = guardWalkInCreateSchema.safeParse(request.body);
@@ -286,11 +363,14 @@ guardRouter.post("/api/guard/visits/walk-in", async (request, response) => {
     );
     return response.status(201).json({
       success: true,
-      message: "Spontanbesucher wurde angelegt und direkt eingecheckt.",
+      message: parsed.data.action === "save"
+        ? "Besuch wurde gespeichert."
+        : "Spontanbesucher wurde angelegt und eingecheckt.",
       visitId: created.visitId,
       visitorId: created.visitorId,
       badgeNumber: created.badgeNumber,
-      status: created.status
+      status: created.status,
+      alreadyExisted: Boolean(created.alreadyExisted)
     });
   } catch (error) {
     if (error instanceof Error && error.message === "visit_gate_required_for_checkin") {
@@ -300,6 +380,9 @@ guardRouter.post("/api/guard/visits/walk-in", async (request, response) => {
         "VALIDATION_ERROR",
         "Für diese Anmeldung ist zuerst eine aktive Wache erforderlich."
       );
+    }
+    if (error instanceof Error && error.message === "existing_visitor_not_found") {
+      return sendError(response, 404, "NOT_FOUND", "Der ausgewählte Besucher wurde nicht gefunden.");
     }
     return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der Spontanbesucher konnte nicht angelegt werden.");
   }
@@ -586,8 +669,12 @@ guardRouter.post("/api/guard/visits/:id/print-log", async (request, response) =>
     return;
   }
 
-  const parsed = z.object({ paperSize: z.enum(["A4", "A5"]) }).safeParse(request.body ?? {});
+  const parsed = z.object({
+    paperSize: z.enum(["A4", "A5"]),
+    reprint: z.boolean().optional()
+  }).safeParse(request.body ?? {});
   if (!parsed.success) return sendValidationError(response, parsed.error.flatten());
+  const isReprint = parsed.data.reprint ?? false;
 
   const visit = await getVisitDetailForUser(user, request.params.id);
   if (!visit) return sendError(response, 404, "NOT_FOUND", "Der Besuch wurde nicht gefunden.");
@@ -605,6 +692,17 @@ guardRouter.post("/api/guard/visits/:id/print-log", async (request, response) =>
     user: user.username,
     userId: user.id,
     action: "VISIT_BADGE_PRINTED",
+    objectType: "visit",
+    objectId: request.params.id,
+    ipAddress: getRequestIp(request),
+    userAgent: getRequestUserAgent(request),
+    metadata: { paperSize: parsed.data.paperSize, reprint: isReprint }
+  });
+
+  await writeAuditLog({
+    user: user.username,
+    userId: user.id,
+    action: isReprint ? "guard_visitor_pass_reprinted" : "guard_visitor_pass_printed",
     objectType: "visit",
     objectId: request.params.id,
     ipAddress: getRequestIp(request),

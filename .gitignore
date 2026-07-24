@@ -5,5 +5,10 @@ node_modules/
 apps/*/dist/
 __pycache__/
 *.py[cod]
-uploads/
+uploads/*
+!uploads/.gitkeep
+!uploads/site-maps/
+!uploads/site-maps/**
+!uploads/ui-backgrounds/
+!uploads/ui-backgrounds/**
 config/mail-relay.yml

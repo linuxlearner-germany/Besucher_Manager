@@ -1,15 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import {
-  AppLayout,
-  type ApiError,
-  fetchJson,
-  formatDateTime,
-  formatStatus,
-  statusClassName,
-  type SibeSummary,
-  type SibeVisitRow
-} from "../app/core";
+import { AppLayout, type ApiError, fetchJson, formatDateTime, formatStatus, statusClassName, type SibeSummary, type SibeVisitRow } from "../app/core";
 import { Alert, Card, DataTable } from "../components/ui";
 
 export function CommanderDashboardPage() {
@@ -36,34 +27,23 @@ export function CommanderDashboardPage() {
     void loadDashboard();
   }, []);
 
-  const now = useMemo(() => new Date(), []);
-
   const currentVisits = useMemo(
     () => recentVisits
       .filter((visit) => visit.status === "checked_in")
       .slice(0, 8),
     [recentVisits]
   );
-
-  const announcedVisits = useMemo(
-    () => recentVisits
-      .filter((visit) => visit.status === "pre_registered" && new Date(visit.validFrom) <= now)
-      .slice(0, 8),
-    [now, recentVisits]
-  );
-
-  const upcomingVisits = useMemo(
-    () => recentVisits
-      .filter((visit) => visit.status === "pre_registered" && new Date(visit.validFrom) > now)
-      .slice(0, 8),
-    [now, recentVisits]
-  );
-
   const pastVisits = useMemo(
     () => recentVisits
-      .filter((visit) => visit.status === "checked_out" || new Date(visit.validUntil) < now)
+      .filter((visit) => visit.status === "checked_out" || new Date(visit.validUntil) < new Date())
       .slice(0, 8),
-    [now, recentVisits]
+    [recentVisits]
+  );
+  const upcomingVisits = useMemo(
+    () => recentVisits
+      .filter((visit) => visit.status === "pre_registered" && new Date(visit.validFrom) > new Date())
+      .slice(0, 8),
+    [recentVisits]
   );
 
   return (
@@ -84,12 +64,16 @@ export function CommanderDashboardPage() {
                 <strong className="hero-stat-value">{summary?.todaysVisits ?? "-"}</strong>
               </div>
               <div className="hero-stat-card">
-                <span className="hero-stat-label">Aktuell vor Ort</span>
+                <span className="hero-stat-label">Aktuell eingecheckt</span>
                 <strong className="hero-stat-value">{summary?.checkedInVisitors ?? "-"}</strong>
               </div>
               <div className="hero-stat-card">
-                <span className="hero-stat-label">Heute ausgecheckt</span>
-                <strong className="hero-stat-value">{recentVisits.filter((visit) => visit.status === "checked_out").length}</strong>
+                <span className="hero-stat-label">Bestätigung fehlt</span>
+                <strong className="hero-stat-value">{summary?.signaturesPending ?? "-"}</strong>
+              </div>
+              <div className="hero-stat-card">
+                <span className="hero-stat-label">Ausnahmen</span>
+                <strong className="hero-stat-value">{summary?.signaturesExceptions ?? "-"}</strong>
               </div>
             </div>
           </div>
@@ -112,7 +96,7 @@ export function CommanderDashboardPage() {
                   <th>Firma</th>
                   <th>Ansprechpartner</th>
                   <th>Wache</th>
-                  <th>Gültig bis</th>
+                  <th>Check-in</th>
                   <th>Aktion</th>
                 </tr>
               </thead>
@@ -123,7 +107,7 @@ export function CommanderDashboardPage() {
                     <td>{visit.company}</td>
                     <td>{visit.hostName}</td>
                     <td>{visit.gateName}</td>
-                    <td>{formatDateTime(visit.validUntil)}</td>
+                    <td>{formatDateTime(visit.checkInAt || visit.validFrom)}</td>
                     <td>
                       <Link className="button-link" to={`/kaskdt/besucher/${visit.id}`}>Details</Link>
                     </td>
@@ -136,11 +120,13 @@ export function CommanderDashboardPage() {
               </tbody>
             </DataTable>
           </Card>
+        </div>
 
+        <div className="split-card-grid">
           <Card>
             <div className="section-header">
               <div>
-                <h3>Angekündigte Besuche</h3>
+                <h3>Vergangene Besuche</h3>
               </div>
               <Link className="button-link" to="/kaskdt/besucher">Besucherübersicht</Link>
             </div>
@@ -149,27 +135,25 @@ export function CommanderDashboardPage() {
                 <tr>
                   <th>Besucher</th>
                   <th>Firma</th>
-                  <th>Ansprechpartner</th>
-                  <th>Wache</th>
-                  <th>Gültig von</th>
+                  <th>Status</th>
+                  <th>Gültig bis</th>
                   <th>Aktion</th>
                 </tr>
               </thead>
               <tbody>
-                {announcedVisits.length > 0 ? announcedVisits.map((visit) => (
+                {pastVisits.length > 0 ? pastVisits.map((visit) => (
                   <tr key={visit.id}>
                     <td>{visit.visitorName}</td>
                     <td>{visit.company}</td>
-                    <td>{visit.hostName}</td>
-                    <td>{visit.gateName}</td>
-                    <td>{formatDateTime(visit.validFrom)}</td>
+                    <td><span className={statusClassName(visit.status)}>{formatStatus(visit.status)}</span></td>
+                    <td>{formatDateTime(visit.validUntil)}</td>
                     <td>
                       <Link className="button-link" to={`/kaskdt/besucher/${visit.id}`}>Details</Link>
                     </td>
                   </tr>
                 )) : (
                   <tr>
-                    <td colSpan={6}>Keine angekündigten Besuche gefunden.</td>
+                    <td colSpan={5}>Keine vergangenen Besuche gefunden.</td>
                   </tr>
                 )}
               </tbody>
@@ -211,45 +195,6 @@ export function CommanderDashboardPage() {
                 )) : (
                   <tr>
                     <td colSpan={6}>Keine kommenden Besuche gefunden.</td>
-                  </tr>
-                )}
-              </tbody>
-            </DataTable>
-          </Card>
-
-          <Card>
-            <div className="section-header">
-              <div>
-                <h3>Vergangene Besuche</h3>
-              </div>
-              <Link className="button-link" to="/kaskdt/besucher">Besucherübersicht</Link>
-            </div>
-            <DataTable>
-              <thead>
-                <tr>
-                  <th>Besucher</th>
-                  <th>Firma</th>
-                  <th>Status</th>
-                  <th>Wache</th>
-                  <th>Gültig bis</th>
-                  <th>Aktion</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pastVisits.length > 0 ? pastVisits.map((visit) => (
-                  <tr key={visit.id}>
-                    <td>{visit.visitorName}</td>
-                    <td>{visit.company}</td>
-                    <td><span className={statusClassName(visit.status)}>{formatStatus(visit.status)}</span></td>
-                    <td>{visit.gateName}</td>
-                    <td>{formatDateTime(visit.validUntil)}</td>
-                    <td>
-                      <Link className="button-link" to={`/kaskdt/besucher/${visit.id}`}>Details</Link>
-                    </td>
-                  </tr>
-                )) : (
-                  <tr>
-                    <td colSpan={6}>Keine vergangenen Besuche gefunden.</td>
                   </tr>
                 )}
               </tbody>

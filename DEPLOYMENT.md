@@ -32,7 +32,7 @@ flowchart LR
     R -->|HTTP :3030| A[Besucher-Manager-Container]
     A -->|TDS :1433| S[Microsoft SQL Server]
     A -->|SMTP| M[Internes Mail-Relay]
-    A --> V[Docker-Volume uploads_data]
+    A --> V[Hostverzeichnis ./uploads]
 ```
 
 Empfohlene Eigenschaften:
@@ -40,7 +40,7 @@ Empfohlene Eigenschaften:
 - HTTPS-Terminierung am Reverse Proxy
 - App-Port `3030` nur intern erreichbar
 - SQL Server nicht öffentlich erreichbar
-- persistentes Upload-Volume
+- persistentes, gesichertes Hostverzeichnis `./uploads`
 - regelmäßige SQL-Backups außerhalb des Containers
 - lokale `.env` und SMTP-YAML ohne Git-Tracking
 
@@ -105,7 +105,7 @@ Das Profil startet:
 Persistenz:
 
 - `sqlserver_data:/var/opt/mssql`
-- `uploads_data:/app/uploads`
+- `./uploads:/app/uploads`
 
 ## Server vorbereiten
 
@@ -512,21 +512,18 @@ Zusätzlich sollten die Backups regelmäßig auf ein externes, gesichertes Ziel 
 
 ### Uploads sichern
 
-Volume als Archiv sichern:
+Hostverzeichnis als Archiv sichern:
 
 ```bash
-docker run --rm \
-  -v besucher_manager_uploads_data:/source:ro \
-  -v "$PWD/archive/backups:/backup" \
-  alpine \
-  tar -czf /backup/uploads_$(date +%Y%m%d_%H%M%S).tar.gz -C /source .
+mkdir -p archive/backups
+tar -czf "archive/backups/uploads_$(date +%Y%m%d_%H%M%S).tar.gz" -C uploads .
 ```
 
-Den tatsächlichen Volumenamen vorher prüfen:
+Bind-Mount und Quellordner vorher prüfen:
 
 ```bash
-docker volume ls
-docker compose config --volumes
+docker compose config
+find uploads -maxdepth 2 -type f -print
 ```
 
 ### SQL-Wiederherstellung
@@ -602,8 +599,7 @@ docker compose restart app
 
 ```bash
 docker system df
-docker volume ls
-du -sh archive/backups
+du -sh archive/backups uploads
 ```
 
 ### Betriebsprüfungen
@@ -709,11 +705,11 @@ Zusätzlich Forwarded-Header und direkten Zugriff auf Port 3030 kontrollieren.
 
 ```bash
 docker compose config
-docker volume inspect besucher_manager_uploads_data
+ls -la uploads uploads/site-maps uploads/ui-backgrounds
 docker compose exec app ls -la /app/uploads
 ```
 
-Keine Volumes mit `docker compose down -v` entfernen, außer die vollständige Löschung ist ausdrücklich beabsichtigt und gesichert.
+Das Hostverzeichnis `uploads/` darf bei Updates nicht gelöscht oder durch eine leere Kopie ersetzt werden. `docker compose down -v` würde zusätzlich das lokale SQL-Volume löschen und darf nur nach ausdrücklicher Sicherung verwendet werden.
 
 ## Deployment-Checkliste
 

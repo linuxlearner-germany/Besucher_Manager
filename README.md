@@ -80,7 +80,7 @@ Die Anwendung bildet den vollständigen Ablauf vom Erfassen eines Besuchs über 
 - Benutzerimport per CSV
 - Benutzerexport per CSV ohne Passwörter oder Passwort-Hashes
 - Systemfeld- und Pflichtfeldkonfiguration
-- Geländeplan- und Hintergrundverwaltung
+- Geländeplan- und Hintergrunddateien aus den Projektordnern `uploads/site-maps` und `uploads/ui-backgrounds`
 - SMTP-Konfiguration und Testmails
 - Audit- und Fehlerlog
 - Systemstatus
@@ -510,7 +510,7 @@ Backups werden standardmäßig nach `archive/backups/` geschrieben.
 | `ELOGIN` | SQL-Benutzer, Passwort, Datenbank und Bootstrap prüfen |
 | E-Mail kommt nicht | Relay-YAML, Benutzer-E-Mail, Länderabonnement und Fehlerlog prüfen |
 | Login-Schleife hinter HTTPS | `PUBLIC_BASE_URL`, `APP_SECURE_COOKIES` und `APP_TRUST_PROXY` prüfen |
-| Upload fehlt nach Update | Mount und Volume `uploads_data` prüfen |
+| Upload fehlt nach Update | Bind-Mount `./uploads:/app/uploads` und die Projektordner unter `uploads/` prüfen |
 | Druck hat Browserzeilen | Kopf-/Fußzeilen im Browserdruckdialog deaktivieren |
 
 Weitere Hinweise:

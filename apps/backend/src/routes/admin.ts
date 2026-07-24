@@ -41,6 +41,12 @@ import {
   type AuthenticatedUser
 } from "../lib/visitWorkflow";
 import {
+  getBadgeTextHeading,
+  getDefaultBadgeTextSortOrder,
+  isBadgeTextSectionType,
+  toBadgeTextResponseRecord
+} from "../lib/badgeTexts";
+import {
   countUserReferences,
   getRequestIp,
   getRequestUserAgent,
@@ -151,18 +157,59 @@ const userUpdateSchema = z.object({
   permissions: permissionFlagsSchema
 });
 const badgeTextUpdateSchema = z.object({
-  name: z.string().trim().min(1).max(120),
-  textType: z.string().trim().min(1).max(80),
-  content: z.string().trim().min(1),
+  sectionType: z.string().trim().min(1).max(80),
+  customHeading: z.string().max(120).optional().nullable(),
+  content: z.string().max(8000),
   isActive: z.boolean().optional()
+}).superRefine((value, context) => {
+  const sectionType = value.sectionType.trim();
+  const content = value.content.trim();
+  const customHeading = value.customHeading?.trim() ?? "";
+
+  if (!sectionType) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["sectionType"],
+      message: "Bitte wählen Sie einen Bereich aus."
+    });
+    return;
+  }
+
+  if (!isBadgeTextSectionType(sectionType)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["sectionType"],
+      message: "Der ausgewählte Bereich ist ungültig."
+    });
+  }
+
+  if (!content) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["content"],
+      message: "Bitte geben Sie einen Inhalt ein."
+    });
+  }
+
+  if (sectionType === "custom" && !customHeading) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["customHeading"],
+      message: "Bitte geben Sie eine eigene Überschrift ein."
+    });
+  }
+
+  if (sectionType !== "custom" && customHeading) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["customHeading"],
+      message: "Für Standardbereiche ist keine eigene Überschrift zulässig."
+    });
+  }
 });
 const badgeTextCreateSchema = badgeTextUpdateSchema;
 const siteMapUploadNameSchema = z.object({
   name: z.string().trim().min(1).max(255).optional()
-});
-const retentionSettingsSchema = z.object({
-  enabled: z.boolean(),
-  days: z.number().int().positive().max(3650).optional()
 });
 const workflowSettingsUpdateSchema = z.object({
   backgroundMode: z.enum(["image", "subtle", "plain"]),
@@ -491,42 +538,6 @@ async function activateSiteMapById(
   });
 }
 
-async function getRetentionSettings() {
-  const pool = await getPool();
-  const configured = await pool.request()
-    .input("key", sql.NVarChar(120), "visitor_retention_days")
-    .query<{ value: string }>("SELECT [value] AS value FROM dbo.system_settings WHERE [key] = @key");
-
-  const raw = configured.recordset[0]?.value?.trim();
-
-  if (!raw) {
-    return {
-      enabled: true,
-      days: env.VISITOR_RETENTION_DAYS
-    };
-  }
-
-  if (raw.toLowerCase() === "disabled") {
-    return {
-      enabled: false,
-      days: null
-    };
-  }
-
-  const parsed = Number.parseInt(raw, 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return {
-      enabled: true,
-      days: env.VISITOR_RETENTION_DAYS
-    };
-  }
-
-  return {
-    enabled: true,
-    days: parsed
-  };
-}
-
 export const adminRouter = Router();
 adminRouter.use(adminFieldDefinitionsRouter);
 
@@ -538,19 +549,29 @@ adminRouter.get("/api/texts", async (request, response) => {
   }
 
   const pool = await getPool();
-  const result = await pool.request().query<{ id: string; name: string; textType: string; content: string; isActive: boolean }>(`
+  const result = await pool.request().query<{
+    id: string;
+    name: string;
+    sectionType: string;
+    customHeading: string | null;
+    content: string;
+    isActive: boolean;
+    sortOrder: number;
+  }>(`
     SELECT
       id,
       name,
-      text_type AS textType,
+      text_type AS sectionType,
+      custom_heading AS customHeading,
       content,
-      is_active AS isActive
+      is_active AS isActive,
+      sort_order AS sortOrder
     FROM dbo.badge_text_templates
-    ORDER BY text_type ASC, name ASC
+    ORDER BY sort_order ASC, updated_at ASC, name ASC
   `);
 
   return response.json({
-    texts: result.recordset
+    texts: result.recordset.map(toBadgeTextResponseRecord)
   });
 });
 
@@ -562,17 +583,29 @@ adminRouter.post("/api/texts", async (request, response) => {
   if (!parsed.success) return sendValidationError(response, parsed.error.flatten());
 
   try {
+    const sectionType = parsed.data.sectionType.trim();
+    const customHeading = sectionType === "custom" ? parsed.data.customHeading?.trim() ?? null : null;
+    const heading = getBadgeTextHeading(sectionType, customHeading);
     const pool = await getPool();
+    const customSortOrder = sectionType === "custom"
+      ? ((await pool.request().query<{ sortOrder: number | null }>(`
+          SELECT ISNULL(MAX(sort_order), 100) + 10 AS sortOrder
+          FROM dbo.badge_text_templates
+          WHERE text_type = 'custom'
+        `)).recordset[0]?.sortOrder ?? 110)
+      : getDefaultBadgeTextSortOrder(sectionType);
     const created = await pool.request()
-      .input("name", parsed.data.name)
-      .input("textType", parsed.data.textType)
-      .input("content", parsed.data.content)
+      .input("name", heading)
+      .input("textType", sectionType)
+      .input("customHeading", customHeading)
+      .input("content", parsed.data.content.trim())
       .input("isActive", parsed.data.isActive ?? true)
+      .input("sortOrder", customSortOrder)
       .input("updatedBy", sql.UniqueIdentifier, user.id)
       .query<{ id: string }>(`
-        INSERT INTO dbo.badge_text_templates(name, text_type, content, is_active, updated_by)
+        INSERT INTO dbo.badge_text_templates(name, text_type, custom_heading, content, is_active, sort_order, updated_by)
         OUTPUT inserted.id
-        VALUES(@name, @textType, @content, @isActive, @updatedBy)
+        VALUES(@name, @textType, @customHeading, @content, @isActive, @sortOrder, @updatedBy)
       `);
 
     await writeAuditLog({
@@ -1540,23 +1573,35 @@ adminRouter.put("/api/texts/:id", async (request, response) => {
   const data = parsed.data;
 
   try {
+    const sectionType = data.sectionType.trim();
+    const customHeading = sectionType === "custom" ? data.customHeading?.trim() ?? null : null;
+    const heading = getBadgeTextHeading(sectionType, customHeading);
     const pool = await getPool();
     await pool.request()
       .input("id", sql.UniqueIdentifier, request.params.id)
-      .input("name", data.name)
-      .input("textType", data.textType)
-      .input("content", data.content)
+      .input("name", heading)
+      .input("textType", sectionType)
+      .input("customHeading", customHeading)
+      .input("content", data.content.trim())
       .input("isActive", data.isActive ?? true)
+      .input("sortOrder", getDefaultBadgeTextSortOrder(sectionType))
       .input("updatedBy", sql.UniqueIdentifier, user.id)
       .query(`
         UPDATE dbo.badge_text_templates
         SET
           name = @name,
           text_type = @textType,
+          custom_heading = @customHeading,
           content = @content,
           is_active = @isActive,
           deactivated_at = CASE WHEN @isActive = 0 THEN COALESCE(deactivated_at, SYSUTCDATETIME()) WHEN @isActive = 1 THEN NULL ELSE deactivated_at END,
           deactivated_by = CASE WHEN @isActive = 0 THEN COALESCE(deactivated_by, @updatedBy) WHEN @isActive = 1 THEN NULL ELSE deactivated_by END,
+          sort_order = CASE
+            WHEN text_type = 'custom' AND @textType = 'custom' THEN sort_order
+            WHEN @textType = 'custom' AND text_type <> 'custom' THEN ISNULL((SELECT MAX(sort_order) + 10 FROM dbo.badge_text_templates WHERE text_type = 'custom'), 100)
+            WHEN @textType <> 'custom' THEN @sortOrder
+            ELSE sort_order
+          END,
           updated_by = @updatedBy,
           updated_at = SYSUTCDATETIME()
         WHERE id = @id
@@ -1565,6 +1610,118 @@ adminRouter.put("/api/texts/:id", async (request, response) => {
     response.json({ success: true });
   } catch (error) {
     return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der Hinweistext konnte nicht aktualisiert werden.");
+  }
+});
+
+adminRouter.post("/api/texts/:id/move-up", async (request, response) => {
+  const user = await requirePermission(request, response, "texts.manage");
+  if (!user) return;
+
+  try {
+    const pool = await getPool();
+    const currentResult = await pool.request()
+      .input("id", sql.UniqueIdentifier, request.params.id)
+      .query<{ id: string; sortOrder: number }>(`
+        SELECT id, sort_order AS sortOrder
+        FROM dbo.badge_text_templates
+        WHERE id = @id
+      `);
+
+    const current = currentResult.recordset[0];
+    if (!current) {
+      return sendError(response, 404, "NOT_FOUND", "Hinweistext wurde nicht gefunden.");
+    }
+
+    const previousResult = await pool.request()
+      .input("sortOrder", sql.Int, current.sortOrder)
+      .query<{ id: string; sortOrder: number }>(`
+        SELECT TOP 1 id, sort_order AS sortOrder
+        FROM dbo.badge_text_templates
+        WHERE sort_order < @sortOrder
+        ORDER BY sort_order DESC, updated_at DESC
+      `);
+
+    const previous = previousResult.recordset[0];
+    if (!previous) {
+      return response.json({ success: true });
+    }
+
+    await pool.request()
+      .input("currentId", sql.UniqueIdentifier, current.id)
+      .input("currentSortOrder", sql.Int, current.sortOrder)
+      .input("previousId", sql.UniqueIdentifier, previous.id)
+      .input("previousSortOrder", sql.Int, previous.sortOrder)
+      .query(`
+        UPDATE dbo.badge_text_templates
+        SET sort_order = CASE
+          WHEN id = @currentId THEN @previousSortOrder
+          WHEN id = @previousId THEN @currentSortOrder
+          ELSE sort_order
+        END,
+        updated_at = SYSUTCDATETIME()
+        WHERE id IN (@currentId, @previousId)
+      `);
+
+    await writeAuditLog({ user: user.username, action: "ADMIN_BADGE_TEXT_MOVED_UP", objectType: "badge_text", objectId: request.params.id, ipAddress: getRequestIp(request) });
+    response.json({ success: true });
+  } catch (error) {
+    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Reihenfolge konnte nicht geändert werden.");
+  }
+});
+
+adminRouter.post("/api/texts/:id/move-down", async (request, response) => {
+  const user = await requirePermission(request, response, "texts.manage");
+  if (!user) return;
+
+  try {
+    const pool = await getPool();
+    const currentResult = await pool.request()
+      .input("id", sql.UniqueIdentifier, request.params.id)
+      .query<{ id: string; sortOrder: number }>(`
+        SELECT id, sort_order AS sortOrder
+        FROM dbo.badge_text_templates
+        WHERE id = @id
+      `);
+
+    const current = currentResult.recordset[0];
+    if (!current) {
+      return sendError(response, 404, "NOT_FOUND", "Hinweistext wurde nicht gefunden.");
+    }
+
+    const nextResult = await pool.request()
+      .input("sortOrder", sql.Int, current.sortOrder)
+      .query<{ id: string; sortOrder: number }>(`
+        SELECT TOP 1 id, sort_order AS sortOrder
+        FROM dbo.badge_text_templates
+        WHERE sort_order > @sortOrder
+        ORDER BY sort_order ASC, updated_at ASC
+      `);
+
+    const next = nextResult.recordset[0];
+    if (!next) {
+      return response.json({ success: true });
+    }
+
+    await pool.request()
+      .input("currentId", sql.UniqueIdentifier, current.id)
+      .input("currentSortOrder", sql.Int, current.sortOrder)
+      .input("nextId", sql.UniqueIdentifier, next.id)
+      .input("nextSortOrder", sql.Int, next.sortOrder)
+      .query(`
+        UPDATE dbo.badge_text_templates
+        SET sort_order = CASE
+          WHEN id = @currentId THEN @nextSortOrder
+          WHEN id = @nextId THEN @currentSortOrder
+          ELSE sort_order
+        END,
+        updated_at = SYSUTCDATETIME()
+        WHERE id IN (@currentId, @nextId)
+      `);
+
+    await writeAuditLog({ user: user.username, action: "ADMIN_BADGE_TEXT_MOVED_DOWN", objectType: "badge_text", objectId: request.params.id, ipAddress: getRequestIp(request) });
+    response.json({ success: true });
+  } catch (error) {
+    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Reihenfolge konnte nicht geändert werden.");
   }
 });
 
@@ -1745,59 +1902,12 @@ adminRouter.post("/api/admin/site-map/upload", async (request, response) => {
 adminRouter.post("/api/admin/ui-background/upload", async (request, response) => {
   const user = await requirePermission(request, response, "admin.system");
   if (!user) return;
-
-  const file = await parseSingleUiBackgroundUpload(request, response);
-  if (!file) return;
-
-  const parsed = siteMapUploadNameSchema.safeParse(request.body);
-  if (!parsed.success) return sendValidationError(response, parsed.error.flatten());
-
-  const extension = getNormalizedExtension(file.originalname);
-  if (!extension || !isAllowedSiteMapExtension(extension) || !isAllowedSiteMapMimeType(file.mimetype)) {
-    return sendValidationError(response, { fieldErrors: { file: ["Erlaubt sind nur PNG-, JPG- und WEBP-Dateien."] } });
-  }
-
-  const storedFileName = buildStoredUiBackgroundFileName(extension);
-  const filePath = buildUiBackgroundPublicPath(storedFileName);
-  const uploadDirectory = await ensureUiBackgroundUploadDirectory();
-  const targetPath = path.join(uploadDirectory, storedFileName);
-
-  try {
-    await fs.writeFile(targetPath, file.buffer);
-    await upsertSystemSettings({
-      [WORKFLOW_SETTING_KEYS.uiBackgroundMode]: "image",
-      [WORKFLOW_SETTING_KEYS.uiBackgroundImageUrl]: filePath,
-      [WORKFLOW_SETTING_KEYS.uiBackgroundImageName]: parsed.data.name || path.basename(file.originalname, path.extname(file.originalname)),
-      [WORKFLOW_SETTING_KEYS.uiBackgroundImageOriginalFileName]: file.originalname
-    });
-
-    await writeAuditLog({
-      user: user.username,
-      userId: user.id,
-      action: "UI_BACKGROUND_UPDATED",
-      objectType: "system_setting",
-      objectId: "ui_background_image",
-      ipAddress: getRequestIp(request),
-      userAgent: getRequestUserAgent(request),
-      metadata: {
-        file_path: filePath,
-        original_file_name: file.originalname,
-        stored_file_name: storedFileName,
-        mime_type: file.mimetype,
-        file_size_bytes: file.size
-      }
-    });
-
-    return response.status(201).json({
-      success: true,
-      backgroundImageUrl: filePath,
-      backgroundImageName: parsed.data.name || path.basename(file.originalname, path.extname(file.originalname)),
-      backgroundImageOriginalFileName: file.originalname
-    });
-  } catch (error) {
-    await fs.rm(targetPath, { force: true }).catch(() => undefined);
-    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Das Hintergrundbild konnte nicht hochgeladen werden.");
-  }
+  return sendError(
+    response,
+    410,
+    "BACKGROUND_UPLOAD_DISABLED",
+    "Der Upload ist deaktiviert. Bitte legen Sie die Bilddatei direkt im Ordner /app/uploads/ui-backgrounds ab und starten Sie die App neu."
+  );
 });
 
 adminRouter.get("/api/admin/site-map/active", async (request, response) => {
@@ -2050,17 +2160,9 @@ adminRouter.get("/api/admin/system-status", async (request, response) => {
   if (!user) return;
   try {
     const pool = await getPool();
-    const retention = await getRetentionSettings();
-    const [activeVisits, configuredGates, staleVisits, openPreRegistrationsToday, signaturesPending, signaturesFollowUp, signaturesExceptions] = await Promise.all([
+    const [activeVisits, configuredGates, openPreRegistrationsToday, signaturesPending, signaturesFollowUp, signaturesExceptions] = await Promise.all([
       pool.request().query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.visits WHERE status = 'checked_in'"),
       pool.request().query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.gates WHERE is_active = 1"),
-      pool.request()
-        .input("retentionDays", sql.Int, retention.days ?? env.VISITOR_RETENTION_DAYS)
-        .query<{ count: number }>(`
-          SELECT COUNT(*) AS count
-          FROM dbo.visits
-          WHERE created_at < DATEADD(day, -@retentionDays, SYSUTCDATETIME())
-        `),
       pool.request().query<{ count: number }>(`
         SELECT COUNT(*) AS count
         FROM dbo.visits
@@ -2080,9 +2182,6 @@ adminRouter.get("/api/admin/system-status", async (request, response) => {
       signaturesPending: signaturesPending.recordset[0]?.count ?? 0,
       signaturesFollowUp: signaturesFollowUp.recordset[0]?.count ?? 0,
       signaturesExceptions: signaturesExceptions.recordset[0]?.count ?? 0,
-      staleVisits: retention.enabled ? staleVisits.recordset[0]?.count ?? 0 : 0,
-      retentionDays: retention.days,
-      retentionEnabled: retention.enabled,
       dbHost: env.MSSQL_HOST,
       dbName: env.MSSQL_DATABASE
     });
@@ -2228,17 +2327,6 @@ adminRouter.post("/api/admin/system-settings/workflow-email/test", async (reques
   }
 });
 
-adminRouter.put("/api/admin/system-settings/retention", async (request, response) => {
-  const user = await requirePermission(request, response, "admin.system");
-  if (!user) return;
-  return sendError(
-    response,
-    410,
-    "RETENTION_DISABLED",
-    "Die Aufbewahrung wird nicht über die Anwendung gesteuert. Daten bleiben erhalten und werden nur direkt in der SQL-Datenbank gelöscht."
-  );
-});
-
 adminRouter.post("/api/admin/visitors/:id/archive", async (request, response) => {
   const user = await requirePermission(request, response, "admin.system");
   if (!user) return;
@@ -2273,15 +2361,4 @@ adminRouter.post("/api/admin/visitors/:id/archive", async (request, response) =>
   } catch (error) {
     return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der Besucher konnte nicht archiviert werden.");
   }
-});
-
-adminRouter.post("/api/admin/retention/cleanup", async (request, response) => {
-  const user = await requirePermission(request, response, "admin.system");
-  if (!user) return;
-  return sendError(
-    response,
-    410,
-    "RETENTION_DISABLED",
-    "Die Bereinigung über die Anwendung ist deaktiviert. Löschungen erfolgen ausschließlich direkt in der SQL-Datenbank."
-  );
 });

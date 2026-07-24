@@ -8,15 +8,22 @@ type BadgeTextManagerProps = {
 };
 
 type BadgeTextDraft = {
-  name: string;
-  textType: string;
+  sectionType: string;
+  customHeading: string;
   content: string;
   isActive: boolean;
 };
 
 type StatusFilter = "all" | "active" | "inactive";
 
-const defaultTextTypes = ["security_notice", "photo_ban", "signature_notice", "footer"];
+const sectionOptions = [
+  { value: "security_notice", label: "Sicherheitshinweise" },
+  { value: "photo_ban", label: "Fotografierverbot" },
+  { value: "signature_notice", label: "Rückgabe und Unterschrift" },
+  { value: "visitor_notice", label: "Hinweis für Besucher" },
+  { value: "footer", label: "Footer" },
+  { value: "custom", label: "Benutzerdefinierter Bereich" }
+];
 
 function escapeHtml(value: string): string {
   return value
@@ -29,17 +36,29 @@ function escapeHtml(value: string): string {
 
 function createDraft(text?: AdminBadgeText): BadgeTextDraft {
   return {
-    name: text?.name ?? "",
-    textType: text?.textType ?? "security_notice",
+    sectionType: text?.sectionType ?? "security_notice",
+    customHeading: text?.customHeading ?? "",
     content: text?.content ?? "",
     isActive: text?.isActive ?? true
   };
 }
 
-function isDirty(original: AdminBadgeText, draft: AdminBadgeText | BadgeTextDraft): boolean {
+function getHeading(text: Pick<AdminBadgeText, "heading"> | BadgeTextDraft): string {
+  if ("heading" in text) {
+    return text.heading;
+  }
+
+  if (text.sectionType === "custom") {
+    return text.customHeading.trim();
+  }
+
+  return formatTextType(text.sectionType);
+}
+
+function isDirty(original: AdminBadgeText, draft: BadgeTextDraft): boolean {
   return (
-    original.name !== draft.name ||
-    original.textType !== draft.textType ||
+    original.sectionType !== draft.sectionType ||
+    (original.customHeading ?? "") !== draft.customHeading ||
     original.content !== draft.content ||
     original.isActive !== draft.isActive
   );
@@ -50,39 +69,30 @@ function summarizeContent(content: string): string {
   if (!normalized) {
     return "Kein Inhalt";
   }
-  return normalized.length > 120 ? `${normalized.slice(0, 117)}...` : normalized;
+  return normalized.length > 140 ? `${normalized.slice(0, 137)}...` : normalized;
 }
 
 export function BadgeTextManager({
   heading = "Hinweistexte"
 }: BadgeTextManagerProps) {
   const [texts, setTexts] = useState<AdminBadgeText[]>([]);
-  const [editableTexts, setEditableTexts] = useState<Record<string, AdminBadgeText>>({});
+  const [editableTexts, setEditableTexts] = useState<Record<string, BadgeTextDraft>>({});
   const [newText, setNewText] = useState<BadgeTextDraft>(createDraft());
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [previewText, setPreviewText] = useState<BadgeTextDraft | null>(null);
+  const [previewText, setPreviewText] = useState<BadgeTextDraft | AdminBadgeText | null>(null);
   const [savePendingId, setSavePendingId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  const knownTypes = useMemo(
-    () => Array.from(new Set([
-      ...defaultTextTypes,
-      ...texts.map((text) => text.textType),
-      newText.textType
-    ].filter((entry) => entry.trim()))).sort((left, right) => left.localeCompare(right, "de")),
-    [newText.textType, texts]
-  );
 
   const loadTexts = useCallback(async () => {
     setError(null);
     try {
       const payload = await fetchJson<{ texts: AdminBadgeText[] }>("/api/texts", { method: "GET", headers: {} });
       setTexts(payload.texts);
-      setEditableTexts(Object.fromEntries(payload.texts.map((text) => [text.id, { ...text }])));
+      setEditableTexts(Object.fromEntries(payload.texts.map((text) => [text.id, createDraft(text)])));
       setSelectedTextId((current) => {
         if (current && payload.texts.some((text) => text.id === current)) {
           return current;
@@ -91,7 +101,7 @@ export function BadgeTextManager({
       });
     } catch (apiError) {
       const payload = apiError as ApiError;
-      setError(payload.message || "Texte konnten nicht geladen werden.");
+      setError(payload.message || "Hinweistexte konnten nicht geladen werden.");
     }
   }, []);
 
@@ -99,20 +109,11 @@ export function BadgeTextManager({
     void loadTexts();
   }, [loadTexts]);
 
-  const typeCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const text of texts) {
-      counts.set(text.textType, (counts.get(text.textType) ?? 0) + 1);
-    }
-    return counts;
-  }, [texts]);
-
   const filteredTexts = useMemo(() => {
     const search = searchTerm.trim().toLocaleLowerCase("de");
-
-    return [...texts]
+    return texts
       .filter((text) => {
-        if (typeFilter !== "all" && text.textType !== typeFilter) {
+        if (typeFilter !== "all" && text.sectionType !== typeFilter) {
           return false;
         }
         if (statusFilter === "active" && !text.isActive) {
@@ -124,17 +125,12 @@ export function BadgeTextManager({
         if (!search) {
           return true;
         }
-        return [text.name, text.textType, text.content]
+        return [text.heading, text.sectionLabel, text.content]
           .join(" ")
           .toLocaleLowerCase("de")
           .includes(search);
       })
-      .sort((left, right) => {
-        if (left.isActive !== right.isActive) {
-          return left.isActive ? -1 : 1;
-        }
-        return left.name.localeCompare(right.name, "de");
-      });
+      .sort((left, right) => left.sortOrder - right.sortOrder || left.heading.localeCompare(right.heading, "de"));
   }, [searchTerm, statusFilter, texts, typeFilter]);
 
   const selectedText = useMemo(
@@ -142,22 +138,24 @@ export function BadgeTextManager({
     [selectedTextId, texts]
   );
 
-  const selectedDraft = selectedText
-    ? (editableTexts[selectedText.id] ?? selectedText)
-    : null;
+  const selectedDraft = selectedText ? (editableTexts[selectedText.id] ?? createDraft(selectedText)) : null;
+  const activeCount = texts.filter((text) => text.isActive).length;
+  const inactiveCount = texts.length - activeCount;
 
-  function openPrintPreview(text: BadgeTextDraft) {
+  function openPrintPreview(text: BadgeTextDraft | AdminBadgeText) {
     const popup = window.open("", "_blank", "noopener,noreferrer,width=860,height=900");
     if (!popup) {
       setError("Die Druckvorschau wurde vom Browser blockiert.");
       return;
     }
 
+    const displayHeading = getHeading(text);
+    const displaySection = "sectionLabel" in text ? text.sectionLabel : (text.sectionType === "custom" ? "Benutzerdefiniert" : formatTextType(text.sectionType));
     popup.document.write(`<!DOCTYPE html>
 <html lang="de">
   <head>
     <meta charset="utf-8" />
-    <title>Druckvorschau ${escapeHtml(text.name || "Hinweistext")}</title>
+    <title>Druckvorschau ${escapeHtml(displayHeading || "Hinweistext")}</title>
     <style>
       body { font-family: Arial, sans-serif; margin: 0; padding: 28px; color: #10233a; }
       .sheet { max-width: 760px; margin: 0 auto; border: 1px solid #c8d4e3; border-radius: 12px; padding: 28px; }
@@ -177,15 +175,15 @@ export function BadgeTextManager({
     <div class="sheet">
       <div class="header">
         <div>
-          <p class="eyebrow">Druckvorschau</p>
-          <h1>${escapeHtml(text.name || "Hinweistext")}</h1>
+          <p class="eyebrow">Besucherschein</p>
+          <h1>${escapeHtml(displayHeading || "Hinweistext")}</h1>
         </div>
         <img src="${escapeHtml(BRANDING.logo)}" alt="WIWeB" />
       </div>
       <div class="meta">
         <div>
-          <span class="label">Typ</span>
-          <span class="value">${escapeHtml(formatTextType(text.textType))}</span>
+          <span class="label">Bereich auf dem Besucherschein</span>
+          <span class="value">${escapeHtml(displaySection)}</span>
         </div>
         <div>
           <span class="label">Status</span>
@@ -194,7 +192,6 @@ export function BadgeTextManager({
       </div>
       <div class="content">${escapeHtml(text.content || "-")}</div>
     </div>
-    <script>window.onload = function(){ window.focus(); };</script>
   </body>
 </html>`);
     popup.document.close();
@@ -208,28 +205,28 @@ export function BadgeTextManager({
         body: JSON.stringify(newText)
       });
       setNewText(createDraft());
-      setMessage("Text angelegt.");
+      setMessage("Hinweistext angelegt.");
       setError(null);
       await loadTexts();
     } catch (apiError) {
       const payload = apiError as ApiError;
-      setError(payload.message || "Text konnte nicht angelegt werden.");
+      setError(payload.message || "Der Hinweistext konnte nicht angelegt werden.");
     }
   }
 
-  async function saveText(text: AdminBadgeText) {
+  async function saveText(text: AdminBadgeText, draft: BadgeTextDraft) {
     setSavePendingId(text.id);
     try {
       await fetchJson(`/api/texts/${text.id}`, {
         method: "PUT",
-        body: JSON.stringify(text)
+        body: JSON.stringify(draft)
       });
-      setMessage("Text gespeichert.");
+      setMessage("Hinweistext gespeichert.");
       setError(null);
       await loadTexts();
     } catch (apiError) {
       const payload = apiError as ApiError;
-      setError(payload.message || "Text konnte nicht gespeichert werden.");
+      setError(payload.message || "Der Hinweistext konnte nicht gespeichert werden.");
     } finally {
       setSavePendingId(null);
     }
@@ -241,39 +238,58 @@ export function BadgeTextManager({
         method: "POST",
         body: JSON.stringify({})
       });
-      setMessage(text.isActive ? "Text deaktiviert." : "Text reaktiviert.");
+      setMessage(text.isActive ? "Hinweistext deaktiviert." : "Hinweistext aktiviert.");
       setError(null);
       await loadTexts();
     } catch (apiError) {
       const payload = apiError as ApiError;
-      setError(payload.message || "Text konnte nicht aktualisiert werden.");
+      setError(payload.message || "Der Status konnte nicht geändert werden.");
     }
   }
 
-  function updateSelectedText<K extends keyof AdminBadgeText>(key: K, value: AdminBadgeText[K]) {
+  async function moveText(text: AdminBadgeText, direction: "up" | "down") {
+    try {
+      await fetchJson(`/api/texts/${text.id}/move-${direction}`, {
+        method: "POST",
+        body: JSON.stringify({})
+      });
+      setMessage(direction === "up" ? "Hinweistext nach oben verschoben." : "Hinweistext nach unten verschoben.");
+      setError(null);
+      await loadTexts();
+    } catch (apiError) {
+      const payload = apiError as ApiError;
+      setError(payload.message || "Die Reihenfolge konnte nicht geändert werden.");
+    }
+  }
+
+  function updateSelectedText<K extends keyof BadgeTextDraft>(key: K, value: BadgeTextDraft[K]) {
     if (!selectedText) {
       return;
     }
+
     setEditableTexts((current) => ({
       ...current,
       [selectedText.id]: {
-        ...(current[selectedText.id] ?? selectedText),
+        ...(current[selectedText.id] ?? createDraft(selectedText)),
         [key]: value
       }
     }));
   }
 
   function duplicateIntoNewText() {
-    if (!selectedDraft) {
+    if (!selectedText || !selectedDraft) {
       return;
     }
+
     setNewText({
-      name: selectedDraft.name ? `${selectedDraft.name} Kopie` : "",
-      textType: selectedDraft.textType,
+      sectionType: selectedDraft.sectionType,
+      customHeading: selectedDraft.sectionType === "custom"
+        ? `${selectedDraft.customHeading.trim()} – Kopie`
+        : "",
       content: selectedDraft.content,
       isActive: selectedDraft.isActive
     });
-    setMessage("Text als Vorlage in den Bereich 'Neu anlegen' uebernommen.");
+    setMessage("Hinweistext als Vorlage übernommen.");
     setError(null);
   }
 
@@ -283,12 +299,9 @@ export function BadgeTextManager({
     }
     setEditableTexts((current) => ({
       ...current,
-      [selectedText.id]: { ...selectedText }
+      [selectedText.id]: createDraft(selectedText)
     }));
   }
-
-  const activeCount = texts.filter((text) => text.isActive).length;
-  const inactiveCount = texts.length - activeCount;
 
   return (
     <div className="badge-text-manager">
@@ -307,35 +320,27 @@ export function BadgeTextManager({
             <input
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
-              placeholder="Name, Typ oder Inhalt"
+              placeholder="Überschrift, Bereich oder Inhalt"
             />
           </FormField>
           <FormField label="Status">
             <div className="text-filter-row">
-              <button type="button" className={statusFilter === "all" ? "secondary-button active-chip" : "secondary-button"} onClick={() => setStatusFilter("all")}>
-                Alle ({texts.length})
-              </button>
-              <button type="button" className={statusFilter === "active" ? "secondary-button active-chip" : "secondary-button"} onClick={() => setStatusFilter("active")}>
-                Aktiv ({activeCount})
-              </button>
-              <button type="button" className={statusFilter === "inactive" ? "secondary-button active-chip" : "secondary-button"} onClick={() => setStatusFilter("inactive")}>
-                Inaktiv ({inactiveCount})
-              </button>
+              <button type="button" className={statusFilter === "all" ? "secondary-button active-chip" : "secondary-button"} onClick={() => setStatusFilter("all")}>Alle ({texts.length})</button>
+              <button type="button" className={statusFilter === "active" ? "secondary-button active-chip" : "secondary-button"} onClick={() => setStatusFilter("active")}>Aktiv ({activeCount})</button>
+              <button type="button" className={statusFilter === "inactive" ? "secondary-button active-chip" : "secondary-button"} onClick={() => setStatusFilter("inactive")}>Inaktiv ({inactiveCount})</button>
             </div>
           </FormField>
         </div>
         <div className="text-type-chip-row">
-          <button type="button" className={typeFilter === "all" ? "secondary-button active-chip" : "secondary-button"} onClick={() => setTypeFilter("all")}>
-            Alle Typen
-          </button>
-          {knownTypes.map((type) => (
+          <button type="button" className={typeFilter === "all" ? "secondary-button active-chip" : "secondary-button"} onClick={() => setTypeFilter("all")}>Alle Bereiche</button>
+          {sectionOptions.map((option) => (
             <button
-              key={type}
+              key={option.value}
               type="button"
-              className={typeFilter === type ? "secondary-button active-chip" : "secondary-button"}
-              onClick={() => setTypeFilter(type)}
+              className={typeFilter === option.value ? "secondary-button active-chip" : "secondary-button"}
+              onClick={() => setTypeFilter(option.value)}
             >
-              {formatTextType(type)} ({typeCounts.get(type) ?? 0})
+              {option.label}
             </button>
           ))}
         </div>
@@ -346,48 +351,37 @@ export function BadgeTextManager({
           <Card className="text-editor-card">
             <div className="text-section-header">
               <div>
-                <h4>Neu anlegen</h4>
+                <h4>Neuen Bereich anlegen</h4>
               </div>
             </div>
             <form className="form-grid" onSubmit={createText}>
-              <div className="form-grid two-columns">
-                <FormField label="Name" required>
-                  <input value={newText.name} onChange={(event) => setNewText((current) => ({ ...current, name: event.target.value }))} />
+              <FormField label="Bereich auf dem Besucherschein" required>
+                <select value={newText.sectionType} onChange={(event) => setNewText((current) => ({ ...current, sectionType: event.target.value }))}>
+                  {sectionOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              </FormField>
+
+              {newText.sectionType === "custom" ? (
+                <FormField label="Eigene Überschrift" required>
+                  <input value={newText.customHeading} onChange={(event) => setNewText((current) => ({ ...current, customHeading: event.target.value }))} />
                 </FormField>
-                <FormField label="Typ" required>
-                  <input
-                    list="badge-text-type-options"
-                    value={newText.textType}
-                    onChange={(event) => setNewText((current) => ({ ...current, textType: event.target.value }))}
-                    placeholder="z. B. Sicherheit"
-                  />
-                </FormField>
-              </div>
-              <div className="text-type-chip-row">
-                {knownTypes.map((type) => (
-                  <button
-                    key={type}
-                    type="button"
-                    className={newText.textType === type ? "secondary-button active-chip" : "secondary-button"}
-                    onClick={() => setNewText((current) => ({ ...current, textType: type }))}
-                  >
-                    {formatTextType(type)}
-                  </button>
-                ))}
-              </div>
+              ) : null}
+
               <label className="checkbox-row text-active-toggle">
                 <input type="checkbox" checked={newText.isActive} onChange={(event) => setNewText((current) => ({ ...current, isActive: event.target.checked }))} />
                 Aktiv
               </label>
+
               <FormField label="Inhalt" required>
                 <textarea className="text-editor-area text-editor-area-compact" rows={6} value={newText.content} onChange={(event) => setNewText((current) => ({ ...current, content: event.target.value }))} />
               </FormField>
+
               <div className="row-actions text-editor-actions">
-                <button type="submit">Anlegen</button>
-                <button type="button" className="secondary-button" onClick={() => setPreviewText(newText)} disabled={!newText.name.trim() && !newText.content.trim()}>
+                <button type="submit">Speichern</button>
+                <button type="button" className="secondary-button" onClick={() => setPreviewText(newText)} disabled={!newText.content.trim()}>
                   Vorschau
                 </button>
-                <button type="button" className="secondary-button" onClick={() => openPrintPreview(newText)} disabled={!newText.name.trim() && !newText.content.trim()}>
+                <button type="button" className="secondary-button" onClick={() => openPrintPreview(newText)} disabled={!newText.content.trim()}>
                   Drucken
                 </button>
                 <button type="button" className="secondary-button" onClick={() => setNewText(createDraft())}>
@@ -400,12 +394,12 @@ export function BadgeTextManager({
           <Card className="text-list-card">
             <div className="text-section-header">
               <div>
-                <h4>Vorhandene Texte</h4>
+                <h4>Vorhandene Bereiche</h4>
               </div>
             </div>
             <div className="text-record-list">
               {filteredTexts.length ? filteredTexts.map((text) => {
-                const draft = editableTexts[text.id] ?? text;
+                const draft = editableTexts[text.id] ?? createDraft(text);
                 const dirty = isDirty(text, draft);
 
                 return (
@@ -416,11 +410,11 @@ export function BadgeTextManager({
                     onClick={() => setSelectedTextId(text.id)}
                   >
                     <div className="text-record-header">
-                      <strong>{text.name}</strong>
+                      <strong>{text.heading}</strong>
                       <span className="field-config-badge">{text.isActive ? "Aktiv" : "Inaktiv"}</span>
                     </div>
                     <div className="text-record-meta">
-                      <span className="field-config-badge">{formatTextType(text.textType)}</span>
+                      <span className="field-config-badge">{text.sectionLabel}</span>
                       {dirty ? <span className="field-config-badge">Ungespeichert</span> : null}
                     </div>
                     <p>{summarizeContent(draft.content)}</p>
@@ -428,7 +422,7 @@ export function BadgeTextManager({
                 );
               }) : (
                 <div className="text-empty-state">
-                  Keine Texte fuer die aktuelle Suche gefunden.
+                  Keine Hinweistexte für die aktuelle Auswahl gefunden.
                 </div>
               )}
             </div>
@@ -440,47 +434,34 @@ export function BadgeTextManager({
             <>
               <div className="text-section-header">
                 <div>
-                  <h4>{selectedText.name}</h4>
+                  <h4>{selectedText.heading}</h4>
                 </div>
                 <div className="text-detail-status">
+                  <span className="field-config-badge">{selectedText.sectionLabel}</span>
                   <span className="field-config-badge">{selectedDraft.isActive ? "Aktiv" : "Inaktiv"}</span>
                   {isDirty(selectedText, selectedDraft) ? <span className="field-config-badge">Ungespeichert</span> : null}
                 </div>
               </div>
 
               <div className="form-grid">
-                <div className="form-grid two-columns">
-                  <FormField label="Name">
-                    <input value={selectedDraft.name} onChange={(event) => updateSelectedText("name", event.target.value)} />
-                  </FormField>
-                  <FormField label="Typ">
-                    <input
-                      list="badge-text-type-options"
-                      value={selectedDraft.textType}
-                      onChange={(event) => updateSelectedText("textType", event.target.value)}
-                    />
-                  </FormField>
-                </div>
+                <FormField label="Bereich auf dem Besucherschein" required>
+                  <select value={selectedDraft.sectionType} onChange={(event) => updateSelectedText("sectionType", event.target.value)}>
+                    {sectionOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </FormField>
 
-                <div className="text-type-chip-row">
-                  {knownTypes.map((type) => (
-                    <button
-                      key={type}
-                      type="button"
-                      className={selectedDraft.textType === type ? "secondary-button active-chip" : "secondary-button"}
-                      onClick={() => updateSelectedText("textType", type)}
-                    >
-                      {formatTextType(type)}
-                    </button>
-                  ))}
-                </div>
+                {selectedDraft.sectionType === "custom" ? (
+                  <FormField label="Eigene Überschrift" required>
+                    <input value={selectedDraft.customHeading} onChange={(event) => updateSelectedText("customHeading", event.target.value)} />
+                  </FormField>
+                ) : null}
 
                 <label className="checkbox-row text-active-toggle">
                   <input type="checkbox" checked={selectedDraft.isActive} onChange={(event) => updateSelectedText("isActive", event.target.checked)} />
                   Aktiv
                 </label>
 
-                <FormField label="Inhalt">
+                <FormField label="Inhalt" required>
                   <textarea
                     className="text-editor-area"
                     rows={8}
@@ -490,38 +471,40 @@ export function BadgeTextManager({
                 </FormField>
 
                 <div className="row-actions text-editor-actions">
-                  <button type="button" onClick={() => void saveText(selectedDraft)} disabled={savePendingId === selectedDraft.id}>
-                    {savePendingId === selectedDraft.id ? "Speichert..." : "Speichern"}
+                  <button type="button" onClick={() => void saveText(selectedText, selectedDraft)} disabled={savePendingId === selectedText.id}>
+                    {savePendingId === selectedText.id ? "Speichert..." : "Speichern"}
                   </button>
-                  <button type="button" className="secondary-button" onClick={() => setPreviewText(selectedDraft)}>
+                  <button type="button" className="secondary-button" onClick={() => setPreviewText({ ...selectedText, ...selectedDraft, heading: getHeading(selectedDraft), sectionLabel: selectedDraft.sectionType === "custom" ? "Benutzerdefiniert" : formatTextType(selectedDraft.sectionType) })}>
                     Vorschau
                   </button>
-                  <button type="button" className="secondary-button" onClick={() => openPrintPreview(selectedDraft)}>
+                  <button type="button" className="secondary-button" onClick={() => openPrintPreview({ ...selectedText, ...selectedDraft, heading: getHeading(selectedDraft), sectionLabel: selectedDraft.sectionType === "custom" ? "Benutzerdefiniert" : formatTextType(selectedDraft.sectionType) })}>
                     Drucken
                   </button>
-                  <button type="button" className="secondary-button" onClick={() => duplicateIntoNewText()}>
+                  <button type="button" className="secondary-button" onClick={duplicateIntoNewText}>
                     Duplizieren
                   </button>
-                  <button type="button" className="secondary-button" onClick={() => resetSelectedDraft()} disabled={!isDirty(selectedText, selectedDraft)}>
+                  <button type="button" className="secondary-button" onClick={() => void moveText(selectedText, "up")}>
+                    Nach oben
+                  </button>
+                  <button type="button" className="secondary-button" onClick={() => void moveText(selectedText, "down")}>
+                    Nach unten
+                  </button>
+                  <button type="button" className="secondary-button" onClick={resetSelectedDraft} disabled={!isDirty(selectedText, selectedDraft)}>
                     Zurücksetzen
                   </button>
                   <button type="button" className="danger-button" onClick={() => void toggleTextActive(selectedText)}>
-                    {selectedText.isActive ? "Deaktivieren" : "Reaktivieren"}
+                    {selectedText.isActive ? "Deaktivieren" : "Aktivieren"}
                   </button>
                 </div>
               </div>
             </>
           ) : (
             <div className="text-empty-state text-empty-state-large">
-              Links einen Text auswählen, um ihn zu bearbeiten.
+              Links einen Hinweistext auswählen, um ihn zu bearbeiten.
             </div>
           )}
         </Card>
       </div>
-
-      <datalist id="badge-text-type-options">
-        {knownTypes.map((type) => <option key={type} value={type} />)}
-      </datalist>
 
       {previewText ? (
         <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={(event) => {
@@ -531,7 +514,7 @@ export function BadgeTextManager({
         }}>
           <div className="modal-card panel text-preview-modal">
             <div className="modal-header">
-              <h4>Druckvorschau</h4>
+              <h4>Vorschau</h4>
               <button type="button" className="secondary-button modal-close-button" onClick={() => setPreviewText(null)}>
                 Schließen
               </button>
@@ -539,8 +522,8 @@ export function BadgeTextManager({
             <div className="text-preview-sheet">
               <div className="text-preview-header">
                 <div>
-                  <p className="eyebrow">Hinweistext</p>
-                  <h3>{previewText.name || "Ohne Name"}</h3>
+                  <p className="eyebrow">Besucherschein</p>
+                  <h3>{getHeading(previewText) || "Ohne Überschrift"}</h3>
                 </div>
                 <img className="badge-print-logo" src={BRANDING.logo} alt="WIWeB" />
               </div>

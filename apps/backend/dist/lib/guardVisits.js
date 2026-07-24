@@ -3,10 +3,14 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.GUARD_VISITOR_SEARCH_MIN_LENGTH = void 0;
+exports.canUseGuardVisitorSearch = canUseGuardVisitorSearch;
+exports.hasGuardVisitorSearchCriteria = hasGuardVisitorSearchCriteria;
 exports.getVisitCompleteness = getVisitCompleteness;
 exports.getTodayVisitsForUser = getTodayVisitsForUser;
 exports.getCalendarVisitsForUser = getCalendarVisitsForUser;
 exports.getVisitDetailForUser = getVisitDetailForUser;
+exports.searchVisitorsForGuard = searchVisitorsForGuard;
 exports.checkInVisit = checkInVisit;
 exports.createWalkInVisit = createWalkInVisit;
 exports.checkOutVisit = checkOutVisit;
@@ -21,6 +25,7 @@ const badgeNumber_1 = require("./badgeNumber");
 const fieldDefinitions_1 = require("./fieldDefinitions");
 const visitWorkflow_1 = require("./visitWorkflow");
 const MISSING_IMPORT_VALUE = "[fehlt]";
+exports.GUARD_VISITOR_SEARCH_MIN_LENGTH = 2;
 const normalizedStatusSql = `
   CASE
     WHEN v.status = 'vorangemeldet' THEN '${visitWorkflow_1.VISIT_STATUS.PRE_REGISTERED}'
@@ -29,6 +34,16 @@ const normalizedStatusSql = `
     ELSE v.status
   END
 `;
+function normalizedStatusForAlias(alias) {
+    return `
+    CASE
+      WHEN ${alias}.status = 'vorangemeldet' THEN '${visitWorkflow_1.VISIT_STATUS.PRE_REGISTERED}'
+      WHEN ${alias}.status = 'eingecheckt' THEN '${visitWorkflow_1.VISIT_STATUS.CHECKED_IN}'
+      WHEN ${alias}.status = 'ausgecheckt' THEN '${visitWorkflow_1.VISIT_STATUS.CHECKED_OUT}'
+      ELSE ${alias}.status
+    END
+  `;
+}
 function buildTodayQuery(status, search, signatureStatus) {
     const predicates = [
         `(
@@ -71,6 +86,30 @@ function cleanOptional(value) {
     }
     const normalized = value.trim();
     return normalized.length > 0 ? normalized : null;
+}
+function sanitizeSearchText(value) {
+    return typeof value === "string" ? value.trim() : "";
+}
+function canUseGuardVisitorSearch(user) {
+    return (user.role === "guard" || user.role === "admin")
+        && Boolean(user.permissions?.visits?.create);
+}
+function hasGuardVisitorSearchCriteria(input) {
+    const textFields = [
+        input.query,
+        input.firstName,
+        input.lastName,
+        input.company,
+        input.city,
+        input.phone,
+        input.email,
+        input.licensePlate,
+        input.badgeNumber
+    ].map(sanitizeSearchText);
+    if (textFields.some((value) => value.length >= exports.GUARD_VISITOR_SEARCH_MIN_LENGTH)) {
+        return true;
+    }
+    return sanitizeSearchText(input.birthDate).length === 10;
 }
 function normalizeDateOnlyStart(value) {
     const parsed = new Date(value);
@@ -553,10 +592,13 @@ async function getVisitDetailForUser(user, visitId) {
       id,
       name,
       text_type AS textType,
-      content
+      text_type AS sectionType,
+      custom_heading AS customHeading,
+      content,
+      sort_order AS sortOrder
     FROM dbo.badge_text_templates
     WHERE is_active = 1
-    ORDER BY text_type ASC, name ASC
+    ORDER BY sort_order ASC, updated_at ASC, name ASC
   `);
     return {
         ...visit,
@@ -564,6 +606,270 @@ async function getVisitDetailForUser(user, visitId) {
         siteMap: siteMapResult.recordset[0] ?? null,
         badgeTexts: badgeTextsResult.recordset,
         completeness: await getConfiguredVisitCompleteness(visit)
+    };
+}
+async function searchVisitorsForGuard(user, input) {
+    if (!canUseGuardVisitorSearch(user)) {
+        throw new Error("guard_visitor_search_forbidden");
+    }
+    if (!hasGuardVisitorSearchCriteria(input)) {
+        return { visitors: [], page: 1, limit: Math.min(Math.max(input.limit ?? 8, 1), 20) };
+    }
+    const page = Math.max(input.page ?? 1, 1);
+    const limit = Math.min(Math.max(input.limit ?? 8, 1), 20);
+    const offset = (page - 1) * limit;
+    const request = (await (0, db_1.getPool)()).request()
+        .input("offset", mssql_1.default.Int, offset)
+        .input("limit", mssql_1.default.Int, limit);
+    const conditions = ["ISNULL(vis.is_deleted, 0) = 0"];
+    const firstName = sanitizeSearchText(input.firstName);
+    const query = sanitizeSearchText(input.query);
+    if (query.length >= exports.GUARD_VISITOR_SEARCH_MIN_LENGTH) {
+        request.input("query", mssql_1.default.NVarChar(255), `%${query}%`);
+        conditions.push(`(
+      vis.first_name LIKE @query
+      OR vis.last_name LIKE @query
+      OR vis.company LIKE @query
+      OR ISNULL(vis.visitor_city, '') LIKE @query
+      OR ISNULL(vis.phone_optional, '') LIKE @query
+      OR ISNULL(vis.email_optional, '') LIKE @query
+      OR EXISTS (
+        SELECT 1
+        FROM dbo.visits free_visit
+        WHERE free_visit.visitor_id = vis.id
+          AND (
+            UPPER(ISNULL(free_visit.license_plate, '')) LIKE UPPER(@query)
+            OR UPPER(ISNULL(free_visit.badge_number, '')) LIKE UPPER(@query)
+          )
+      )
+    )`);
+    }
+    if (firstName.length >= exports.GUARD_VISITOR_SEARCH_MIN_LENGTH) {
+        request.input("firstName", mssql_1.default.NVarChar(120), `%${firstName}%`);
+        conditions.push("vis.first_name LIKE @firstName");
+    }
+    const lastName = sanitizeSearchText(input.lastName);
+    if (lastName.length >= exports.GUARD_VISITOR_SEARCH_MIN_LENGTH) {
+        request.input("lastName", mssql_1.default.NVarChar(120), `%${lastName}%`);
+        conditions.push("vis.last_name LIKE @lastName");
+    }
+    const company = sanitizeSearchText(input.company);
+    if (company.length >= exports.GUARD_VISITOR_SEARCH_MIN_LENGTH) {
+        request.input("company", mssql_1.default.NVarChar(255), `%${company}%`);
+        conditions.push("vis.company LIKE @company");
+    }
+    const birthDate = sanitizeSearchText(input.birthDate);
+    if (birthDate.length === 10) {
+        request.input("birthDate", mssql_1.default.Date, birthDate);
+        conditions.push("vis.birth_date = @birthDate");
+    }
+    const city = sanitizeSearchText(input.city);
+    if (city.length >= exports.GUARD_VISITOR_SEARCH_MIN_LENGTH) {
+        request.input("city", mssql_1.default.NVarChar(120), `%${city}%`);
+        conditions.push("ISNULL(vis.visitor_city, '') LIKE @city");
+    }
+    const phone = sanitizeSearchText(input.phone);
+    if (phone.length >= exports.GUARD_VISITOR_SEARCH_MIN_LENGTH) {
+        request.input("phone", mssql_1.default.NVarChar(80), `%${phone}%`);
+        conditions.push("ISNULL(vis.phone_optional, '') LIKE @phone");
+    }
+    const email = sanitizeSearchText(input.email);
+    if (email.length >= exports.GUARD_VISITOR_SEARCH_MIN_LENGTH) {
+        request.input("email", mssql_1.default.NVarChar(255), `%${email}%`);
+        conditions.push("ISNULL(vis.email_optional, '') LIKE @email");
+    }
+    const licensePlate = sanitizeSearchText(input.licensePlate).toUpperCase();
+    if (licensePlate.length >= exports.GUARD_VISITOR_SEARCH_MIN_LENGTH) {
+        request.input("licensePlate", mssql_1.default.NVarChar(40), `%${licensePlate}%`);
+        conditions.push(`
+      EXISTS (
+        SELECT 1
+        FROM dbo.visits plate_visit
+        WHERE plate_visit.visitor_id = vis.id
+          AND UPPER(ISNULL(plate_visit.license_plate, '')) LIKE @licensePlate
+      )
+    `);
+    }
+    const badgeNumber = sanitizeSearchText(input.badgeNumber).toUpperCase();
+    if (badgeNumber.length >= exports.GUARD_VISITOR_SEARCH_MIN_LENGTH) {
+        request.input("badgeNumber", mssql_1.default.NVarChar(64), `%${badgeNumber}%`);
+        conditions.push(`
+      EXISTS (
+        SELECT 1
+        FROM dbo.visits badge_visit
+        WHERE badge_visit.visitor_id = vis.id
+          AND UPPER(ISNULL(badge_visit.badge_number, '')) LIKE @badgeNumber
+      )
+    `);
+    }
+    const result = await request.query(`
+    WITH matched_visitors AS (
+      SELECT
+        vis.id AS visitorId,
+        vis.first_name AS firstName,
+        vis.last_name AS lastName,
+        vis.company,
+        vis.nationality_code AS nationalityCode,
+        CONVERT(NVARCHAR(10), vis.birth_date, 23) AS birthDate,
+        vis.phone_optional AS phone,
+        vis.email_optional AS email,
+        vis.visitor_street AS visitorStreet,
+        vis.visitor_house_number AS visitorHouseNumber,
+        vis.visitor_postal_code AS visitorPostalCode,
+        vis.visitor_city AS visitorCity,
+        vis.id_document_type AS idDocumentType,
+        CONVERT(NVARCHAR(10), vis.id_document_valid_until, 23) AS idDocumentValidUntil,
+        vis.id_document_number AS idDocumentNumber,
+        latest_visit.license_plate AS lastLicensePlate,
+        COUNT(all_visits.id) AS visitCount,
+        CONVERT(NVARCHAR(30), latest_visit.valid_from, 127) AS lastVisitAt,
+        ${normalizedStatusForAlias("latest_visit")} AS lastVisitStatus,
+        latest_visit.host_name AS lastHostName,
+        latest_visit.host_department AS lastHostDepartment,
+        latest_visit.purpose AS lastPurpose,
+        latest_visit.device_photo_app AS devicePhotoApp,
+        latest_visit.device_film_app AS deviceFilmApp,
+        latest_visit.device_video_camera AS deviceVideoCamera,
+        latest_visit.device_manufacturer AS deviceManufacturer,
+        latest_visit.device_serial_number AS deviceSerialNumber,
+        latest_visit.device_accessories AS deviceAccessories,
+        latest_visit.device_deposit_note AS deviceDepositNote
+      FROM dbo.visitors vis
+      LEFT JOIN dbo.visits all_visits ON all_visits.visitor_id = vis.id
+      OUTER APPLY (
+        SELECT TOP 1
+          visit.id,
+          visit.status,
+          visit.valid_from,
+          visit.license_plate,
+          visit.host_name,
+          visit.host_department,
+          visit.purpose,
+          visit.device_photo_app,
+          visit.device_film_app,
+          visit.device_video_camera,
+          visit.device_manufacturer,
+          visit.device_serial_number,
+          visit.device_accessories,
+          visit.device_deposit_note
+        FROM dbo.visits visit
+        WHERE visit.visitor_id = vis.id
+        ORDER BY COALESCE(visit.check_in_at, visit.valid_from) DESC, visit.created_at DESC
+      ) latest_visit
+      WHERE ${conditions.join(" AND ")}
+      GROUP BY
+        vis.id,
+        vis.first_name,
+        vis.last_name,
+        vis.company,
+        vis.nationality_code,
+        vis.birth_date,
+        vis.phone_optional,
+        vis.email_optional,
+        vis.visitor_street,
+        vis.visitor_house_number,
+        vis.visitor_postal_code,
+        vis.visitor_city,
+        vis.id_document_type,
+        vis.id_document_valid_until,
+        vis.id_document_number,
+        latest_visit.status,
+        latest_visit.valid_from,
+        latest_visit.license_plate,
+        latest_visit.host_name,
+        latest_visit.host_department,
+        latest_visit.purpose,
+        latest_visit.device_photo_app,
+        latest_visit.device_film_app,
+        latest_visit.device_video_camera,
+        latest_visit.device_manufacturer,
+        latest_visit.device_serial_number,
+        latest_visit.device_accessories,
+        latest_visit.device_deposit_note
+    ),
+    paged_visitors AS (
+      SELECT *
+      FROM matched_visitors
+      ORDER BY lastVisitAt DESC, lastName ASC, firstName ASC
+      OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
+    ),
+    visitor_history AS (
+      SELECT
+        visit.visitor_id AS visitorId,
+        visit.id AS visitId,
+        CONVERT(NVARCHAR(30), visit.valid_from, 127) AS validFrom,
+        CONVERT(NVARCHAR(30), visit.valid_until, 127) AS validUntil,
+        visit.host_name AS hostName,
+        visit.host_department AS hostDepartment,
+        visit.purpose,
+        CONVERT(NVARCHAR(30), visit.check_in_at, 127) AS checkInAt,
+        CONVERT(NVARCHAR(30), visit.check_out_at, 127) AS checkOutAt,
+        ${normalizedStatusForAlias("visit")} AS status,
+        gate.name AS gateName,
+        ROW_NUMBER() OVER (PARTITION BY visit.visitor_id ORDER BY COALESCE(visit.check_in_at, visit.valid_from) DESC, visit.created_at DESC) AS rowNumber
+      FROM dbo.visits visit
+      LEFT JOIN dbo.gates gate ON gate.id = visit.gate_id
+      WHERE visit.visitor_id IN (SELECT visitorId FROM paged_visitors)
+    )
+    SELECT
+      visitorId,
+      firstName,
+      lastName,
+      company,
+      nationalityCode,
+      birthDate,
+      phone,
+      email,
+      visitorStreet,
+      visitorHouseNumber,
+      visitorPostalCode,
+      visitorCity,
+      idDocumentType,
+      idDocumentValidUntil,
+      idDocumentNumber,
+      lastLicensePlate,
+      visitCount,
+      lastVisitAt,
+      lastVisitStatus,
+      lastHostName,
+      lastHostDepartment,
+      lastPurpose,
+      devicePhotoApp,
+      deviceFilmApp,
+      deviceVideoCamera,
+      deviceManufacturer,
+      deviceSerialNumber,
+      deviceAccessories,
+      deviceDepositNote,
+      (
+        SELECT
+          history.visitId,
+          history.validFrom,
+          history.validUntil,
+          history.hostName,
+          history.hostDepartment,
+          history.purpose,
+          history.checkInAt,
+          history.checkOutAt,
+          history.status,
+          history.gateName
+        FROM visitor_history history
+        WHERE history.visitorId = paged_visitors.visitorId
+          AND history.rowNumber <= 5
+        ORDER BY history.validFrom DESC
+        FOR JSON PATH
+      ) AS historyJson
+    FROM paged_visitors
+    ORDER BY lastVisitAt DESC, lastName ASC, firstName ASC
+  `);
+    return {
+        page,
+        limit,
+        visitors: result.recordset.map((row) => ({
+            ...row,
+            nationalityName: (0, countries_1.getCountryName)(row.nationalityCode),
+            history: row.historyJson ? JSON.parse(row.historyJson) : []
+        }))
     };
 }
 async function loadVisitForUpdate(transaction, visitId) {
@@ -685,62 +991,170 @@ async function createWalkInVisit(user, input, ipAddress, userAgent) {
     const transaction = new mssql_1.default.Transaction(pool);
     await transaction.begin();
     try {
-        const badgeNumber = await generateUniqueBadgeNumber(transaction);
-        const visitorInsert = await new mssql_1.default.Request(transaction)
-            .input("firstName", mssql_1.default.NVarChar(120), input.firstName.trim())
-            .input("lastName", mssql_1.default.NVarChar(120), input.lastName.trim())
-            .input("company", mssql_1.default.NVarChar(255), input.company.trim())
-            .input("nationalityCode", mssql_1.default.NChar(2), input.nationalityCode)
-            .input("birthDate", mssql_1.default.Date, cleanOptional(input.birthDate))
-            .input("phone", mssql_1.default.NVarChar(80), cleanOptional(input.phone))
-            .input("email", mssql_1.default.NVarChar(255), cleanOptional(input.email))
-            .input("visitorStreet", mssql_1.default.NVarChar(255), input.visitorStreet.trim())
-            .input("visitorHouseNumber", mssql_1.default.NVarChar(40), input.visitorHouseNumber.trim())
-            .input("visitorPostalCode", mssql_1.default.NVarChar(20), input.visitorPostalCode.trim())
-            .input("visitorCity", mssql_1.default.NVarChar(120), input.visitorCity.trim())
-            .input("idDocumentType", mssql_1.default.NVarChar(40), input.idDocumentType.trim())
-            .input("idDocumentValidUntil", mssql_1.default.Date, input.idDocumentValidUntil.trim())
-            .input("idDocumentNumber", mssql_1.default.NVarChar(120), input.idDocumentNumber.trim())
-            .query(`
-        INSERT INTO dbo.visitors (
-          first_name,
-          last_name,
-          company,
-          nationality_code,
-          birth_date,
-          phone_optional,
-          email_optional,
-          visitor_street,
-          visitor_house_number,
-          visitor_postal_code,
-          visitor_city,
-          id_document_type,
-          id_document_valid_until,
-          id_document_number
-        )
-        OUTPUT inserted.id
-        VALUES (
-          @firstName,
-          @lastName,
-          @company,
-          @nationalityCode,
-          @birthDate,
-          @phone,
-          @email,
-          @visitorStreet,
-          @visitorHouseNumber,
-          @visitorPostalCode,
-          @visitorCity,
-          @idDocumentType,
-          @idDocumentValidUntil,
-          @idDocumentNumber
-        )
-      `);
-        const visitorId = visitorInsert.recordset[0]?.id;
-        if (!visitorId) {
-            throw new Error("visitor_insert_failed");
+        const action = input.action === "save" || input.action === "check_in_and_print"
+            ? input.action
+            : "check_in";
+        const clientRequestId = cleanOptional(input.clientRequestId);
+        if (clientRequestId) {
+            const existingRequest = await new mssql_1.default.Request(transaction)
+                .input("clientRequestId", mssql_1.default.NVarChar(64), clientRequestId)
+                .query(`
+          SELECT TOP 1
+            id,
+            visitor_id AS visitorId,
+            badge_number AS badgeNumber,
+            ${normalizedStatusSql} AS status
+          FROM dbo.visits
+          WHERE client_request_id = @clientRequestId
+          ORDER BY created_at DESC
+        `);
+            const existingVisit = existingRequest.recordset[0];
+            if (existingVisit) {
+                await transaction.commit();
+                return {
+                    visitId: existingVisit.id,
+                    visitorId: existingVisit.visitorId,
+                    badgeNumber: existingVisit.badgeNumber,
+                    status: existingVisit.status,
+                    alreadyExisted: true
+                };
+            }
         }
+        let visitorId = cleanOptional(input.existingVisitorId);
+        let visitorWasReused = false;
+        if (visitorId) {
+            const visitorExists = await new mssql_1.default.Request(transaction)
+                .input("visitorId", mssql_1.default.UniqueIdentifier, visitorId)
+                .query(`
+          SELECT TOP 1 id
+          FROM dbo.visitors
+          WHERE id = @visitorId AND ISNULL(is_deleted, 0) = 0
+        `);
+            if (!visitorExists.recordset[0]) {
+                throw new Error("existing_visitor_not_found");
+            }
+            visitorWasReused = true;
+            await new mssql_1.default.Request(transaction)
+                .input("visitorId", mssql_1.default.UniqueIdentifier, visitorId)
+                .input("firstName", mssql_1.default.NVarChar(120), input.firstName.trim())
+                .input("lastName", mssql_1.default.NVarChar(120), input.lastName.trim())
+                .input("company", mssql_1.default.NVarChar(255), input.company.trim())
+                .input("nationalityCode", mssql_1.default.NChar(2), input.nationalityCode)
+                .input("birthDate", mssql_1.default.Date, cleanOptional(input.birthDate))
+                .input("phone", mssql_1.default.NVarChar(80), cleanOptional(input.phone))
+                .input("email", mssql_1.default.NVarChar(255), cleanOptional(input.email))
+                .input("visitorStreet", mssql_1.default.NVarChar(255), cleanOptional(input.visitorStreet))
+                .input("visitorHouseNumber", mssql_1.default.NVarChar(40), cleanOptional(input.visitorHouseNumber))
+                .input("visitorPostalCode", mssql_1.default.NVarChar(20), cleanOptional(input.visitorPostalCode))
+                .input("visitorCity", mssql_1.default.NVarChar(120), cleanOptional(input.visitorCity))
+                .input("idDocumentType", mssql_1.default.NVarChar(40), cleanOptional(input.idDocumentType))
+                .input("idDocumentValidUntil", mssql_1.default.Date, cleanOptional(input.idDocumentValidUntil))
+                .input("idDocumentNumber", mssql_1.default.NVarChar(120), cleanOptional(input.idDocumentNumber))
+                .query(`
+          UPDATE dbo.visitors
+          SET
+            first_name = @firstName,
+            last_name = @lastName,
+            company = @company,
+            nationality_code = @nationalityCode,
+            birth_date = @birthDate,
+            phone_optional = @phone,
+            email_optional = @email,
+            visitor_street = @visitorStreet,
+            visitor_house_number = @visitorHouseNumber,
+            visitor_postal_code = @visitorPostalCode,
+            visitor_city = @visitorCity,
+            id_document_type = @idDocumentType,
+            id_document_valid_until = @idDocumentValidUntil,
+            id_document_number = @idDocumentNumber,
+            updated_at = SYSUTCDATETIME()
+          WHERE id = @visitorId
+        `);
+            await (0, auditLog_1.writeAuditLog)({
+                user: user.username,
+                userId: user.id,
+                action: "guard_existing_visitor_selected",
+                objectType: "visitor",
+                objectId: visitorId,
+                ipAddress,
+                userAgent,
+                metadata: {
+                    gateId: user.gateId
+                }
+            }, transaction);
+        }
+        else {
+            const visitorInsert = await new mssql_1.default.Request(transaction)
+                .input("firstName", mssql_1.default.NVarChar(120), input.firstName.trim())
+                .input("lastName", mssql_1.default.NVarChar(120), input.lastName.trim())
+                .input("company", mssql_1.default.NVarChar(255), input.company.trim())
+                .input("nationalityCode", mssql_1.default.NChar(2), input.nationalityCode)
+                .input("birthDate", mssql_1.default.Date, cleanOptional(input.birthDate))
+                .input("phone", mssql_1.default.NVarChar(80), cleanOptional(input.phone))
+                .input("email", mssql_1.default.NVarChar(255), cleanOptional(input.email))
+                .input("visitorStreet", mssql_1.default.NVarChar(255), input.visitorStreet.trim())
+                .input("visitorHouseNumber", mssql_1.default.NVarChar(40), input.visitorHouseNumber.trim())
+                .input("visitorPostalCode", mssql_1.default.NVarChar(20), input.visitorPostalCode.trim())
+                .input("visitorCity", mssql_1.default.NVarChar(120), input.visitorCity.trim())
+                .input("idDocumentType", mssql_1.default.NVarChar(40), input.idDocumentType.trim())
+                .input("idDocumentValidUntil", mssql_1.default.Date, input.idDocumentValidUntil.trim())
+                .input("idDocumentNumber", mssql_1.default.NVarChar(120), input.idDocumentNumber.trim())
+                .query(`
+          INSERT INTO dbo.visitors (
+            first_name,
+            last_name,
+            company,
+            nationality_code,
+            birth_date,
+            phone_optional,
+            email_optional,
+            visitor_street,
+            visitor_house_number,
+            visitor_postal_code,
+            visitor_city,
+            id_document_type,
+            id_document_valid_until,
+            id_document_number
+          )
+          OUTPUT inserted.id
+          VALUES (
+            @firstName,
+            @lastName,
+            @company,
+            @nationalityCode,
+            @birthDate,
+            @phone,
+            @email,
+            @visitorStreet,
+            @visitorHouseNumber,
+            @visitorPostalCode,
+            @visitorCity,
+            @idDocumentType,
+            @idDocumentValidUntil,
+            @idDocumentNumber
+          )
+        `);
+            visitorId = visitorInsert.recordset[0]?.id;
+            if (!visitorId) {
+                throw new Error("visitor_insert_failed");
+            }
+            await (0, auditLog_1.writeAuditLog)({
+                user: user.username,
+                userId: user.id,
+                action: "guard_new_visitor_created",
+                objectType: "visitor",
+                objectId: visitorId,
+                ipAddress,
+                userAgent,
+                metadata: {
+                    gateId: user.gateId
+                }
+            }, transaction);
+        }
+        const badgeNumber = await generateUniqueBadgeNumber(transaction);
+        const visitStatus = action === "save" ? visitWorkflow_1.VISIT_STATUS.PRE_REGISTERED : visitWorkflow_1.VISIT_STATUS.CHECKED_IN;
         const visitInsert = await new mssql_1.default.Request(transaction)
+            .input("clientRequestId", mssql_1.default.NVarChar(64), clientRequestId)
             .input("visitorId", mssql_1.default.UniqueIdentifier, visitorId)
             .input("gateId", mssql_1.default.UniqueIdentifier, user.gateId)
             .input("hostName", mssql_1.default.NVarChar(255), input.hostName.trim())
@@ -754,8 +1168,16 @@ async function createWalkInVisit(user, input, ipAddress, userAgent) {
             .input("badgeNumber", mssql_1.default.NVarChar(64), badgeNumber)
             .input("notes", mssql_1.default.NVarChar(mssql_1.default.MAX), cleanOptional(input.notes))
             .input("checkInBy", mssql_1.default.UniqueIdentifier, user.id)
+            .input("devicePhotoApp", mssql_1.default.Bit, input.devicePhotoApp ?? null)
+            .input("deviceFilmApp", mssql_1.default.Bit, input.deviceFilmApp ?? null)
+            .input("deviceVideoCamera", mssql_1.default.Bit, input.deviceVideoCamera ?? null)
+            .input("deviceManufacturer", mssql_1.default.NVarChar(255), cleanOptional(input.deviceManufacturer))
+            .input("deviceSerialNumber", mssql_1.default.NVarChar(120), cleanOptional(input.deviceSerialNumber))
+            .input("deviceAccessories", mssql_1.default.NVarChar(500), cleanOptional(input.deviceAccessories))
+            .input("deviceDepositNote", mssql_1.default.NVarChar(500), cleanOptional(input.deviceDepositNote))
             .query(`
         INSERT INTO dbo.visits (
+          client_request_id,
           visitor_id,
           gate_id,
           host_name,
@@ -771,11 +1193,19 @@ async function createWalkInVisit(user, input, ipAddress, userAgent) {
           created_by,
           created_via_public_form,
           notes,
+          device_photo_app,
+          device_film_app,
+          device_video_camera,
+          device_manufacturer,
+          device_serial_number,
+          device_accessories,
+          device_deposit_note,
           check_in_at,
           check_in_by
         )
         OUTPUT inserted.id, inserted.status
         VALUES (
+          @clientRequestId,
           @visitorId,
           @gateId,
           @hostName,
@@ -787,12 +1217,19 @@ async function createWalkInVisit(user, input, ipAddress, userAgent) {
           @validUntil,
           @licensePlate,
           @badgeNumber,
-          '${visitWorkflow_1.VISIT_STATUS.CHECKED_IN}',
+          '${visitStatus}',
           @checkInBy,
           0,
           @notes,
-          SYSUTCDATETIME(),
-          @checkInBy
+          @devicePhotoApp,
+          @deviceFilmApp,
+          @deviceVideoCamera,
+          @deviceManufacturer,
+          @deviceSerialNumber,
+          @deviceAccessories,
+          @deviceDepositNote,
+          ${action === "save" ? "NULL" : "SYSUTCDATETIME()"},
+          ${action === "save" ? "NULL" : "@checkInBy"}
         )
       `);
         const visit = visitInsert.recordset[0];
@@ -802,16 +1239,36 @@ async function createWalkInVisit(user, input, ipAddress, userAgent) {
         await (0, auditLog_1.writeAuditLog)({
             user: user.username,
             userId: user.id,
-            action: "VISIT_WALK_IN_CREATED",
+            action: "guard_visit_created",
             objectType: "visit",
             objectId: visit.id,
             ipAddress,
             userAgent,
             metadata: {
                 source: "guard_walk_in",
-                badgeNumber
+                badgeNumber,
+                gateId: user.gateId,
+                visitorId,
+                reusedVisitor: visitorWasReused,
+                status: visit.status
             }
         }, transaction);
+        if (action !== "save") {
+            await (0, auditLog_1.writeAuditLog)({
+                user: user.username,
+                userId: user.id,
+                action: "guard_visitor_checked_in",
+                objectType: "visit",
+                objectId: visit.id,
+                ipAddress,
+                userAgent,
+                metadata: {
+                    gateId: user.gateId,
+                    visitorId,
+                    badgeNumber
+                }
+            }, transaction);
+        }
         await transaction.commit();
         void (0, mailRelay_1.notifyNationalitySubscribers)({
             visitId: visit.id,
@@ -824,7 +1281,7 @@ async function createWalkInVisit(user, input, ipAddress, userAgent) {
         });
         return {
             visitId: visit.id,
-            visitorId,
+            visitorId: visitorId,
             badgeNumber,
             status: visit.status
         };
