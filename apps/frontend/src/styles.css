@@ -2599,14 +2599,29 @@ input[type="checkbox"] {
 
 .country-checklist {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 8px;
-  max-height: 360px;
-  margin-top: 12px;
-  padding: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px 18px;
+  min-height: 480px;
+  max-height: 620px;
+  margin-top: 18px;
+  padding: 18px;
   overflow: auto;
   border: 1px solid var(--panel-border);
   border-radius: 8px;
+}
+
+.country-notification-card {
+  min-height: 680px;
+  padding: 28px;
+}
+
+.country-notification-card .filter-bar {
+  gap: 12px;
+  align-items: center;
+}
+
+.country-notification-card .filter-bar input {
+  min-width: min(420px, 100%);
 }
 
 .badge-header {
