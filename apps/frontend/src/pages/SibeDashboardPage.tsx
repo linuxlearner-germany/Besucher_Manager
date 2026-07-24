@@ -84,7 +84,7 @@ export function SibeDashboardPage() {
           <Card>
             <div className="section-header">
               <div>
-                <h3>Aktuelle Besuche</h3>
+                <h3>Gerade eingecheckt</h3>
               </div>
               <Link className="button-link" to="/sibe/besucher">Besucherübersicht</Link>
             </div>
