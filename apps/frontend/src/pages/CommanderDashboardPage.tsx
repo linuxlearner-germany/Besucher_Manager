@@ -85,7 +85,7 @@ export function CommanderDashboardPage() {
           <Card>
             <div className="section-header">
               <div>
-                <h3>Gerade eingecheckt</h3>
+                <h3>Aktuelle Besuche</h3>
               </div>
               <Link className="button-link" to="/kaskdt/besucher">Besucherübersicht</Link>
             </div>
