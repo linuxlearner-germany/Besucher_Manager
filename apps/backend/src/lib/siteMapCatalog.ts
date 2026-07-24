@@ -57,8 +57,12 @@ export async function listSiteMapCatalog(
       };
     }));
 
-  return files.filter((entry): entry is SiteMapCatalogEntry => entry !== null)
+  const catalog = files.filter((entry): entry is SiteMapCatalogEntry => entry !== null)
     .sort((left, right) => left.fileName.localeCompare(right.fileName, "de"));
+  if (catalog.length > 0 && !catalog.some((entry) => entry.isActive)) {
+    catalog[0].isActive = true;
+  }
+  return catalog;
 }
 
 export function selectSiteMapCatalogEntry(entries: SiteMapCatalogEntry[], configuredFileName?: string | null): SiteMapCatalogEntry | null {

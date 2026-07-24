@@ -15,6 +15,7 @@ test("site map catalog lists supported files and ignores unsafe or unrelated ent
   try {
     const entries = await listSiteMapCatalog(null, root);
     assert.deepEqual(entries.map((entry) => entry.fileName), ["plan.png", "plan.svg"]);
+    assert.equal(entries[0]?.isActive, true);
     assert.equal(entries.find((entry) => entry.fileName === "plan.svg")?.mimeType, "image/svg+xml");
     assert.equal(selectSiteMapCatalogEntry(entries, "plan.svg")?.fileName, "plan.svg");
     assert.equal(selectSiteMapCatalogEntry(entries, "missing.png")?.fileName, "plan.png");
