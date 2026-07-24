@@ -1,12 +1,9 @@
-import fs from "node:fs/promises";
-import path from "node:path";
 import sql from "mssql";
 import { getPool } from "./db";
 import { loadMailRelayFileConfig } from "./mailRelayFileConfig";
-import { env } from "../config/env";
+import { listUiBackgrounds, selectConfiguredUiBackground } from "./uiBackgrounds";
 
 export const WORKFLOW_SETTING_KEYS = {
-  approvalRequired: "sibe_approval_required",
   relayEnabled: "mail_relay_enabled",
   relayHost: "mail_relay_host",
   relayPort: "mail_relay_port",
@@ -14,16 +11,18 @@ export const WORKFLOW_SETTING_KEYS = {
   relayUsername: "mail_relay_username",
   relayPassword: "mail_relay_password",
   relayFrom: "mail_relay_from",
-  relayApprovalTo: "mail_relay_approval_to",
   uiBackgroundMode: "ui_background_mode",
+  uiBackgroundId: "ui_background_id",
   uiBackgroundImageUrl: "ui_background_image_url",
   uiBackgroundImageName: "ui_background_image_name",
   uiBackgroundImageOriginalFileName: "ui_background_image_original_file_name"
 } as const;
 
+export const SITE_MAP_SETTING_KEY = "site_map_file_name";
+
 export type WorkflowSettings = {
-  approvalRequired: boolean;
   backgroundMode: "image" | "subtle" | "plain";
+  backgroundId: string | null;
   backgroundImageUrl: string;
   backgroundImageName: string | null;
   backgroundImageOriginalFileName: string | null;
@@ -38,7 +37,6 @@ export type WorkflowSettings = {
     username: string;
     password: string;
     fromAddress: string;
-    approvalRecipients: string[];
     hasPassword: boolean;
   };
 };
@@ -71,21 +69,6 @@ function toNumber(value: string | null | undefined, fallback: number): number {
   return parsed;
 }
 
-function splitRecipients(value: string | null | undefined): string[] {
-  if (typeof value !== "string") {
-    return [];
-  }
-
-  return Array.from(
-    new Set(
-      value
-        .split(/[,\n;]+/)
-        .map((entry) => entry.trim())
-        .filter(Boolean)
-    )
-  );
-}
-
 function toBackgroundMode(value: string | null | undefined, fallback: "image" | "subtle" | "plain"): "image" | "subtle" | "plain" {
   const normalized = value?.trim().toLowerCase();
   if (normalized === "image" || normalized === "subtle" || normalized === "plain") {
@@ -94,71 +77,35 @@ function toBackgroundMode(value: string | null | undefined, fallback: "image" | 
   return fallback;
 }
 
-const uiBackgroundDirectory = path.join(env.uploadDir, "ui-backgrounds");
-const allowedBackgroundExtensions = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".svg"]);
-
-async function loadLatestBackgroundImageFromFolder(): Promise<{
-  url: string;
-  fileName: string;
-} | null> {
-  try {
-    const entries = await fs.readdir(uiBackgroundDirectory, { withFileTypes: true });
-    const candidates = await Promise.all(entries
-      .filter((entry) => entry.isFile() && allowedBackgroundExtensions.has(path.extname(entry.name).toLowerCase()))
-      .map(async (entry) => {
-        const absolutePath = path.join(uiBackgroundDirectory, entry.name);
-        const stats = await fs.stat(absolutePath);
-        return {
-          fileName: entry.name,
-          modifiedAt: stats.mtimeMs
-        };
-      }));
-
-    if (candidates.length === 0) {
-      return null;
-    }
-
-    candidates.sort((left, right) => right.modifiedAt - left.modifiedAt || right.fileName.localeCompare(left.fileName, "de"));
-    const selected = candidates[0];
-
-    return {
-      url: `/uploads/ui-backgrounds/${selected.fileName}`,
-      fileName: selected.fileName
-    };
-  } catch {
-    return null;
-  }
-}
-
-async function loadBackgroundState(settingMap: Map<string, string>): Promise<Pick<WorkflowSettings, "backgroundMode" | "backgroundImageUrl" | "backgroundImageName" | "backgroundImageOriginalFileName">> {
+async function loadBackgroundState(settingMap: Map<string, string>): Promise<Pick<WorkflowSettings, "backgroundMode" | "backgroundId" | "backgroundImageUrl" | "backgroundImageName" | "backgroundImageOriginalFileName">> {
   const storedMode = toBackgroundMode(settingMap.get(WORKFLOW_SETTING_KEYS.uiBackgroundMode), "plain");
+  const backgroundId = settingMap.get(WORKFLOW_SETTING_KEYS.uiBackgroundId)?.trim() || "";
   const imageUrl = settingMap.get(WORKFLOW_SETTING_KEYS.uiBackgroundImageUrl)?.trim() || "";
   const imageName = settingMap.get(WORKFLOW_SETTING_KEYS.uiBackgroundImageName)?.trim() || "";
   const originalFileName = settingMap.get(WORKFLOW_SETTING_KEYS.uiBackgroundImageOriginalFileName)?.trim() || "";
   const isLegacyDefaultBackground = imageUrl === "/branding/background.png";
-  const folderBackground = await loadLatestBackgroundImageFromFolder();
+  const backgrounds = await listUiBackgrounds().catch(() => []);
+  const selectedBackground = selectConfiguredUiBackground(
+    backgrounds,
+    backgroundId,
+    imageUrl,
+    originalFileName || imageName
+  );
 
-  if (storedMode === "plain") {
-    return {
-      backgroundMode: "plain",
-      backgroundImageUrl: "",
-      backgroundImageName: null,
-      backgroundImageOriginalFileName: null
-    };
-  }
-
-  if (folderBackground) {
+  if (selectedBackground) {
     return {
       backgroundMode: storedMode,
-      backgroundImageUrl: folderBackground.url,
-      backgroundImageName: folderBackground.fileName,
-      backgroundImageOriginalFileName: folderBackground.fileName
+      backgroundId: selectedBackground.id,
+      backgroundImageUrl: selectedBackground.imageUrl,
+      backgroundImageName: selectedBackground.name,
+      backgroundImageOriginalFileName: selectedBackground.fileName
     };
   }
 
   if (!imageUrl || isLegacyDefaultBackground) {
     return {
       backgroundMode: "plain",
+      backgroundId: null,
       backgroundImageUrl: "",
       backgroundImageName: null,
       backgroundImageOriginalFileName: null
@@ -167,6 +114,7 @@ async function loadBackgroundState(settingMap: Map<string, string>): Promise<Pic
 
   return {
     backgroundMode: storedMode,
+    backgroundId: backgroundId || null,
     backgroundImageUrl: imageUrl,
     backgroundImageName: imageName || null,
     backgroundImageOriginalFileName: originalFileName || null
@@ -214,7 +162,6 @@ export async function loadWorkflowSettings(options?: {
 
   if (fileRelayConfig) {
     return {
-      approvalRequired: toBoolean(settingMap.get(WORKFLOW_SETTING_KEYS.approvalRequired), true),
       ...backgroundState,
       emailRelay: {
         source: "yml",
@@ -227,14 +174,12 @@ export async function loadWorkflowSettings(options?: {
         username: fileRelayConfig.username,
         password: options?.includeSecrets ? fileRelayConfig.password : "",
         fromAddress: fileRelayConfig.fromAddress,
-        approvalRecipients: fileRelayConfig.approvalRecipients,
         hasPassword: fileRelayConfig.hasPassword
       }
     };
   }
 
   return {
-    approvalRequired: toBoolean(settingMap.get(WORKFLOW_SETTING_KEYS.approvalRequired), true),
     ...backgroundState,
     emailRelay: {
       source: "database",
@@ -247,7 +192,6 @@ export async function loadWorkflowSettings(options?: {
       username: settingMap.get(WORKFLOW_SETTING_KEYS.relayUsername)?.trim() || "",
       password: options?.includeSecrets ? password : "",
       fromAddress: settingMap.get(WORKFLOW_SETTING_KEYS.relayFrom)?.trim() || "",
-      approvalRecipients: splitRecipients(settingMap.get(WORKFLOW_SETTING_KEYS.relayApprovalTo)),
       hasPassword: password.length > 0
     }
   };

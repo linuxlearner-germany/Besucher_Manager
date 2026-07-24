@@ -2,7 +2,10 @@ import nodemailer from "nodemailer";
 import { env } from "../config/env";
 import { writeErrorLog } from "./errorLogs";
 import { loadWorkflowSettings } from "./systemSettings";
-import { listNotificationEmailsByMenuAccess, normalizeUserEmail } from "./users";
+import sql from "mssql";
+import { getCountryName, normalizeCountryCode } from "./countries";
+import { getPool } from "./db";
+import { normalizeUserEmail } from "./users";
 
 type MailRequest = {
   to: string[];
@@ -12,29 +15,7 @@ type MailRequest = {
 
 export type MailRelayTestKind =
   | "relay"
-  | "approval_request"
-  | "approval_approved"
-  | "approval_rejected";
-
-type ApprovalRequestNotification = {
-  visitId: string;
-  visitorName: string;
-  company: string;
-  hostName: string;
-  validFrom: string;
-  validUntil: string;
-  gateName: string | null;
-};
-
-type ApprovalDecisionNotification = {
-  visitId: string;
-  visitorName: string;
-  company: string;
-  hostName: string;
-  decision: "approved" | "rejected";
-  note: string | null;
-  recipientEmails: string[];
-};
+  | "nationality";
 
 function buildVisitDetailUrl(visitId: string): string {
   return `${env.PUBLIC_BASE_URL.replace(/\/+$/, "")}/sibe/besucher/${visitId}`;
@@ -103,9 +84,7 @@ export async function verifyMailRelayConnection(testRecipient?: string): Promise
 
   await transport.verify();
 
-  const recipients = testRecipient?.trim()
-    ? [testRecipient.trim()]
-    : relay.approvalRecipients;
+  const recipients = testRecipient?.trim() ? [testRecipient.trim()] : [];
 
   if (recipients.length === 0) {
     throw new Error("mail_relay_missing_test_recipient");
@@ -122,49 +101,20 @@ export async function verifyMailRelayConnection(testRecipient?: string): Promise
 function buildMailRelayPreviewContent(kind: MailRelayTestKind) {
   const detailUrl = buildVisitDetailUrl("00000000-0000-0000-0000-000000000000");
 
-  if (kind === "approval_request") {
+  if (kind === "nationality") {
     return {
-      subject: "Besucherfreigabe erforderlich: Max Mustermann",
+      subject: "Nationalitätsmeldung: Deutschland – Max Mustermann",
       text: [
-        "Eine neue Besuchervoranmeldung wartet auf SiBe-Freigabe.",
+        "Für ein abonniertes Land wurde ein Besuch angemeldet.",
         "",
+        "Nationalität: Deutschland (DE)",
         "Besucher: Max Mustermann",
         "Firma: Musterfirma GmbH",
-        "Ansprechpartner: Sabine Beispiel",
         "Wache: Hauptwache",
         "Gültig von: 07.07.2026, 08:00",
         "Gültig bis: 07.07.2026, 17:00",
         "",
         `Details: ${detailUrl}`
-      ].join("\n")
-    };
-  }
-
-  if (kind === "approval_approved") {
-    return {
-      subject: "Besucher freigegeben: Max Mustermann",
-      text: [
-        "Die Besuchervoranmeldung wurde freigegeben.",
-        "",
-        "Besucher: Max Mustermann",
-        "Firma: Musterfirma GmbH",
-        "Ansprechpartner: Sabine Beispiel",
-        "Vorgang: 00000000-0000-0000-0000-000000000000"
-      ].join("\n")
-    };
-  }
-
-  if (kind === "approval_rejected") {
-    return {
-      subject: "Besucher abgelehnt: Max Mustermann",
-      text: [
-        "Die Besuchervoranmeldung wurde abgelehnt.",
-        "",
-        "Besucher: Max Mustermann",
-        "Firma: Musterfirma GmbH",
-        "Ansprechpartner: Sabine Beispiel",
-        "Vorgang: 00000000-0000-0000-0000-000000000000",
-        "Hinweis: Testablehnung durch Administration."
       ].join("\n")
     };
   }
@@ -212,78 +162,83 @@ export async function sendMailRelayPreview(kind: MailRelayTestKind, recipient: s
   });
 }
 
-export async function notifyApprovalRequested(payload: ApprovalRequestNotification): Promise<void> {
+export async function notifyNationalitySubscribers(payload: {
+  visitId: string;
+  nationalityCode: string;
+  visitorName: string;
+  company: string;
+  validFrom: string;
+  validUntil: string;
+  gateName: string | null;
+}): Promise<void> {
+  const countryCode = normalizeCountryCode(payload.nationalityCode);
+  if (!countryCode) return;
   try {
-    const settings = await loadWorkflowSettings();
-    if (!settings.emailRelay.enabled) {
-      return;
+    const pool = await getPool();
+    const subscribers = await pool.request()
+      .input("visitId", sql.UniqueIdentifier, payload.visitId)
+      .input("countryCode", sql.NChar(2), countryCode)
+      .query<{ userId: string; email: string }>(`
+        DECLARE @newDeliveries TABLE (user_id UNIQUEIDENTIFIER NOT NULL);
+
+        INSERT INTO dbo.nationality_notification_deliveries (visit_id, user_id, country_code)
+        OUTPUT inserted.user_id INTO @newDeliveries (user_id)
+        SELECT @visitId, s.user_id, @countryCode
+        FROM dbo.user_nationality_subscriptions s
+        INNER JOIN dbo.users u ON u.id = s.user_id
+        WHERE s.country_code = @countryCode
+          AND u.role = 'sibe'
+          AND u.is_active = 1
+          AND NULLIF(LTRIM(RTRIM(u.user_email)), '') IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM dbo.nationality_notification_deliveries d
+            WHERE d.visit_id = @visitId AND d.user_id = s.user_id
+          );
+
+        SELECT n.user_id AS userId, u.user_email AS email
+        FROM @newDeliveries n
+        INNER JOIN dbo.users u ON u.id = n.user_id;
+      `);
+    const countryName = getCountryName(countryCode) || countryCode;
+    for (const subscriber of subscribers.recordset) {
+      try {
+        const sent = await sendMail({
+          to: [subscriber.email],
+          subject: `Nationalitätsmeldung: ${countryName} – ${payload.visitorName}`,
+          text: [
+            "Für ein abonniertes Land wurde ein Besuch angemeldet.", "",
+            `Nationalität: ${countryName} (${countryCode})`,
+            `Besucher: ${payload.visitorName}`,
+            `Firma: ${payload.company}`,
+            `Besuchszeitraum: ${payload.validFrom} bis ${payload.validUntil}`,
+            `Wache: ${payload.gateName || "Noch nicht zugeordnet"}`, "",
+            `Details: ${buildVisitDetailUrl(payload.visitId)}`
+          ].join("\n")
+        });
+        await pool.request()
+          .input("visitId", sql.UniqueIdentifier, payload.visitId)
+          .input("userId", sql.UniqueIdentifier, subscriber.userId)
+          .query(`UPDATE dbo.nationality_notification_deliveries SET sent_at = CASE WHEN ${sent ? "1" : "0"} = 1 THEN SYSUTCDATETIME() ELSE sent_at END WHERE visit_id = @visitId AND user_id = @userId`);
+      } catch (error) {
+        await pool.request()
+          .input("visitId", sql.UniqueIdentifier, payload.visitId)
+          .input("userId", sql.UniqueIdentifier, subscriber.userId)
+          .query("UPDATE dbo.nationality_notification_deliveries SET failed_at = SYSUTCDATETIME() WHERE visit_id = @visitId AND user_id = @userId");
+        await writeErrorLog({
+          level: "warning",
+          errorCode: "MAIL_RELAY_NATIONALITY_RECIPIENT_FAILED",
+          message: "Nationalitätsmeldung konnte an einen SiBe-Benutzer nicht zugestellt werden.",
+          stackTrace: error instanceof Error ? error.stack ?? null : null,
+          metadataJson: JSON.stringify({ visitId: payload.visitId, userId: subscriber.userId })
+        });
+      }
     }
-
-    const approvalUsers = await listNotificationEmailsByMenuAccess("genehmigung");
-    const recipients = mergeMailRecipients(settings.emailRelay.approvalRecipients, approvalUsers);
-
-    if (recipients.length === 0) {
-      return;
-    }
-
-    await sendMail({
-      to: recipients,
-      subject: `Besucherfreigabe erforderlich: ${payload.visitorName}`,
-      text: [
-        "Eine neue Besuchervoranmeldung wartet auf SiBe-Freigabe.",
-        "",
-        `Besucher: ${payload.visitorName}`,
-        `Firma: ${payload.company}`,
-        `Ansprechpartner: ${payload.hostName}`,
-        `Wache: ${payload.gateName || "Noch nicht zugeordnet"}`,
-        `Gültig von: ${payload.validFrom}`,
-        `Gültig bis: ${payload.validUntil}`,
-        "",
-        `Details: ${buildVisitDetailUrl(payload.visitId)}`
-      ].join("\n")
-    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unbekannter Fehler";
     await writeErrorLog({
       level: "warning",
-      errorCode: "MAIL_RELAY_APPROVAL_REQUEST_FAILED",
-      message: "Freigabeanfrage konnte nicht per E-Mail versendet werden.",
-      stackTrace: error instanceof Error ? error.stack ?? null : null,
-      metadataJson: JSON.stringify({
-        error: message,
-        visitId: payload.visitId
-      })
-    });
-  }
-}
-
-export async function notifyApprovalDecision(payload: ApprovalDecisionNotification): Promise<void> {
-  const recipients = mergeMailRecipients(payload.recipientEmails);
-
-  if (recipients.length === 0) {
-    return;
-  }
-
-  try {
-    await sendMail({
-      to: recipients,
-      subject: `Besucher ${payload.decision === "approved" ? "freigegeben" : "abgelehnt"}: ${payload.visitorName}`,
-      text: [
-        `Die Besuchervoranmeldung wurde ${payload.decision === "approved" ? "freigegeben" : "abgelehnt"}.`,
-        "",
-        `Besucher: ${payload.visitorName}`,
-        `Firma: ${payload.company}`,
-        `Ansprechpartner: ${payload.hostName}`,
-        `Vorgang: ${payload.visitId}`,
-        payload.note ? `Hinweis: ${payload.note}` : null
-      ].filter(Boolean).join("\n")
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unbekannter Fehler";
-    await writeErrorLog({
-      level: "warning",
-      errorCode: "MAIL_RELAY_APPROVAL_DECISION_FAILED",
-      message: "Freigabeentscheidung konnte nicht per E-Mail versendet werden.",
+      errorCode: "MAIL_RELAY_NATIONALITY_NOTIFICATION_FAILED",
+      message: "Nationalitätsmeldung konnte nicht per E-Mail versendet werden.",
       stackTrace: error instanceof Error ? error.stack ?? null : null,
       metadataJson: JSON.stringify({
         error: message,

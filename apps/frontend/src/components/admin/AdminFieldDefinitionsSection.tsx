@@ -1,5 +1,5 @@
-import { type ChangeEvent, type Dispatch, type FormEvent, type SetStateAction, useMemo } from "react";
-import { type AdminFieldDefinition, type NewFieldDefinitionForm } from "../../app/core";
+import { type ChangeEvent, type Dispatch, type SetStateAction, useMemo } from "react";
+import { type AdminFieldDefinition } from "../../app/core";
 import { Card, FormField } from "../ui";
 
 type FieldImportPreview = {
@@ -16,10 +16,6 @@ type AdminFieldDefinitionsSectionProps = {
   setSelectedFieldDefinitionId: Dispatch<SetStateAction<string | null>>;
   selectedFieldSection: string | null;
   setSelectedFieldSection: Dispatch<SetStateAction<string | null>>;
-  isCreateFieldModalOpen: boolean;
-  setIsCreateFieldModalOpen: Dispatch<SetStateAction<boolean>>;
-  newFieldDefinition: NewFieldDefinitionForm;
-  setNewFieldDefinition: Dispatch<SetStateAction<NewFieldDefinitionForm>>;
   fieldImportText: string;
   fieldImportFileName: string;
   fieldImportPreview: FieldImportPreview | null;
@@ -28,7 +24,6 @@ type AdminFieldDefinitionsSectionProps = {
   confirmFieldImport: () => Promise<void>;
   exportFieldConfiguration: () => Promise<void>;
   saveFieldDefinition: (fieldId: string) => Promise<void>;
-  createFieldDefinition: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   toggleFieldDefinitionActive: (field: AdminFieldDefinition) => Promise<void>;
 };
 
@@ -44,10 +39,6 @@ export function AdminFieldDefinitionsSection({
   setSelectedFieldDefinitionId,
   selectedFieldSection,
   setSelectedFieldSection,
-  isCreateFieldModalOpen,
-  setIsCreateFieldModalOpen,
-  newFieldDefinition,
-  setNewFieldDefinition,
   fieldImportText,
   fieldImportFileName,
   fieldImportPreview,
@@ -56,7 +47,6 @@ export function AdminFieldDefinitionsSection({
   confirmFieldImport,
   exportFieldConfiguration,
   saveFieldDefinition,
-  createFieldDefinition,
   toggleFieldDefinitionActive
 }: AdminFieldDefinitionsSectionProps) {
   const selectedFieldDefinition = selectedFieldDefinitionId ? editableFieldDefinitions[selectedFieldDefinitionId] || null : null;
@@ -154,15 +144,6 @@ export function AdminFieldDefinitionsSection({
               >
                 Zurück zur Modulübersicht
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setNewFieldDefinition((current) => ({ ...current, section: selectedFieldSectionGroup.section }));
-                  setIsCreateFieldModalOpen(true);
-                }}
-              >
-                Neues Feld hinzufügen
-              </button>
             </div>
           </div>
           <div className="field-section-list">
@@ -221,16 +202,6 @@ export function AdminFieldDefinitionsSection({
                 <div className="field-row-actions">
                   <button type="button" className="secondary-button" onClick={() => setSelectedFieldSection(section)}>
                     Öffnen
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedFieldSection(section);
-                      setNewFieldDefinition((current) => ({ ...current, section }));
-                      setIsCreateFieldModalOpen(true);
-                    }}
-                  >
-                    Neues Feld in diesem Modul
                   </button>
                 </div>
               </article>
@@ -362,9 +333,9 @@ export function AdminFieldDefinitionsSection({
 
               <h5>Pflichtregeln</h5>
               <div className="form-grid two-columns">
-                <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.requiredPublic} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [selectedFieldDefinition.id]: { ...selectedFieldDefinition, requiredPublic: event.target.checked } }))} />Pflicht in Voranmeldung</label>
-                <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.requiredGuardCheckin} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [selectedFieldDefinition.id]: { ...selectedFieldDefinition, requiredGuardCheckin: event.target.checked } }))} />Pflicht vor Check-in</label>
-                <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.requiredBeforePrint} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [selectedFieldDefinition.id]: { ...selectedFieldDefinition, requiredBeforePrint: event.target.checked } }))} />Pflicht vor Druck</label>
+                <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.requiredPublic} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [selectedFieldDefinition.id]: { ...selectedFieldDefinition, requiredPublic: event.target.checked, showInPublic: event.target.checked || selectedFieldDefinition.showInPublic } }))} />Pflicht in Voranmeldung</label>
+                <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.requiredGuardCheckin} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [selectedFieldDefinition.id]: { ...selectedFieldDefinition, requiredGuardCheckin: event.target.checked, showInGuard: event.target.checked || selectedFieldDefinition.showInGuard } }))} />Pflicht vor Check-in</label>
+                <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.requiredBeforePrint} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [selectedFieldDefinition.id]: { ...selectedFieldDefinition, requiredBeforePrint: event.target.checked, showOnBadge: event.target.checked || selectedFieldDefinition.showOnBadge } }))} />Pflicht vor Druck</label>
               </div>
 
               <h5>Status</h5>
@@ -381,64 +352,6 @@ export function AdminFieldDefinitionsSection({
         </div>
       ) : null}
 
-      {isCreateFieldModalOpen ? (
-        <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={(event) => {
-          if (event.target === event.currentTarget) {
-            setIsCreateFieldModalOpen(false);
-          }
-        }}>
-          <div className="modal-card panel field-edit-modal">
-            <div className="modal-header">
-              <h4>Neues Feld hinzufügen</h4>
-              <button type="button" className="secondary-button modal-close-button" onClick={() => setIsCreateFieldModalOpen(false)}>
-                Schließen
-              </button>
-            </div>
-            <form className="field-edit-form" onSubmit={createFieldDefinition}>
-              <h5>Stammdaten</h5>
-              <div className="form-grid two-columns">
-                <FormField label="Label" required><input value={newFieldDefinition.label} onChange={(event) => setNewFieldDefinition((current) => ({ ...current, label: event.target.value }))} /></FormField>
-                <FormField label="Feldtyp" required>
-                  <select value={newFieldDefinition.fieldType} onChange={(event) => setNewFieldDefinition((current) => ({ ...current, fieldType: event.target.value }))}>
-                    <option value="text">Text</option>
-                    <option value="textarea">Mehrzeiliger Text</option>
-                    <option value="date">Datum</option>
-                    <option value="email">E-Mail</option>
-                    <option value="phone">Telefon</option>
-                    <option value="number">Zahl</option>
-                    <option value="checkbox">Checkbox</option>
-                    <option value="select">Auswahlfeld</option>
-                  </select>
-                </FormField>
-                <FormField label="Bereich" required><input value={newFieldDefinition.section} onChange={(event) => setNewFieldDefinition((current) => ({ ...current, section: event.target.value }))} /></FormField>
-                <FormField label="Sortierung"><input type="number" value={newFieldDefinition.sortOrder} onChange={(event) => setNewFieldDefinition((current) => ({ ...current, sortOrder: Number(event.target.value) || 0 }))} /></FormField>
-                <FormField label="Hilfetext"><input value={newFieldDefinition.helpText} onChange={(event) => setNewFieldDefinition((current) => ({ ...current, helpText: event.target.value }))} /></FormField>
-                {newFieldDefinition.fieldType === "select" ? <FormField label="Optionen (eine pro Zeile)"><textarea rows={4} value={newFieldDefinition.optionsJson} onChange={(event) => setNewFieldDefinition((current) => ({ ...current, optionsJson: event.target.value }))} /></FormField> : null}
-              </div>
-
-              <h5>Sichtbarkeit</h5>
-              <div className="form-grid two-columns">
-                <label className="checkbox-row"><input type="checkbox" checked={newFieldDefinition.showInPublic} onChange={(event) => setNewFieldDefinition((current) => ({ ...current, showInPublic: event.target.checked }))} />In Voranmeldung anzeigen</label>
-                <label className="checkbox-row"><input type="checkbox" checked={newFieldDefinition.showInGuard} onChange={(event) => setNewFieldDefinition((current) => ({ ...current, showInGuard: event.target.checked }))} />In Wache anzeigen</label>
-                <label className="checkbox-row"><input type="checkbox" checked={newFieldDefinition.showInSibe} onChange={(event) => setNewFieldDefinition((current) => ({ ...current, showInSibe: event.target.checked }))} />In SiBe anzeigen</label>
-                <label className="checkbox-row"><input type="checkbox" checked={newFieldDefinition.showOnBadge} onChange={(event) => setNewFieldDefinition((current) => ({ ...current, showOnBadge: event.target.checked }))} />Auf Besucherschein drucken</label>
-              </div>
-
-              <h5>Pflichtregeln</h5>
-              <div className="form-grid two-columns">
-                <label className="checkbox-row"><input type="checkbox" checked={newFieldDefinition.requiredPublic} onChange={(event) => setNewFieldDefinition((current) => ({ ...current, requiredPublic: event.target.checked }))} />Pflicht in Voranmeldung</label>
-                <label className="checkbox-row"><input type="checkbox" checked={newFieldDefinition.requiredGuardCheckin} onChange={(event) => setNewFieldDefinition((current) => ({ ...current, requiredGuardCheckin: event.target.checked }))} />Pflicht vor Check-in</label>
-                <label className="checkbox-row"><input type="checkbox" checked={newFieldDefinition.requiredBeforePrint} onChange={(event) => setNewFieldDefinition((current) => ({ ...current, requiredBeforePrint: event.target.checked }))} />Pflicht vor Druck</label>
-                <label className="checkbox-row"><input type="checkbox" checked={newFieldDefinition.isActive} onChange={(event) => setNewFieldDefinition((current) => ({ ...current, isActive: event.target.checked }))} />Aktiv</label>
-              </div>
-              <div className="row-actions action-bar modal-actions">
-                <button type="submit">Feld anlegen</button>
-                <button type="button" className="secondary-button" onClick={() => setIsCreateFieldModalOpen(false)}>Abbrechen</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      ) : null}
     </Card>
   );
 }

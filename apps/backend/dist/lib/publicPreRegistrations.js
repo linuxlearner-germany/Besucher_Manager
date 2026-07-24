@@ -11,7 +11,6 @@ const mailRelay_1 = require("./mailRelay");
 const auditLog_1 = require("./auditLog");
 const db_1 = require("./db");
 const badgeNumber_1 = require("./badgeNumber");
-const systemSettings_1 = require("./systemSettings");
 const visitWorkflow_1 = require("./visitWorkflow");
 async function generateUniqueBadgeNumber(transaction) {
     for (let attempt = 0; attempt < 20; attempt += 1) {
@@ -88,16 +87,16 @@ async function createPreRegistration(input) {
     const transaction = new mssql_1.default.Transaction(pool);
     await transaction.begin();
     try {
-        const workflowSettings = await (0, systemSettings_1.loadWorkflowSettings)({ transaction });
-        const approvalStatus = workflowSettings.approvalRequired
-            ? visitWorkflow_1.APPROVAL_STATUS.PENDING
-            : visitWorkflow_1.APPROVAL_STATUS.NOT_REQUIRED;
         const gateId = cleanOptional(input.gateId);
         const badgeNumber = await generateUniqueBadgeNumber(transaction);
+        const fallbackDate = new Date().toISOString().slice(0, 10);
+        const validFrom = input.validFrom || fallbackDate;
+        const validUntil = input.validUntil || validFrom;
         const visitorInsert = await new mssql_1.default.Request(transaction)
             .input("firstName", mssql_1.default.NVarChar(120), input.firstName.trim())
             .input("lastName", mssql_1.default.NVarChar(120), input.lastName.trim())
             .input("company", mssql_1.default.NVarChar(255), input.company.trim())
+            .input("nationalityCode", mssql_1.default.NChar(2), input.nationalityCode)
             .input("birthDate", mssql_1.default.Date, cleanOptional(input.birthDate))
             .input("phone", mssql_1.default.NVarChar(80), cleanOptional(input.phone))
             .input("email", mssql_1.default.NVarChar(255), cleanOptional(input.email))
@@ -109,6 +108,7 @@ async function createPreRegistration(input) {
           first_name,
           last_name,
           company,
+          nationality_code,
           birth_date,
           phone_optional,
           email_optional,
@@ -121,6 +121,7 @@ async function createPreRegistration(input) {
           @firstName,
           @lastName,
           @company,
+          @nationalityCode,
           @birthDate,
           @phone,
           @email,
@@ -141,12 +142,11 @@ async function createPreRegistration(input) {
             .input("hostPhone", mssql_1.default.NVarChar(80), cleanOptional(input.hostPhone))
             .input("hostDepartment", mssql_1.default.NVarChar(255), cleanOptional(input.hostDepartment))
             .input("purpose", mssql_1.default.NVarChar(500), input.purpose.trim())
-            .input("validFrom", mssql_1.default.DateTime2, normalizeDateOnlyStart(input.validFrom))
-            .input("validUntil", mssql_1.default.DateTime2, normalizeDateOnlyEnd(input.validUntil))
+            .input("validFrom", mssql_1.default.DateTime2, normalizeDateOnlyStart(validFrom))
+            .input("validUntil", mssql_1.default.DateTime2, normalizeDateOnlyEnd(validUntil))
             .input("licensePlate", mssql_1.default.NVarChar(40), cleanOptional(input.licensePlate))
             .input("badgeNumber", mssql_1.default.NVarChar(64), badgeNumber)
             .input("notes", mssql_1.default.NVarChar(mssql_1.default.MAX), cleanOptional(input.notes))
-            .input("approvalStatus", mssql_1.default.NVarChar(32), approvalStatus)
             .input("submittedIpAddress", mssql_1.default.NVarChar(64), cleanOptional(input.submittedIpAddress ?? undefined))
             .query(`
         INSERT INTO dbo.visits (
@@ -162,12 +162,11 @@ async function createPreRegistration(input) {
           license_plate,
           badge_number,
           status,
-          approval_status,
           created_via_public_form,
           submitted_ip_address,
           notes
         )
-        OUTPUT inserted.id, inserted.status, inserted.approval_status AS approvalStatus
+        OUTPUT inserted.id, inserted.status
         VALUES (
           @visitorId,
           @gateId,
@@ -181,7 +180,6 @@ async function createPreRegistration(input) {
           @licensePlate,
           @badgeNumber,
           '${visitWorkflow_1.VISIT_STATUS.PRE_REGISTERED}',
-          @approvalStatus,
           1,
           @submittedIpAddress,
           @notes
@@ -204,23 +202,22 @@ async function createPreRegistration(input) {
             }
         }, transaction);
         await transaction.commit();
-        if (visit.approvalStatus === visitWorkflow_1.APPROVAL_STATUS.PENDING) {
-            const gate = gateId ? await findActiveGateById(gateId) : null;
-            void (0, mailRelay_1.notifyApprovalRequested)({
+        const gate = gateId ? await findActiveGateById(gateId) : null;
+        if (input.nationalityCode) {
+            void (0, mailRelay_1.notifyNationalitySubscribers)({
                 visitId: visit.id,
+                nationalityCode: input.nationalityCode,
                 visitorName: `${input.firstName.trim()} ${input.lastName.trim()}`,
                 company: input.company.trim(),
-                hostName: input.hostName.trim(),
-                validFrom: input.validFrom,
-                validUntil: input.validUntil,
+                validFrom,
+                validUntil,
                 gateName: gate?.name ?? null
             });
         }
         return {
             visitId: visit.id,
             visitorId,
-            status: visit.status,
-            approvalStatus: visit.approvalStatus
+            status: visit.status
         };
     }
     catch (error) {

@@ -1,11 +1,10 @@
 import sql from "mssql";
-import { notifyApprovalRequested } from "./mailRelay";
+import { notifyNationalitySubscribers } from "./mailRelay";
 import { writeAuditLog } from "./auditLog";
 import { getPool } from "./db";
 import { generateBadgeNumberCandidate } from "./badgeNumber";
 import type { PublicPreRegistrationInput } from "./publicPreRegistrationSchema";
-import { loadWorkflowSettings } from "./systemSettings";
-import { APPROVAL_STATUS, VISIT_STATUS } from "./visitWorkflow";
+import { VISIT_STATUS } from "./visitWorkflow";
 
 export type GateSummary = {
   id: string;
@@ -23,7 +22,6 @@ export type CreatedPreRegistration = {
   visitId: string;
   visitorId: string;
   status: string;
-  approvalStatus: string;
 };
 
 async function generateUniqueBadgeNumber(transaction: sql.Transaction): Promise<string> {
@@ -113,17 +111,17 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
   await transaction.begin();
 
   try {
-    const workflowSettings = await loadWorkflowSettings({ transaction });
-    const approvalStatus = workflowSettings.approvalRequired
-      ? APPROVAL_STATUS.PENDING
-      : APPROVAL_STATUS.NOT_REQUIRED;
     const gateId = cleanOptional(input.gateId);
     const badgeNumber = await generateUniqueBadgeNumber(transaction);
+    const fallbackDate = new Date().toISOString().slice(0, 10);
+    const validFrom = input.validFrom || fallbackDate;
+    const validUntil = input.validUntil || validFrom;
 
     const visitorInsert = await new sql.Request(transaction)
       .input("firstName", sql.NVarChar(120), input.firstName.trim())
       .input("lastName", sql.NVarChar(120), input.lastName.trim())
       .input("company", sql.NVarChar(255), input.company.trim())
+      .input("nationalityCode", sql.NChar(2), input.nationalityCode)
       .input("birthDate", sql.Date, cleanOptional(input.birthDate))
       .input("phone", sql.NVarChar(80), cleanOptional(input.phone))
       .input("email", sql.NVarChar(255), cleanOptional(input.email))
@@ -135,6 +133,7 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
           first_name,
           last_name,
           company,
+          nationality_code,
           birth_date,
           phone_optional,
           email_optional,
@@ -147,6 +146,7 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
           @firstName,
           @lastName,
           @company,
+          @nationalityCode,
           @birthDate,
           @phone,
           @email,
@@ -170,14 +170,13 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
       .input("hostPhone", sql.NVarChar(80), cleanOptional(input.hostPhone))
       .input("hostDepartment", sql.NVarChar(255), cleanOptional(input.hostDepartment))
       .input("purpose", sql.NVarChar(500), input.purpose.trim())
-      .input("validFrom", sql.DateTime2, normalizeDateOnlyStart(input.validFrom))
-      .input("validUntil", sql.DateTime2, normalizeDateOnlyEnd(input.validUntil))
+      .input("validFrom", sql.DateTime2, normalizeDateOnlyStart(validFrom))
+      .input("validUntil", sql.DateTime2, normalizeDateOnlyEnd(validUntil))
       .input("licensePlate", sql.NVarChar(40), cleanOptional(input.licensePlate))
       .input("badgeNumber", sql.NVarChar(64), badgeNumber)
       .input("notes", sql.NVarChar(sql.MAX), cleanOptional(input.notes))
-      .input("approvalStatus", sql.NVarChar(32), approvalStatus)
       .input("submittedIpAddress", sql.NVarChar(64), cleanOptional(input.submittedIpAddress ?? undefined))
-      .query<{ id: string; status: string; approvalStatus: string }>(`
+      .query<{ id: string; status: string }>(`
         INSERT INTO dbo.visits (
           visitor_id,
           gate_id,
@@ -191,12 +190,11 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
           license_plate,
           badge_number,
           status,
-          approval_status,
           created_via_public_form,
           submitted_ip_address,
           notes
         )
-        OUTPUT inserted.id, inserted.status, inserted.approval_status AS approvalStatus
+        OUTPUT inserted.id, inserted.status
         VALUES (
           @visitorId,
           @gateId,
@@ -210,7 +208,6 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
           @licensePlate,
           @badgeNumber,
           '${VISIT_STATUS.PRE_REGISTERED}',
-          @approvalStatus,
           1,
           @submittedIpAddress,
           @notes
@@ -241,15 +238,15 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
 
     await transaction.commit();
 
-    if (visit.approvalStatus === APPROVAL_STATUS.PENDING) {
-      const gate = gateId ? await findActiveGateById(gateId) : null;
-      void notifyApprovalRequested({
+    const gate = gateId ? await findActiveGateById(gateId) : null;
+    if (input.nationalityCode) {
+      void notifyNationalitySubscribers({
         visitId: visit.id,
+        nationalityCode: input.nationalityCode,
         visitorName: `${input.firstName.trim()} ${input.lastName.trim()}`,
         company: input.company.trim(),
-        hostName: input.hostName.trim(),
-        validFrom: input.validFrom,
-        validUntil: input.validUntil,
+        validFrom,
+        validUntil,
         gateName: gate?.name ?? null
       });
     }
@@ -257,8 +254,7 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
     return {
       visitId: visit.id,
       visitorId,
-      status: visit.status,
-      approvalStatus: visit.approvalStatus
+      status: visit.status
     };
   } catch (error) {
     await transaction.rollback();

@@ -1,34 +1,93 @@
 import { z } from "zod";
+import { normalizeCountryCode } from "./countries";
 
-export const publicPreRegistrationSchema = z
+export const PUBLIC_FIELD_INPUT_MAP = {
+  visitor_first_name: "firstName",
+  visitor_last_name: "lastName",
+  visitor_company: "company",
+  visitor_nationality: "nationalityCode",
+  visitor_birth_date: "birthDate",
+  visitor_phone: "phone",
+  visitor_email: "email",
+  visitor_license_plate: "licensePlate",
+  host_name: "hostName",
+  host_email: "hostEmail",
+  host_phone: "hostPhone",
+  host_department: "hostDepartment",
+  visit_purpose: "purpose",
+  valid_from: "validFrom",
+  valid_until: "validUntil",
+  visit_note: "notes",
+  id_document_type: "idDocumentType",
+  id_document_valid_until: "idDocumentValidUntil",
+  id_document_number: "idDocumentNumber"
+} as const;
+
+export type PublicFieldKey = keyof typeof PUBLIC_FIELD_INPUT_MAP;
+
+const defaultRequiredFieldKeys = new Set<PublicFieldKey>([
+  "visitor_first_name",
+  "visitor_last_name",
+  "visitor_company",
+  "visitor_nationality",
+  "host_name",
+  "host_phone",
+  "visit_purpose",
+  "valid_from",
+  "valid_until",
+  "id_document_type",
+  "id_document_valid_until",
+  "id_document_number"
+]);
+
+export function createPublicPreRegistrationSchema(requiredFieldKeys: ReadonlySet<PublicFieldKey> = defaultRequiredFieldKeys) {
+  return z
   .object({
     gateId: z.string().uuid().optional().or(z.literal("")),
-    firstName: z.string().trim().min(1, "Vorname ist erforderlich."),
-    lastName: z.string().trim().min(1, "Nachname ist erforderlich."),
-    company: z.string().trim().min(1, "Firma / Organisation ist erforderlich."),
-    hostName: z.string().trim().min(1, "Ansprechpartner ist erforderlich."),
+    firstName: z.string().trim().max(120).optional().default(""),
+    lastName: z.string().trim().max(120).optional().default(""),
+    company: z.string().trim().max(255).optional().default(""),
+    nationalityCode: z.string().trim().transform((value, context) => {
+      if (!value) return null;
+      const code = normalizeCountryCode(value);
+      if (!code) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "Bitte eine gültige Nationalität auswählen." });
+        return z.NEVER;
+      }
+      return code;
+    }),
+    hostName: z.string().trim().max(255).optional().default(""),
     hostEmail: z.string().trim().email("Ungültige Ansprechpartner-E-Mail.").optional().or(z.literal("")),
-    hostPhone: z.string().trim().min(1, "Ansprechpartner Telefon ist erforderlich."),
+    hostPhone: z.string().trim().max(80).optional().default(""),
     hostDepartment: z.string().trim().optional(),
-    purpose: z.string().trim().min(1, "Besuchszweck ist erforderlich."),
-    validFrom: z.string().trim().min(1, "Gültig von ist erforderlich."),
-    validUntil: z.string().trim().min(1, "Gültig bis ist erforderlich."),
+    purpose: z.string().trim().max(500).optional().default(""),
+    validFrom: z.string().trim().optional().default(""),
+    validUntil: z.string().trim().optional().default(""),
     birthDate: z.string().trim().optional().or(z.literal("")),
     phone: z.string().trim().optional(),
     email: z.string().trim().email("Ungültige E-Mail-Adresse.").optional().or(z.literal("")),
     licensePlate: z.string().trim().optional(),
-    idDocumentType: z.enum(["identity_card", "passport", "other"], {
-      errorMap: () => ({ message: "Ausweisart ist erforderlich." })
-    }),
-    idDocumentValidUntil: z.string().trim().min(1, "Ausweis gültig bis ist erforderlich."),
-    idDocumentNumber: z.string().trim().min(1, "Ausweisnummer ist erforderlich.").max(120),
+    idDocumentType: z.enum(["identity_card", "passport", "service_id", "other"]).optional().or(z.literal("")),
+    idDocumentValidUntil: z.string().trim().optional().default(""),
+    idDocumentNumber: z.string().trim().max(120).optional().default(""),
     notes: z.string().trim().optional()
   })
   .superRefine((value, context) => {
+    for (const fieldKey of requiredFieldKeys) {
+      const inputKey = PUBLIC_FIELD_INPUT_MAP[fieldKey];
+      if (!String(value[inputKey] ?? "").trim()) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [inputKey],
+          message: "Dieses Pflichtfeld ist erforderlich."
+        });
+      }
+    }
+
     const validFrom = new Date(value.validFrom);
     const validUntil = new Date(value.validUntil);
 
-    if (Number.isNaN(validFrom.getTime())) {
+    if (value.validFrom && Number.isNaN(validFrom.getTime())) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["validFrom"],
@@ -36,7 +95,7 @@ export const publicPreRegistrationSchema = z
       });
     }
 
-    if (Number.isNaN(validUntil.getTime())) {
+    if (value.validUntil && Number.isNaN(validUntil.getTime())) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["validUntil"],
@@ -72,7 +131,7 @@ export const publicPreRegistrationSchema = z
     }
 
     const idDocumentValidUntil = new Date(value.idDocumentValidUntil);
-    if (Number.isNaN(idDocumentValidUntil.getTime())) {
+    if (value.idDocumentValidUntil && Number.isNaN(idDocumentValidUntil.getTime())) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["idDocumentValidUntil"],
@@ -80,5 +139,8 @@ export const publicPreRegistrationSchema = z
       });
     }
   });
+}
+
+export const publicPreRegistrationSchema = createPublicPreRegistrationSchema();
 
 export type PublicPreRegistrationInput = z.infer<typeof publicPreRegistrationSchema>;

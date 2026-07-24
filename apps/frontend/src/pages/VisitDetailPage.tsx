@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Card, FormField } from "../components/ui";
+import { CountrySelect } from "../components/CountrySelect";
 import {
   AppLayout,
   type ApiError,
@@ -261,6 +262,7 @@ export function VisitDetailPage() {
                     <FormField label="Vorname" required error={fieldErrors.firstName}><input className={missingRequired.has("Vorname") ? "required-missing" : ""} value={editForm.firstName} onChange={(event) => setEditForm((current) => current ? { ...current, firstName: event.target.value } : current)} /></FormField>
                     <FormField label="Nachname" required error={fieldErrors.lastName}><input className={missingRequired.has("Nachname") ? "required-missing" : ""} value={editForm.lastName} onChange={(event) => setEditForm((current) => current ? { ...current, lastName: event.target.value } : current)} /></FormField>
                     <FormField label="Firma / Organisation" required error={fieldErrors.company}><input className={missingRequired.has("Firma / Organisation") ? "required-missing" : ""} value={editForm.company} onChange={(event) => setEditForm((current) => current ? { ...current, company: event.target.value } : current)} /></FormField>
+                    <FormField label="Nationalität" required error={fieldErrors.nationalityCode}><CountrySelect required className={missingRequired.has("Nationalität") ? "required-missing" : ""} value={editForm.nationalityCode} onChange={(value) => setEditForm((current) => current ? { ...current, nationalityCode: value } : current)} /></FormField>
                     <FormField label="Ansprechpartner" required error={fieldErrors.hostName}><input className={missingRequired.has("Ansprechpartner") ? "required-missing" : ""} value={editForm.hostName} onChange={(event) => setEditForm((current) => current ? { ...current, hostName: event.target.value } : current)} /></FormField>
                     <FormField label="Ansprechpartner Telefon" required error={fieldErrors.hostPhone}><input className={missingRequired.has("Ansprechpartner Telefon") ? "required-missing" : ""} value={editForm.hostPhone} onChange={(event) => setEditForm((current) => current ? { ...current, hostPhone: event.target.value } : current)} /></FormField>
                     <FormField label="Besuchszweck" required error={fieldErrors.purpose}><input className={missingRequired.has("Besuchszweck") ? "required-missing" : ""} value={editForm.purpose} onChange={(event) => setEditForm((current) => current ? { ...current, purpose: event.target.value } : current)} /></FormField>
@@ -294,7 +296,7 @@ export function VisitDetailPage() {
                 <Card>
                   <h3>Ausweisdaten</h3>
                   <div className="form-grid two-columns">
-                    <FormField label="Ausweisart" required error={fieldErrors.idDocumentType}><select className={missingRequired.has("Ausweisart") ? "required-missing" : ""} value={editForm.idDocumentType} onChange={(event) => setEditForm((current) => current ? { ...current, idDocumentType: event.target.value as GuardVisitEditState["idDocumentType"] } : current)}><option value="">-</option><option value="identity_card">Personalausweis</option><option value="passport">Reisepass</option><option value="other">Sonstiges</option></select></FormField>
+                    <FormField label="Ausweisart" required error={fieldErrors.idDocumentType}><select className={missingRequired.has("Ausweisart") ? "required-missing" : ""} value={editForm.idDocumentType} onChange={(event) => setEditForm((current) => current ? { ...current, idDocumentType: event.target.value as GuardVisitEditState["idDocumentType"] } : current)}><option value="">-</option><option value="identity_card">Personalausweis</option><option value="passport">Reisepass</option><option value="service_id">Dienstausweis</option><option value="other">Sonstiges</option></select></FormField>
                     <FormField label="Ausweis gültig bis" required error={fieldErrors.idDocumentValidUntil}><input className={missingRequired.has("Ausweis gültig bis") ? "required-missing" : ""} type="date" value={editForm.idDocumentValidUntil} onChange={(event) => setEditForm((current) => current ? { ...current, idDocumentValidUntil: event.target.value } : current)} /></FormField>
                     <FormField label="Ausweisnummer" required error={fieldErrors.idDocumentNumber}><input className={missingRequired.has("Ausweisnummer") ? "required-missing" : ""} value={editForm.idDocumentNumber} onChange={(event) => setEditForm((current) => current ? { ...current, idDocumentNumber: event.target.value } : current)} /></FormField>
                   </div>
@@ -339,6 +341,7 @@ export function VisitDetailPage() {
                   <div className="detail-grid">
                     <div><span className="detail-label">Name</span><strong>{visit.firstName} {visit.lastName}</strong></div>
                     <div><span className="detail-label">Firma / Organisation</span><strong>{visit.company}</strong></div>
+                    <div><span className="detail-label">Nationalität</span><strong>{visit.nationalityName || visit.nationalityCode || "-"}</strong></div>
                     {visit.birthDate ? <div><span className="detail-label">Geburtsdatum</span><strong>{formatDateOnly(visit.birthDate)}</strong></div> : null}
                     {visit.visitorPhone ? <div><span className="detail-label">Telefon</span><strong>{visit.visitorPhone}</strong></div> : null}
                     {visit.visitorEmail ? <div><span className="detail-label">E-Mail</span><strong>{visit.visitorEmail}</strong></div> : null}

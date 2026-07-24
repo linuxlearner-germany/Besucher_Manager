@@ -1,8 +1,10 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { ImportReviewModal } from "../components/ImportReviewModal";
 import { Alert, FormField } from "../components/ui";
+import { CountrySelect } from "../components/CountrySelect";
 import {
   AppLayout,
+  type AdminFieldDefinition,
   type ApiError,
   buildInitialFormState,
   extractFieldErrors,
@@ -21,11 +23,12 @@ type GroupVisitorForm = {
   firstName: string;
   lastName: string;
   company: string;
+  nationalityCode: string;
   birthDate: string;
   phone: string;
   email: string;
   licensePlate: string;
-  idDocumentType: "identity_card" | "passport" | "other" | "";
+  idDocumentType: "identity_card" | "passport" | "service_id" | "other" | "";
   idDocumentValidUntil: string;
   idDocumentNumber: string;
 };
@@ -48,6 +51,7 @@ const emptyGroupVisitor = (): GroupVisitorForm => ({
   firstName: "",
   lastName: "",
   company: "",
+  nationalityCode: "DE",
   birthDate: "",
   phone: "",
   email: "",
@@ -58,7 +62,7 @@ const emptyGroupVisitor = (): GroupVisitorForm => ({
 });
 
 function hasGroupVisitorData(visitor: GroupVisitorForm): boolean {
-  return Object.values(visitor).some((value) => value.trim().length > 0);
+  return Object.entries(visitor).some(([key, value]) => key !== "nationalityCode" && value.trim().length > 0);
 }
 
 function isPastDate(value: string): boolean {
@@ -76,15 +80,20 @@ export function PublicPreRegistrationPage() {
   const [isSubmittingGroup, setIsSubmittingGroup] = useState(false);
   const [csrfToken, setCsrfToken] = useState("");
   const [gates, setGates] = useState<Gate[]>([]);
+  const [publicFields, setPublicFields] = useState<AdminFieldDefinition[] | null>(null);
   const [groupVisitors, setGroupVisitors] = useState<GroupVisitorForm[]>(() => [emptyGroupVisitor(), emptyGroupVisitor(), emptyGroupVisitor()]);
   const [groupResult, setGroupResult] = useState<GroupImportResult | null>(null);
 
   useEffect(() => {
     async function loadCsrf() {
       try {
-        const payload = await fetchJson<{ csrfToken: string; gates: Array<{ id: string }> }>("/api/public/gates", { method: "GET", headers: {} });
+        const [payload, fieldsPayload] = await Promise.all([
+          fetchJson<{ csrfToken: string; gates: Array<{ id: string }> }>("/api/public/gates", { method: "GET", headers: {} }),
+          fetchJson<{ definitions: AdminFieldDefinition[] }>("/api/field-definitions?context=public", { method: "GET", headers: {} })
+        ]);
         setCsrfToken(payload.csrfToken);
         setGates(payload.gates as Gate[]);
+        setPublicFields(fieldsPayload.definitions);
         setForm((current) => ({
           ...current,
           gateId: current.gateId || payload.gates[0]?.id || ""
@@ -92,6 +101,7 @@ export function PublicPreRegistrationPage() {
       } catch {
         setCsrfToken("");
         setGates([]);
+        setPublicFields(null);
       }
     }
 
@@ -194,6 +204,15 @@ export function PublicPreRegistrationPage() {
   }
 
   const documentExpired = isPastDate(form.idDocumentValidUntil);
+  const defaultRequiredFields = new Set([
+    "visitor_first_name", "visitor_last_name", "visitor_company", "visitor_nationality",
+    "host_name", "host_phone", "visit_purpose", "valid_from", "valid_until",
+    "id_document_type", "id_document_valid_until", "id_document_number"
+  ]);
+  const shown = (fieldKey: string) => publicFields === null || publicFields.some((field) => field.fieldKey === fieldKey);
+  const required = (fieldKey: string) => publicFields === null
+    ? defaultRequiredFields.has(fieldKey)
+    : Boolean(publicFields.find((field) => field.fieldKey === fieldKey)?.requiredPublic);
 
   return (
     <AppLayout>
@@ -205,31 +224,31 @@ export function PublicPreRegistrationPage() {
             </div>
           </div>
           <div className="form-grid two-columns">
-            <FormField label="Ansprechpartner" required error={fieldErrors.hostName}>
-              <input required value={form.hostName} onChange={(event) => updateField("hostName", event.target.value)} />
-            </FormField>
-            <FormField label="Ansprechpartner E-Mail">
-              <input type="email" value={form.hostEmail} onChange={(event) => updateField("hostEmail", event.target.value)} />
-            </FormField>
-            <FormField label="Ansprechpartner Telefon" required error={fieldErrors.hostPhone}>
-              <input required value={form.hostPhone} onChange={(event) => updateField("hostPhone", event.target.value)} />
-            </FormField>
-            <FormField label="Abteilung / Bereich" error={fieldErrors.hostDepartment}>
-              <input value={form.hostDepartment} onChange={(event) => updateField("hostDepartment", event.target.value)} />
-            </FormField>
-            <FormField label="Besuchszweck" required error={fieldErrors.purpose}>
-              <input required value={form.purpose} onChange={(event) => updateField("purpose", event.target.value)} />
-            </FormField>
-            <FormField label="Gültig von" required error={fieldErrors.validFrom}>
-              <input required type="date" value={form.validFrom} onChange={(event) => updateField("validFrom", event.target.value)} />
-            </FormField>
-            <FormField label="Gültig bis" required error={fieldErrors.validUntil}>
-              <input required type="date" value={form.validUntil} onChange={(event) => updateField("validUntil", event.target.value)} />
-            </FormField>
+            {shown("host_name") ? <FormField label="Ansprechpartner" required={required("host_name")} error={fieldErrors.hostName}>
+              <input required={required("host_name")} value={form.hostName} onChange={(event) => updateField("hostName", event.target.value)} />
+            </FormField> : null}
+            {shown("host_email") ? <FormField label="Ansprechpartner E-Mail" required={required("host_email")}>
+              <input required={required("host_email")} type="email" value={form.hostEmail} onChange={(event) => updateField("hostEmail", event.target.value)} />
+            </FormField> : null}
+            {shown("host_phone") ? <FormField label="Ansprechpartner Telefon" required={required("host_phone")} error={fieldErrors.hostPhone}>
+              <input required={required("host_phone")} value={form.hostPhone} onChange={(event) => updateField("hostPhone", event.target.value)} />
+            </FormField> : null}
+            {shown("host_department") ? <FormField label="Abteilung / Bereich" required={required("host_department")} error={fieldErrors.hostDepartment}>
+              <input required={required("host_department")} value={form.hostDepartment} onChange={(event) => updateField("hostDepartment", event.target.value)} />
+            </FormField> : null}
+            {shown("visit_purpose") ? <FormField label="Besuchszweck" required={required("visit_purpose")} error={fieldErrors.purpose}>
+              <input required={required("visit_purpose")} value={form.purpose} onChange={(event) => updateField("purpose", event.target.value)} />
+            </FormField> : null}
+            {shown("valid_from") ? <FormField label="Gültig von" required={required("valid_from")} error={fieldErrors.validFrom}>
+              <input required={required("valid_from")} type="date" value={form.validFrom} onChange={(event) => updateField("validFrom", event.target.value)} />
+            </FormField> : null}
+            {shown("valid_until") ? <FormField label="Gültig bis" required={required("valid_until")} error={fieldErrors.validUntil}>
+              <input required={required("valid_until")} type="date" value={form.validUntil} onChange={(event) => updateField("validUntil", event.target.value)} />
+            </FormField> : null}
           </div>
-          <FormField label="Bemerkung">
-            <textarea rows={3} value={form.notes} onChange={(event) => updateField("notes", event.target.value)} />
-          </FormField>
+          {shown("visit_note") ? <FormField label="Bemerkung" required={required("visit_note")}>
+            <textarea required={required("visit_note")} rows={3} value={form.notes} onChange={(event) => updateField("notes", event.target.value)} />
+          </FormField> : null}
         </section>
 
         <section className="public-entry-grid">
@@ -243,41 +262,45 @@ export function PublicPreRegistrationPage() {
             <form className="pre-registration-form" onSubmit={handleSubmit}>
               <div className="form-section">
                 <div className="form-grid two-columns">
-                  <FormField label="Vorname" required error={fieldErrors.firstName}>
-                    <input required value={form.firstName} onChange={(event) => updateField("firstName", event.target.value)} />
-                  </FormField>
-                  <FormField label="Nachname" required error={fieldErrors.lastName}>
-                    <input required value={form.lastName} onChange={(event) => updateField("lastName", event.target.value)} />
-                  </FormField>
-                  <FormField label="Firma / Organisation" required error={fieldErrors.company}>
-                    <input required value={form.company} onChange={(event) => updateField("company", event.target.value)} />
-                  </FormField>
-                  <FormField label="Geburtsdatum" error={fieldErrors.birthDate}>
-                    <input type="date" max={toDateInputValue(new Date())} value={form.birthDate} onChange={(event) => updateField("birthDate", event.target.value)} />
-                  </FormField>
-                  <FormField label="Telefonnummer">
-                    <input value={form.phone} onChange={(event) => updateField("phone", event.target.value)} />
-                  </FormField>
-                  <FormField label="E-Mail-Adresse">
-                    <input type="email" value={form.email} onChange={(event) => updateField("email", event.target.value)} />
-                  </FormField>
-                  <FormField label="Kennzeichen">
-                    <input value={form.licensePlate} onChange={(event) => updateField("licensePlate", event.target.value)} />
-                  </FormField>
-                  <FormField label="Ausweisart" required error={fieldErrors.idDocumentType}>
-                    <select required value={form.idDocumentType} onChange={(event) => updateField("idDocumentType", event.target.value as FormState["idDocumentType"])}>
+                  {shown("visitor_first_name") ? <FormField label="Vorname" required={required("visitor_first_name")} error={fieldErrors.firstName}>
+                    <input required={required("visitor_first_name")} value={form.firstName} onChange={(event) => updateField("firstName", event.target.value)} />
+                  </FormField> : null}
+                  {shown("visitor_last_name") ? <FormField label="Nachname" required={required("visitor_last_name")} error={fieldErrors.lastName}>
+                    <input required={required("visitor_last_name")} value={form.lastName} onChange={(event) => updateField("lastName", event.target.value)} />
+                  </FormField> : null}
+                  {shown("visitor_company") ? <FormField label="Firma / Organisation" required={required("visitor_company")} error={fieldErrors.company}>
+                    <input required={required("visitor_company")} value={form.company} onChange={(event) => updateField("company", event.target.value)} />
+                  </FormField> : null}
+                  {shown("visitor_nationality") ? <FormField label="Nationalität" required={required("visitor_nationality")} error={fieldErrors.nationalityCode}>
+                    <CountrySelect required={required("visitor_nationality")} value={form.nationalityCode} onChange={(value) => updateField("nationalityCode", value)} />
+                  </FormField> : null}
+                  {shown("visitor_birth_date") ? <FormField label="Geburtsdatum" required={required("visitor_birth_date")} error={fieldErrors.birthDate}>
+                    <input required={required("visitor_birth_date")} type="date" max={toDateInputValue(new Date())} value={form.birthDate} onChange={(event) => updateField("birthDate", event.target.value)} />
+                  </FormField> : null}
+                  {shown("visitor_phone") ? <FormField label="Telefonnummer" required={required("visitor_phone")}>
+                    <input required={required("visitor_phone")} value={form.phone} onChange={(event) => updateField("phone", event.target.value)} />
+                  </FormField> : null}
+                  {shown("visitor_email") ? <FormField label="E-Mail-Adresse" required={required("visitor_email")}>
+                    <input required={required("visitor_email")} type="email" value={form.email} onChange={(event) => updateField("email", event.target.value)} />
+                  </FormField> : null}
+                  {shown("visitor_license_plate") ? <FormField label="Kennzeichen" required={required("visitor_license_plate")}>
+                    <input required={required("visitor_license_plate")} value={form.licensePlate} onChange={(event) => updateField("licensePlate", event.target.value)} />
+                  </FormField> : null}
+                  {shown("id_document_type") ? <FormField label="Ausweisart" required={required("id_document_type")} error={fieldErrors.idDocumentType}>
+                    <select required={required("id_document_type")} value={form.idDocumentType} onChange={(event) => updateField("idDocumentType", event.target.value as FormState["idDocumentType"])}>
                       <option value="">Bitte wählen</option>
                       <option value="identity_card">Personalausweis</option>
                       <option value="passport">Reisepass</option>
+                      <option value="service_id">Dienstausweis</option>
                       <option value="other">Sonstiges</option>
                     </select>
-                  </FormField>
-                  <FormField label="Ausweis gültig bis" required error={fieldErrors.idDocumentValidUntil}>
-                    <input required type="date" value={form.idDocumentValidUntil} onChange={(event) => updateField("idDocumentValidUntil", event.target.value)} />
-                  </FormField>
-                  <FormField label="Ausweisnummer" required error={fieldErrors.idDocumentNumber}>
-                    <input required value={form.idDocumentNumber} onChange={(event) => updateField("idDocumentNumber", event.target.value)} />
-                  </FormField>
+                  </FormField> : null}
+                  {shown("id_document_valid_until") ? <FormField label="Ausweis gültig bis" required={required("id_document_valid_until")} error={fieldErrors.idDocumentValidUntil}>
+                    <input required={required("id_document_valid_until")} type="date" value={form.idDocumentValidUntil} onChange={(event) => updateField("idDocumentValidUntil", event.target.value)} />
+                  </FormField> : null}
+                  {shown("id_document_number") ? <FormField label="Ausweisnummer" required={required("id_document_number")} error={fieldErrors.idDocumentNumber}>
+                    <input required={required("id_document_number")} value={form.idDocumentNumber} onChange={(event) => updateField("idDocumentNumber", event.target.value)} />
+                  </FormField> : null}
                 </div>
                 {documentExpired ? <Alert type="error">Das angegebene Ausweisdokument ist bereits abgelaufen.</Alert> : null}
               </div>
@@ -330,6 +353,7 @@ export function PublicPreRegistrationPage() {
                         <th>Vorname</th>
                         <th>Nachname</th>
                         <th>Firma</th>
+                        <th>Nationalität</th>
                         <th>Ausweisart</th>
                         <th>Ausweis gültig bis</th>
                         <th>Ausweisnummer</th>
@@ -343,11 +367,13 @@ export function PublicPreRegistrationPage() {
                           <td><input value={visitor.firstName} onChange={(event) => updateGroupVisitor(index, "firstName", event.target.value)} /></td>
                           <td><input value={visitor.lastName} onChange={(event) => updateGroupVisitor(index, "lastName", event.target.value)} /></td>
                           <td><input value={visitor.company} onChange={(event) => updateGroupVisitor(index, "company", event.target.value)} /></td>
+                          <td><CountrySelect required value={visitor.nationalityCode} onChange={(value) => updateGroupVisitor(index, "nationalityCode", value)} /></td>
                           <td>
                             <select value={visitor.idDocumentType} onChange={(event) => updateGroupVisitor(index, "idDocumentType", event.target.value)}>
                               <option value="">-</option>
                               <option value="identity_card">Personalausweis</option>
                               <option value="passport">Reisepass</option>
+                              <option value="service_id">Dienstausweis</option>
                               <option value="other">Sonstiges</option>
                             </select>
                           </td>

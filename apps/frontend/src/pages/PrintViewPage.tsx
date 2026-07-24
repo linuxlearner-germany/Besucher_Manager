@@ -8,6 +8,14 @@ export function PrintViewPage() {
   const [visit, setVisit] = useState<VisitDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [paperSize, setPaperSize] = useState<"A4" | "A5">(() => {
+    const saved = window.localStorage.getItem("visitor-pass-paper-size");
+    return saved === "A4" ? "A4" : "A5";
+  });
+
+  useEffect(() => {
+    window.localStorage.setItem("visitor-pass-paper-size", paperSize);
+  }, [paperSize]);
 
   useEffect(() => {
     async function loadVisit() {
@@ -58,12 +66,13 @@ export function PrintViewPage() {
     try {
       await fetchJson<{ success: boolean }>(`/api/guard/visits/${id}/print-log`, {
         method: "POST",
-        body: JSON.stringify({ reprint: isReprint })
+        body: JSON.stringify({ paperSize, reprint: isReprint })
       });
-    } catch {
+      window.print();
+    } catch (apiError) {
+      const errorPayload = apiError as ApiError;
+      setError(errorPayload.message || "Der Druck wurde wegen fehlender Pflichtangaben abgebrochen.");
     }
-
-    window.print();
   }
 
   const cleanPrintText = (content: string) => content
@@ -88,15 +97,39 @@ export function PrintViewPage() {
         {error ? <div className="feedback error">{error}</div> : null}
 
         {visit ? (
-          <div className="print-layout">
+          <div className={`print-layout paper-${paperSize.toLowerCase()}`}>
+            <style>{`@media print {
+              @page { size: ${paperSize} portrait; margin: ${paperSize === "A4" ? "12mm" : "6mm"}; }
+              html, body, #root, .shell, .content-container, .app-shell, .app-header, .print-panel, .print-layout {
+                width: ${paperSize === "A4" ? "186mm" : "136mm"} !important;
+                max-width: ${paperSize === "A4" ? "186mm" : "136mm"} !important;
+              }
+              .badge-sheet {
+                width: ${paperSize === "A4" ? "186mm" : "136mm"} !important;
+                max-width: ${paperSize === "A4" ? "186mm" : "136mm"} !important;
+                height: ${paperSize === "A4" ? "273mm" : "198mm"} !important;
+                max-height: ${paperSize === "A4" ? "273mm" : "198mm"} !important;
+              }
+              .paper-a4 .print-front-grid { gap: 4mm; }
+              .paper-a4 .print-info-card { padding: 3mm; }
+              .paper-a4 .print-info-list dd { font-size: 9pt; line-height: 1.2; }
+              .paper-a4 .print-info-list dt { font-size: 7.5pt; }
+              .paper-a4 .signature-box { min-height: 38mm; }
+              .paper-a4 .site-map-print { max-height: 155mm; }
+            }`}</style>
             <div className="print-toolbar no-print">
-              <button type="button" onClick={handlePrint}>Drucken</button>
+              <fieldset className="paper-size-choice">
+                <legend>Papierformat</legend>
+                <label><input type="radio" name="paper-size" checked={paperSize === "A5"} onChange={() => setPaperSize("A5")} /> A5</label>
+                <label><input type="radio" name="paper-size" checked={paperSize === "A4"} onChange={() => setPaperSize("A4")} /> A4</label>
+              </fieldset>
+              <button type="button" onClick={handlePrint} disabled={!visit.completeness.canPrintBadge}>Drucken</button>
               <Link className="button-link" to="/wache">Zurück zur Wache</Link>
             </div>
 
             {visit.completeness?.errors?.length ? (
               <div className="feedback warning no-print">
-                Es fehlen noch einige Angaben. Der Ausdruck ist trotzdem möglich:
+                Vor dem Druck müssen folgende Pflichtangaben ergänzt werden:
                 <ul className="text-list">
                   {visit.completeness.errors.map((item, index) => <li key={`${item.field}-${index}`}>{item.message}</li>)}
                 </ul>
@@ -106,6 +139,7 @@ export function PrintViewPage() {
 
             <div className="feedback info no-print">
               Wenn der Browser URL, Datum oder Seitenzahl mitdruckt, bitte im Druckdialog die Option für Kopf- und Fußzeilen deaktivieren.
+              {paperSize === "A4" ? " Für den Duplexdruck „an langer Kante wenden“ auswählen." : ""}
             </div>
 
             <div className="badge-sheet print-page page-1">
@@ -129,6 +163,7 @@ export function PrintViewPage() {
                     <div><dt>Name</dt><dd>{visit.firstName} {visit.lastName}</dd></div>
                     <div><dt>Geburtsdatum</dt><dd>{formatDateOnly(visit.birthDate)}</dd></div>
                     <div><dt>Firma</dt><dd>{visit.company}</dd></div>
+                    <div><dt>Nationalität</dt><dd>{visit.nationalityName || visit.nationalityCode || "-"}</dd></div>
                     <div><dt>Adresse</dt><dd>{[visit.visitorStreet, visit.visitorHouseNumber, visit.visitorPostalCode, visit.visitorCity].filter(Boolean).join(", ") || "-"}</dd></div>
                     <div><dt>Kontakt</dt><dd>{[visit.visitorPhone, visit.visitorEmail].filter(Boolean).join(" / ") || "-"}</dd></div>
                     <div><dt>Kennzeichen</dt><dd>{visit.licensePlate || "-"}</dd></div>

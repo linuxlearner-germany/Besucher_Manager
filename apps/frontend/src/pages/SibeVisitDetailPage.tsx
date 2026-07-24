@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Alert } from "../components/ui";
-import { AppLayout, type ApiError, extractFieldErrors, fetchJson, formatApprovalStatus, formatDateOnly, formatDateTime, formatIdDocumentType, formatSignatureStatus, formatStatus, type SibeVisitDetail, useAuth } from "../app/core";
+import { AppLayout, type ApiError, fetchJson, formatDateOnly, formatDateTime, formatIdDocumentType, formatSignatureStatus, formatStatus, type SibeVisitDetail, useAuth } from "../app/core";
 
 function isExpiredDocument(value: string | null): boolean {
   if (!value) {
@@ -20,9 +20,7 @@ export function SibeVisitDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [notesDraft, setNotesDraft] = useState("");
-  const [approvalNoteDraft, setApprovalNoteDraft] = useState("");
   const [savingNotes, setSavingNotes] = useState(false);
-  const [savingApproval, setSavingApproval] = useState(false);
   const documentExpired = isExpiredDocument(visit?.idDocumentValidUntil ?? null);
 
   async function loadVisit() {
@@ -30,7 +28,6 @@ export function SibeVisitDetailPage() {
       const payload = await fetchJson<{ visit: SibeVisitDetail }>(`/api/sibe/visits/${id}`, { method: "GET", headers: {} });
       setVisit(payload.visit);
       setNotesDraft(payload.visit.notes || "");
-      setApprovalNoteDraft(payload.visit.approvalNote || "");
     } catch (apiError) {
       const errorPayload = apiError as ApiError;
       setError(errorPayload.message || "Besuch konnte nicht geladen werden.");
@@ -67,43 +64,6 @@ export function SibeVisitDetailPage() {
       setError(errorPayload.message || "Anmerkung konnte nicht gespeichert werden.");
     } finally {
       setSavingNotes(false);
-    }
-  }
-
-  async function handleApprovalDecision(status: "approved" | "rejected") {
-    if (!id) return;
-    const note = approvalNoteDraft.trim();
-
-    if (status === "rejected" && !note) {
-      setError("Bitte einen Hinweis für die Ablehnung eintragen.");
-      setMessage(null);
-      return;
-    }
-
-    setSavingApproval(true);
-    setError(null);
-    setMessage(null);
-
-    try {
-      const payload = await fetchJson<{ success: boolean; approvalStatus: string; approvalNote: string | null }>(`/api/sibe/visits/${id}/approval`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          status,
-          note
-        })
-      });
-
-      setMessage(status === "approved" ? "Besuch freigegeben." : "Besuch abgelehnt.");
-      await loadVisit();
-    } catch (apiError) {
-      const errorPayload = apiError as ApiError;
-      const fieldErrors = extractFieldErrors(errorPayload);
-      setError(fieldErrors.note || errorPayload.message || "Die Freigabe konnte nicht gespeichert werden.");
-    } finally {
-      setSavingApproval(false);
     }
   }
 
@@ -145,51 +105,16 @@ export function SibeVisitDetailPage() {
                     </button>
                   </div>
                 </section>
-                <section className="form-section">
-                  <h3>SiBe-Freigabe</h3>
-                  {documentExpired ? <Alert type="warning">Warnung: Das Ausweisdokument ist zum Besuchstermin abgelaufen.</Alert> : null}
-                  <div className="detail-grid">
-                    <div><span className="detail-label">Freigabestatus</span><strong>{formatApprovalStatus(visit.approvalStatus)}</strong></div>
-                    <div><span className="detail-label">Entscheidung durch</span><strong>{visit.approvalDecidedBy || "-"}</strong></div>
-                    <div><span className="detail-label">Entscheidung am</span><strong>{formatDateTime(visit.approvalDecidedAt)}</strong></div>
-                  </div>
-                  <label>
-                    <span className="visually-hidden">Freigabehinweis</span>
-                    <textarea
-                      value={approvalNoteDraft}
-                      onChange={(event) => setApprovalNoteDraft(event.target.value)}
-                      placeholder="Hinweis für Freigabe oder Ablehnung"
-                    />
-                  </label>
-                  {visit.status === "pre_registered" ? (
-                    <div className="row-actions">
-                      <button type="button" onClick={() => void handleApprovalDecision("approved")} disabled={savingApproval}>
-                        {savingApproval ? "Speichert..." : "Freigeben"}
-                      </button>
-                      <button type="button" className="danger-button" onClick={() => void handleApprovalDecision("rejected")} disabled={savingApproval}>
-                        Ablehnen
-                      </button>
-                    </div>
-                  ) : null}
-                </section>
+                {documentExpired ? <Alert type="warning">Warnung: Das Ausweisdokument ist zum Besuchstermin abgelaufen.</Alert> : null}
               </>
-            ) : (
-              <section className="form-section">
-                <h3>Freigabe- und Bearbeitungsstand</h3>
-                <div className="detail-grid">
-                  <div><span className="detail-label">Freigabestatus</span><strong>{formatApprovalStatus(visit.approvalStatus)}</strong></div>
-                  <div><span className="detail-label">Entscheidung durch</span><strong>{visit.approvalDecidedBy || "-"}</strong></div>
-                  <div><span className="detail-label">Entscheidung am</span><strong>{formatDateTime(visit.approvalDecidedAt)}</strong></div>
-                </div>
-              </section>
-            )}
+            ) : null}
             <dl className="details-list">
               <div><dt>Besuchsnummer</dt><dd>{visit.badgeNumber || visit.id.slice(0, 8).toUpperCase()}</dd></div>
               <div><dt>Status</dt><dd>{formatStatus(visit.status)}</dd></div>
-              <div><dt>Freigabe</dt><dd>{formatApprovalStatus(visit.approvalStatus)}</dd></div>
               <div><dt>Besuchername</dt><dd>{visit.firstName} {visit.lastName}</dd></div>
               <div><dt>Geburtsdatum</dt><dd>{formatDateOnly(visit.birthDate)}</dd></div>
               <div><dt>Firma</dt><dd>{visit.company}</dd></div>
+              <div><dt>Nationalität</dt><dd>{visit.nationalityName || visit.nationalityCode || "-"}</dd></div>
               <div><dt>Telefon</dt><dd>{visit.visitorPhone || "-"}</dd></div>
               <div><dt>E-Mail</dt><dd>{visit.visitorEmail || "-"}</dd></div>
               <div><dt>Kennzeichen</dt><dd>{visit.licensePlate || "-"}</dd></div>
@@ -219,7 +144,6 @@ export function SibeVisitDetailPage() {
               <div><dt>Check-out-Zeit</dt><dd>{formatDateTime(visit.checkOutAt)}</dd></div>
               <div><dt>Check-out durch</dt><dd>{visit.checkOutBy || "-"}</dd></div>
               <div><dt>Bemerkung</dt><dd>{visit.notes || "-"}</dd></div>
-              <div><dt>Freigabehinweis</dt><dd>{visit.approvalNote || "-"}</dd></div>
               <div><dt>Ausfahrt-Bemerkung</dt><dd>{visit.checkoutNote || "-"}</dd></div>
               <div><dt>Unterschriftsstatus</dt><dd>{formatSignatureStatus(visit.hostSignatureStatus)}</dd></div>
               <div><dt>Unterschriftsdatum</dt><dd>{formatDateOnly(visit.hostSignatureDate)}</dd></div>

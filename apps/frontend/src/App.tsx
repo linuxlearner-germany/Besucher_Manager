@@ -1,7 +1,6 @@
 import { type ChangeEvent, type DragEvent, type FormEvent, type PropsWithChildren } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AdminPage } from "./pages/AdminPage";
-import { ApprovalQueuePage } from "./pages/ApprovalQueuePage";
 import { GuardDashboardPage } from "./pages/GuardDashboardPage";
 import { ImportPage } from "./pages/ImportPage";
 import { LoginPage } from "./pages/LoginPage";
@@ -9,6 +8,7 @@ import { PrintViewPage } from "./pages/PrintViewPage";
 import { PublicPreRegistrationPage } from "./pages/PublicPreRegistrationPage";
 import { CommanderDashboardPage } from "./pages/CommanderDashboardPage";
 import { SibeDashboardPage } from "./pages/SibeDashboardPage";
+import { SibeNationalityNotificationsPage } from "./pages/SibeNationalityNotificationsPage";
 import { SibeUsersPage } from "./pages/SibeUsersPage";
 import { SibeVisitDetailPage } from "./pages/SibeVisitDetailPage";
 import { SibeVisitorsPage } from "./pages/SibeVisitorsPage";
@@ -61,18 +61,18 @@ function AppRoutes() {
         }
       />
       <Route
-        path="/genehmigungen"
-        element={
-          <RequireRoles allowedRoles={["admin", "sibe"]} requiredMenuKey="genehmigung" requiredPermissions={["approvals.read"]} redirectTo="/" >
-            <ApprovalQueuePage />
-          </RequireRoles>
-        }
-      />
-      <Route
         path="/sibe"
         element={
           <RequireRoles allowedRoles={["admin", "sibe"]} requiredMenuKey="sibe" requiredPermissions={["dashboards.sibe"]} redirectTo="/" >
             <SibeDashboardPage />
+          </RequireRoles>
+        }
+      />
+      <Route
+        path="/sibe/benachrichtigungen"
+        element={
+          <RequireRoles allowedRoles={["admin", "sibe"]} requiredMenuKey="laenderbenachrichtigungen" requiredPermissions={["dashboards.sibe"]} redirectTo="/" >
+            <SibeNationalityNotificationsPage />
           </RequireRoles>
         }
       />
@@ -95,7 +95,7 @@ function AppRoutes() {
       <Route
         path="/texte"
         element={
-          <RequireRoles allowedRoles={["admin"]} requiredMenuKey="texte" requiredPermissions={["admin.texts"]} redirectTo="/" >
+          <RequireRoles allowedRoles={["admin", "kaskdt"]} requiredMenuKey="texte" requiredPermissions={["texts.manage"]} redirectTo="/" >
             <TextManagementPage />
           </RequireRoles>
         }
@@ -116,7 +116,7 @@ function AppRoutes() {
       <Route
         path="/sibe/besucher/:id"
         element={
-          <RequireRoles allowedRoles={["admin", "sibe"]} requiredMenuKeys={["sibe", "genehmigung"]} requiredPermissions={["visits.read"]} redirectTo="/" >
+          <RequireRoles allowedRoles={["admin", "sibe"]} requiredMenuKey="sibe" requiredPermissions={["visits.read"]} redirectTo="/" >
             <SibeVisitDetailPage />
           </RequireRoles>
         }

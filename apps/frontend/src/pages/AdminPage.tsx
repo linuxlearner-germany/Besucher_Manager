@@ -1,6 +1,5 @@
 import {
   type ChangeEvent,
-  type DragEvent,
   useCallback,
   useEffect,
   useState,
@@ -29,18 +28,17 @@ import {
   type AdminErrorLog,
   type AdminFieldDefinition,
   type AdminGate,
+  type AdminSiteMap,
+  type AdminUiBackground,
   type AdminWorkflowSettings,
   type AdminUser,
   type ApiError,
   type EditableAdminUser,
-  extractFieldErrors,
   type FieldConfigExportPayload,
   fetchJson,
   getDefaultPermissionsForRole,
   getAllowedMenuAccessForRole,
   hasPermission,
-  type NewFieldDefinitionForm,
-  type SiteMapSummary,
   type UserPermissions,
   useAuth,
   useThemeMode
@@ -54,8 +52,8 @@ export function AdminPage() {
     { key: "wache", label: "Wache" },
     { key: "import", label: "Import" },
     { key: "admin", label: "Admin" },
-    { key: "genehmigung", label: "Genehmigungen" },
     { key: "sibe", label: "SiBe" },
+    { key: "laenderbenachrichtigungen", label: "Länderbenachrichtigungen" },
     { key: "kaskdt", label: "KasKdt" },
     { key: "texte", label: "Texte" }
   ];
@@ -73,15 +71,6 @@ export function AdminPage() {
       ]
     },
     {
-      title: "Freigaben",
-      items: [
-        { key: "approvals.read", label: "Freigaben ansehen" },
-        { key: "approvals.review", label: "Freigaben prüfen" },
-        { key: "approvals.approve", label: "Freigeben" },
-        { key: "approvals.reject", label: "Ablehnen" }
-      ]
-    },
-    {
       title: "Verwaltung",
       items: [
         { key: "imports.execute", label: "Import ausführen" },
@@ -89,7 +78,7 @@ export function AdminPage() {
         { key: "dashboards.commander", label: "KasKdt-Lagebild" },
         { key: "admin.users", label: "Benutzer verwalten" },
         { key: "admin.guards", label: "Wachen verwalten" },
-        { key: "admin.texts", label: "Texte verwalten" },
+        { key: "texts.manage", label: "Texte verwalten" },
         { key: "admin.map", label: "Geländeplan verwalten" },
         { key: "admin.fields", label: "Felder verwalten" },
         { key: "admin.system", label: "System verwalten" }
@@ -117,20 +106,21 @@ export function AdminPage() {
     signaturesPending: number;
     signaturesFollowUp: number;
     signaturesExceptions: number;
-    approvalsPending: number;
     dbHost?: string;
     dbName?: string;
   } | null>(null);
   const [workflowSettings, setWorkflowSettings] = useState<AdminWorkflowSettings | null>(null);
+  const [uiBackgrounds, setUiBackgrounds] = useState<AdminUiBackground[]>([]);
+  const [uiBackgroundSaving, setUiBackgroundSaving] = useState(false);
   const [workflowPassword, setWorkflowPassword] = useState("");
   const [workflowTestRecipient, setWorkflowTestRecipient] = useState("");
-  const [workflowTestKind, setWorkflowTestKind] = useState<"relay" | "approval_request" | "approval_approved" | "approval_rejected">("relay");
+  const [workflowTestKind, setWorkflowTestKind] = useState<"relay" | "nationality">("relay");
   const [userImportFile, setUserImportFile] = useState<File | null>(null);
   const [userImporting, setUserImporting] = useState(false);
   const [userImportIssues, setUserImportIssues] = useState<Array<{ lineNumber: number; username: string | null; message: string }>>([]);
   const [userImportSummary, setUserImportSummary] = useState<{ created: number; updated: number; total: number; fileName: string } | null>(null);
-  const [activeSiteMap, setActiveSiteMap] = useState<SiteMapSummary>(null);
-  const [siteMaps, setSiteMaps] = useState<NonNullable<SiteMapSummary>[]>([]);
+  const [activeSiteMap, setActiveSiteMap] = useState<AdminSiteMap | null>(null);
+  const [siteMaps, setSiteMaps] = useState<AdminSiteMap[]>([]);
   const [fieldDefinitions, setFieldDefinitions] = useState<AdminFieldDefinition[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -174,19 +164,12 @@ export function AdminPage() {
     menuAccess: getAllowedMenuAccessForRole("guard"),
     permissions: getDefaultPermissionsForRole("guard")
   });
-  const [siteMapName, setSiteMapName] = useState("");
-  const [siteMapFile, setSiteMapFile] = useState<File | null>(null);
-  const [siteMapPreviewUrl, setSiteMapPreviewUrl] = useState<string | null>(null);
-  const [siteMapFieldError, setSiteMapFieldError] = useState<string | null>(null);
-  const [siteMapUploading, setSiteMapUploading] = useState(false);
-  const [dragActive, setDragActive] = useState(false);
   const [editableGates, setEditableGates] = useState<Record<string, AdminGate>>({});
   const [editableUsers, setEditableUsers] = useState<Record<string, EditableAdminUser>>({});
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [editableFieldDefinitions, setEditableFieldDefinitions] = useState<Record<string, AdminFieldDefinition>>({});
   const [selectedFieldDefinitionId, setSelectedFieldDefinitionId] = useState<string | null>(null);
   const [selectedFieldSection, setSelectedFieldSection] = useState<string | null>(null);
-  const [isCreateFieldModalOpen, setIsCreateFieldModalOpen] = useState(false);
   const [fieldImportText, setFieldImportText] = useState("");
   const [fieldImportFileName, setFieldImportFileName] = useState("");
   const [fieldImportPreview, setFieldImportPreview] = useState<{
@@ -194,23 +177,6 @@ export function AdminPage() {
     summary: { total: number; willUpdate: number; willCreate: number; willSkip: number; warnings: string[] };
     changes: Array<{ fieldKey: string; action: "update" | "create"; label: string }>;
   } | null>(null);
-  const [newFieldDefinition, setNewFieldDefinition] = useState<NewFieldDefinitionForm>({
-    label: "",
-    fieldType: "text",
-    section: "Besucher",
-    helpText: "",
-    sortOrder: 100,
-    showInPublic: false,
-    showInGuard: true,
-    showInSibe: true,
-    showOnBadge: false,
-    requiredPublic: false,
-    requiredGuardCheckin: false,
-    requiredBeforePrint: false,
-    isActive: true,
-    optionsJson: ""
-  });
-
   const loadAuditLogs = useCallback(async (filters = auditFilters) => {
     const params = new URLSearchParams();
     if (filters.search.trim()) params.set("search", filters.search.trim());
@@ -241,14 +207,15 @@ export function AdminPage() {
   const loadAll = useCallback(async () => {
     setError(null);
     try {
-      const [gatePayload, userPayload, textPayload, statusPayload, workflowPayload, siteMapPayload, siteMapsPayload, fieldDefinitionsPayload] = await Promise.all([
+      const [gatePayload, userPayload, textPayload, statusPayload, workflowPayload, backgroundPayload, siteMapPayload, siteMapsPayload, fieldDefinitionsPayload] = await Promise.all([
         fetchJson<{ gates: AdminGate[] }>("/api/admin/gates", { method: "GET", headers: {} }),
         fetchJson<{ users: AdminUser[] }>("/api/admin/users", { method: "GET", headers: {} }),
-        fetchJson<{ texts: AdminBadgeText[] }>("/api/admin/badge-texts", { method: "GET", headers: {} }),
-        fetchJson<{ app: string; activeVisits: number; activeGates: number; openPreRegistrationsToday: number; signaturesPending: number; signaturesFollowUp: number; signaturesExceptions: number; approvalsPending: number; dbHost?: string; dbName?: string }>("/api/admin/system-status", { method: "GET", headers: {} }),
+        fetchJson<{ texts: AdminBadgeText[] }>("/api/texts", { method: "GET", headers: {} }),
+        fetchJson<{ app: string; activeVisits: number; activeGates: number; openPreRegistrationsToday: number; signaturesPending: number; signaturesFollowUp: number; signaturesExceptions: number; dbHost?: string; dbName?: string }>("/api/admin/system-status", { method: "GET", headers: {} }),
         fetchJson<AdminWorkflowSettings>("/api/admin/system-settings/workflow-email", { method: "GET", headers: {} }),
-        fetchJson<{ siteMap: SiteMapSummary }>("/api/admin/site-map", { method: "GET", headers: {} }),
-        fetchJson<{ siteMaps: NonNullable<SiteMapSummary>[] }>("/api/admin/site-maps", { method: "GET", headers: {} }),
+        fetchJson<{ backgrounds: AdminUiBackground[] }>("/api/admin/ui-backgrounds", { method: "GET", headers: {} }),
+        fetchJson<{ siteMap: AdminSiteMap | null }>("/api/admin/site-map", { method: "GET", headers: {} }),
+        fetchJson<{ siteMaps: AdminSiteMap[] }>("/api/admin/site-maps", { method: "GET", headers: {} }),
         fetchJson<{ definitions: AdminFieldDefinition[] }>("/api/admin/field-definitions", { method: "GET", headers: {} })
       ]);
 
@@ -257,6 +224,7 @@ export function AdminPage() {
       setTexts(textPayload.texts);
       setSystemStatus(statusPayload);
       setWorkflowSettings(workflowPayload);
+      setUiBackgrounds(backgroundPayload.backgrounds);
       setBackgroundMode(workflowPayload.backgroundMode);
       setBackgroundImageUrl(workflowPayload.backgroundImageUrl);
       setWorkflowPassword("");
@@ -287,21 +255,7 @@ export function AdminPage() {
   }, [loadAll]);
 
   useEffect(() => {
-    if (!siteMapFile) {
-      setSiteMapPreviewUrl(null);
-      return;
-    }
-
-    const nextUrl = URL.createObjectURL(siteMapFile);
-    setSiteMapPreviewUrl(nextUrl);
-
-    return () => {
-      URL.revokeObjectURL(nextUrl);
-    };
-  }, [siteMapFile]);
-
-  useEffect(() => {
-    if (!selectedFieldDefinitionId && !isCreateFieldModalOpen) {
+    if (!selectedFieldDefinitionId) {
       return;
     }
 
@@ -311,7 +265,6 @@ export function AdminPage() {
       }
 
       setSelectedFieldDefinitionId(null);
-      setIsCreateFieldModalOpen(false);
     }
 
     window.addEventListener("keydown", handleKeyDown);
@@ -319,7 +272,7 @@ export function AdminPage() {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [selectedFieldDefinitionId, isCreateFieldModalOpen]);
+  }, [selectedFieldDefinitionId]);
 
   async function createGate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -428,50 +381,8 @@ export function AdminPage() {
     window.location.assign("/api/admin/users/import-template.csv");
   }
 
-  function resetSiteMapSelection() {
-    setSiteMapFile(null);
-    setSiteMapName("");
-    setSiteMapFieldError(null);
-    setDragActive(false);
-  }
-
-  function applySelectedFiles(files: FileList | File[] | null) {
-    if (!files || files.length === 0) {
-      return;
-    }
-
-    if (files.length > 1) {
-      setSiteMapFieldError("Bitte nur eine Datei hochladen.");
-      return;
-    }
-
-    const [file] = Array.from(files);
-    const allowedTypes = ["image/png", "image/jpeg", "image/webp"];
-
-    if (!allowedTypes.includes(file.type)) {
-      setSiteMapFieldError("Erlaubt sind nur PNG-, JPG- und WEBP-Dateien.");
-      return;
-    }
-
-    if (file.size > 10 * 1024 * 1024) {
-      setSiteMapFieldError("Die Datei ist groesser als 10 MB.");
-      return;
-    }
-
-    setSiteMapFieldError(null);
-    setSiteMapFile(file);
-    setSiteMapName((current) => current || file.name.replace(/\.[^.]+$/, ""));
-  }
-
-  function handleSiteMapFileInput(event: ChangeEvent<HTMLInputElement>) {
-    applySelectedFiles(event.target.files);
-    event.target.value = "";
-  }
-
-  function handleSiteMapDrop(event: DragEvent<HTMLLabelElement>) {
-    event.preventDefault();
-    setDragActive(false);
-    applySelectedFiles(event.dataTransfer.files);
+  function downloadUserExport() {
+    window.location.assign("/api/admin/users/export.csv");
   }
 
   function parseGroupText(value: string): string[] {
@@ -610,42 +521,6 @@ export function AdminPage() {
     });
   }
 
-  async function uploadSiteMap(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    if (!siteMapFile) {
-      setSiteMapFieldError("Bitte wählen Sie eine Datei aus.");
-      return;
-    }
-
-    const formData = new FormData();
-    formData.append("file", siteMapFile);
-    if (siteMapName.trim()) {
-      formData.append("name", siteMapName.trim());
-    }
-
-    try {
-      setSiteMapUploading(true);
-      await fetchJson("/api/admin/site-map/upload", {
-        method: "POST",
-        body: formData
-      });
-      resetSiteMapSelection();
-      setMessage("Geländeplan hochgeladen und aktiviert.");
-      setError(null);
-      await loadAll();
-    } catch (apiError) {
-      const payload = apiError as ApiError;
-      const fieldErrors = extractFieldErrors(payload);
-      if (fieldErrors.file) {
-        setSiteMapFieldError(fieldErrors.file);
-      }
-      setError(payload.message || "Geländeplan konnte nicht hochgeladen werden.");
-    } finally {
-      setSiteMapUploading(false);
-    }
-  }
-
   async function activateSiteMap(siteMapId: string) {
     try {
       await fetchJson(`/api/admin/site-maps/${siteMapId}/activate`, {
@@ -736,42 +611,6 @@ export function AdminPage() {
     } catch (apiError) {
       const payload = apiError as ApiError;
       setError(payload.message || "Felddefinition konnte nicht gespeichert werden.");
-    }
-  }
-
-  async function createFieldDefinition(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    try {
-      await fetchJson("/api/admin/field-definitions", {
-        method: "POST",
-        body: JSON.stringify({
-          ...newFieldDefinition,
-          optionsJson: newFieldDefinition.optionsJson?.trim() || null
-        })
-      });
-      setMessage("Feld angelegt.");
-      setError(null);
-      setIsCreateFieldModalOpen(false);
-      setNewFieldDefinition({
-        label: "",
-        fieldType: "text",
-        section: selectedFieldSection || "Besucher",
-        helpText: "",
-        sortOrder: 100,
-        showInPublic: false,
-        showInGuard: true,
-        showInSibe: true,
-        showOnBadge: false,
-        requiredPublic: false,
-        requiredGuardCheckin: false,
-        requiredBeforePrint: false,
-        isActive: true,
-        optionsJson: ""
-      });
-      await loadAll();
-    } catch (apiError) {
-      const payload = apiError as ApiError;
-      setError(payload.message || "Feld konnte nicht angelegt werden.");
     }
   }
 
@@ -969,7 +808,6 @@ export function AdminPage() {
       const payload = await fetchJson<{ success: true; emailRelaySource: "database" | "yml" }>("/api/admin/system-settings/workflow-email", {
         method: "PUT",
         body: JSON.stringify({
-          approvalRequired: workflowSettings.approvalRequired,
           backgroundMode: workflowSettings.backgroundMode,
           emailRelay: {
             enabled: workflowSettings.emailRelay.enabled,
@@ -978,8 +816,7 @@ export function AdminPage() {
             secure: workflowSettings.emailRelay.secure,
             username: workflowSettings.emailRelay.username,
             password: workflowPassword,
-            fromAddress: workflowSettings.emailRelay.fromAddress,
-            approvalRecipients: workflowSettings.emailRelay.approvalRecipients
+            fromAddress: workflowSettings.emailRelay.fromAddress
           }
         })
       });
@@ -995,6 +832,52 @@ export function AdminPage() {
     } catch (apiError) {
       const payload = apiError as ApiError;
       setError(payload.message || "Die Workflow-Einstellungen konnten nicht gespeichert werden.");
+    }
+  }
+
+  async function saveUiBackgroundSettings() {
+    if (!workflowSettings?.backgroundId) {
+      setError("Bitte wählen Sie zuerst einen Hintergrund aus.");
+      return;
+    }
+
+    setUiBackgroundSaving(true);
+    try {
+      const payload = await fetchJson<{
+        backgroundId: string;
+        backgroundMode: "image" | "subtle" | "plain";
+        backgroundImageUrl: string;
+        backgroundImageName: string;
+        backgroundImageOriginalFileName: string;
+      }>("/api/admin/ui-backgrounds/active", {
+        method: "PUT",
+        body: JSON.stringify({
+          backgroundId: workflowSettings.backgroundId,
+          backgroundMode: workflowSettings.backgroundMode
+        })
+      });
+
+      setWorkflowSettings((current) => current ? {
+        ...current,
+        backgroundId: payload.backgroundId,
+        backgroundMode: payload.backgroundMode,
+        backgroundImageUrl: payload.backgroundImageUrl,
+        backgroundImageName: payload.backgroundImageName,
+        backgroundImageOriginalFileName: payload.backgroundImageOriginalFileName
+      } : current);
+      setUiBackgrounds((current) => current.map((background) => ({
+        ...background,
+        isActive: background.id === payload.backgroundId
+      })));
+      setBackgroundMode(payload.backgroundMode);
+      setBackgroundImageUrl(payload.backgroundImageUrl);
+      setMessage(`Hintergrund „${payload.backgroundImageName}“ gespeichert.`);
+      setError(null);
+    } catch (apiError) {
+      const payload = apiError as ApiError;
+      setError(payload.message || "Der Hintergrund konnte nicht gespeichert werden.");
+    } finally {
+      setUiBackgroundSaving(false);
     }
   }
 
@@ -1019,7 +902,7 @@ export function AdminPage() {
     { key: "dashboard" as const, label: "Dashboard", visible: true },
     { key: "wachen" as const, label: "Wachen", visible: Boolean(currentUser && hasPermission(currentUser, "admin.guards")) },
     { key: "benutzer" as const, label: "Benutzer", visible: Boolean(currentUser && hasPermission(currentUser, "admin.users")) },
-    { key: "texte" as const, label: "Texte", visible: Boolean(currentUser && hasPermission(currentUser, "admin.texts")) },
+    { key: "texte" as const, label: "Texte", visible: Boolean(currentUser && hasPermission(currentUser, "texts.manage")) },
     { key: "karte" as const, label: "Geländeplan", visible: Boolean(currentUser && hasPermission(currentUser, "admin.map")) },
     { key: "hintergrund" as const, label: "Hintergrund", visible: Boolean(currentUser && hasPermission(currentUser, "admin.system")) },
     { key: "felder" as const, label: "Felder", visible: Boolean(currentUser && hasPermission(currentUser, "admin.fields")) },
@@ -1103,6 +986,7 @@ export function AdminPage() {
             userImporting={userImporting}
             userImportIssues={userImportIssues}
             userImportSummary={userImportSummary}
+            downloadUserExport={downloadUserExport}
             downloadUserImportTemplate={downloadUserImportTemplate}
             importUsersCsv={importUsersCsv}
             saveUser={saveUser}
@@ -1113,18 +997,6 @@ export function AdminPage() {
 
         {resolvedActiveSection === "karte" ? (
           <AdminSiteMapSection
-            uploadSiteMap={uploadSiteMap}
-            siteMapName={siteMapName}
-            setSiteMapName={setSiteMapName}
-            dragActive={dragActive}
-            setDragActive={setDragActive}
-            handleSiteMapDrop={handleSiteMapDrop}
-            handleSiteMapFileInput={handleSiteMapFileInput}
-            siteMapFile={siteMapFile}
-            siteMapFieldError={siteMapFieldError}
-            siteMapPreviewUrl={siteMapPreviewUrl}
-            siteMapUploading={siteMapUploading}
-            resetSiteMapSelection={resetSiteMapSelection}
             activeSiteMap={activeSiteMap}
             siteMaps={siteMaps}
             activateSiteMap={activateSiteMap}
@@ -1135,7 +1007,9 @@ export function AdminPage() {
           <AdminBackgroundSection
             workflowSettings={workflowSettings}
             setWorkflowSettings={setWorkflowSettings}
-            saveWorkflowSettings={saveWorkflowSettings}
+            backgrounds={uiBackgrounds}
+            saving={uiBackgroundSaving}
+            saveBackgroundSettings={saveUiBackgroundSettings}
           />
         ) : null}
 
@@ -1152,10 +1026,6 @@ export function AdminPage() {
             setSelectedFieldDefinitionId={setSelectedFieldDefinitionId}
             selectedFieldSection={selectedFieldSection}
             setSelectedFieldSection={setSelectedFieldSection}
-            isCreateFieldModalOpen={isCreateFieldModalOpen}
-            setIsCreateFieldModalOpen={setIsCreateFieldModalOpen}
-            newFieldDefinition={newFieldDefinition}
-            setNewFieldDefinition={setNewFieldDefinition}
             fieldImportText={fieldImportText}
             fieldImportFileName={fieldImportFileName}
             fieldImportPreview={fieldImportPreview}
@@ -1164,7 +1034,6 @@ export function AdminPage() {
             confirmFieldImport={confirmFieldImport}
             exportFieldConfiguration={exportFieldConfiguration}
             saveFieldDefinition={saveFieldDefinition}
-            createFieldDefinition={createFieldDefinition}
             toggleFieldDefinitionActive={toggleFieldDefinitionActive}
           />
         ) : null}

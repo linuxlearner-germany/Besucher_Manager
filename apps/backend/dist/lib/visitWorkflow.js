@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.APP_PERMISSION_KEYS = exports.APP_MENU_KEYS = exports.APPROVAL_STATUS = exports.HOST_SIGNATURE_STATUS = exports.VISIT_STATUS = void 0;
+exports.APP_PERMISSION_KEYS = exports.APP_MENU_KEYS = exports.HOST_SIGNATURE_STATUS = exports.VISIT_STATUS = void 0;
 exports.getDefaultMenuAccessForRole = getDefaultMenuAccessForRole;
 exports.getAllowedMenuAccessForRole = getAllowedMenuAccessForRole;
 exports.getDefaultPermissionsForRole = getDefaultPermissionsForRole;
@@ -9,7 +9,6 @@ exports.parsePermissionsJson = parsePermissionsJson;
 exports.hasPermission = hasPermission;
 exports.normalizeVisitStatus = normalizeVisitStatus;
 exports.assertCanCheckIn = assertCanCheckIn;
-exports.assertVisitApprovedForCheckIn = assertVisitApprovedForCheckIn;
 exports.assertCanCheckOut = assertCanCheckOut;
 exports.assertReturnedBadgeNumberMatches = assertReturnedBadgeNumberMatches;
 exports.assertCanUpdateHostSignature = assertCanUpdateHostSignature;
@@ -28,14 +27,9 @@ exports.HOST_SIGNATURE_STATUS = {
     SIGNED_LATER: "signed_later",
     MISSING_EXCEPTION: "missing_exception"
 };
-exports.APPROVAL_STATUS = {
-    NOT_REQUIRED: "not_required",
-    PENDING: "pending",
-    APPROVED: "approved",
-    REJECTED: "rejected"
-};
-exports.APP_MENU_KEYS = ["voranmeldung", "wache", "import", "admin", "genehmigung", "sibe", "kaskdt", "texte"];
+exports.APP_MENU_KEYS = ["voranmeldung", "wache", "import", "admin", "sibe", "kaskdt", "texte"];
 exports.APP_PERMISSION_KEYS = [
+    "menu.guard",
     "visits.read",
     "visits.create",
     "visits.update",
@@ -44,15 +38,11 @@ exports.APP_PERMISSION_KEYS = [
     "visits.checkOut",
     "visits.printBadge",
     "imports.execute",
-    "approvals.read",
-    "approvals.review",
-    "approvals.approve",
-    "approvals.reject",
+    "texts.manage",
     "dashboards.sibe",
     "dashboards.commander",
     "admin.users",
     "admin.guards",
-    "admin.texts",
     "admin.map",
     "admin.fields",
     "admin.system",
@@ -66,7 +56,6 @@ function createEmptyPermissions() {
             guard: false,
             import: false,
             admin: false,
-            approvals: false,
             sibe: false,
             commander: false,
             texts: false
@@ -83,12 +72,7 @@ function createEmptyPermissions() {
         imports: {
             execute: false
         },
-        approvals: {
-            read: false,
-            review: false,
-            approve: false,
-            reject: false
-        },
+        texts: { manage: false },
         dashboards: {
             sibe: false,
             commander: false
@@ -96,7 +80,6 @@ function createEmptyPermissions() {
         admin: {
             users: false,
             guards: false,
-            texts: false,
             map: false,
             fields: false,
             system: false
@@ -114,7 +97,6 @@ function withAllPermissions() {
             guard: true,
             import: true,
             admin: true,
-            approvals: true,
             sibe: true,
             commander: true,
             texts: true
@@ -131,12 +113,7 @@ function withAllPermissions() {
         imports: {
             execute: true
         },
-        approvals: {
-            read: true,
-            review: true,
-            approve: true,
-            reject: true
-        },
+        texts: { manage: true },
         dashboards: {
             sibe: true,
             commander: true
@@ -144,7 +121,6 @@ function withAllPermissions() {
         admin: {
             users: true,
             guards: true,
-            texts: true,
             map: true,
             fields: true,
             system: true
@@ -163,7 +139,7 @@ function mergePermissions(base, override) {
         menu: { ...base.menu, ...(override.menu ?? {}) },
         visits: { ...base.visits, ...(override.visits ?? {}) },
         imports: { ...base.imports, ...(override.imports ?? {}) },
-        approvals: { ...base.approvals, ...(override.approvals ?? {}) },
+        texts: { ...base.texts, ...(override.texts ?? {}) },
         dashboards: { ...base.dashboards, ...(override.dashboards ?? {}) },
         admin: { ...base.admin, ...(override.admin ?? {}) },
         logs: { ...base.logs, ...(override.logs ?? {}) }
@@ -172,15 +148,15 @@ function mergePermissions(base, override) {
 const defaultMenuAccessByRole = {
     admin: [...exports.APP_MENU_KEYS],
     guard: ["voranmeldung", "wache", "import"],
-    sibe: ["genehmigung", "sibe", "import"],
-    kaskdt: ["kaskdt"],
+    sibe: ["sibe", "import"],
+    kaskdt: ["kaskdt", "texte"],
     custom: []
 };
 const allowedMenuAccessByRole = {
     admin: [...exports.APP_MENU_KEYS],
     guard: ["voranmeldung", "wache", "import"],
-    sibe: ["import", "genehmigung", "sibe"],
-    kaskdt: ["kaskdt"],
+    sibe: ["import", "sibe"],
+    kaskdt: ["kaskdt", "texte"],
     custom: [...exports.APP_MENU_KEYS]
 };
 function getDefaultMenuAccessForRole(role) {
@@ -200,7 +176,6 @@ function getDefaultPermissionsForRole(role) {
                     guard: true,
                     import: true,
                     admin: false,
-                    approvals: false,
                     sibe: false,
                     commander: false,
                     texts: false
@@ -224,7 +199,6 @@ function getDefaultPermissionsForRole(role) {
                     preRegistration: false,
                     guard: false,
                     import: true,
-                    approvals: true,
                     sibe: true,
                     admin: false,
                     commander: false,
@@ -242,12 +216,6 @@ function getDefaultPermissionsForRole(role) {
                 imports: {
                     execute: true
                 },
-                approvals: {
-                    read: true,
-                    review: true,
-                    approve: true,
-                    reject: true
-                },
                 dashboards: {
                     sibe: true,
                     commander: false
@@ -260,10 +228,9 @@ function getDefaultPermissionsForRole(role) {
                     guard: false,
                     import: false,
                     admin: false,
-                    approvals: false,
                     sibe: false,
                     commander: true,
-                    texts: false
+                    texts: true
                 },
                 visits: {
                     read: true,
@@ -274,12 +241,7 @@ function getDefaultPermissionsForRole(role) {
                     checkOut: false,
                     printBadge: false
                 },
-                approvals: {
-                    read: true,
-                    review: false,
-                    approve: false,
-                    reject: false
-                },
+                texts: { manage: true },
                 dashboards: {
                     sibe: false,
                     commander: true
@@ -298,7 +260,6 @@ function normalizeUserPermissions(role, permissions, menuAccess) {
     normalized.menu.guard = nextMenuAccess.includes("wache");
     normalized.menu.import = nextMenuAccess.includes("import");
     normalized.menu.admin = nextMenuAccess.includes("admin");
-    normalized.menu.approvals = nextMenuAccess.includes("genehmigung");
     normalized.menu.sibe = nextMenuAccess.includes("sibe");
     normalized.menu.commander = nextMenuAccess.includes("kaskdt");
     normalized.menu.texts = nextMenuAccess.includes("texte");
@@ -342,15 +303,6 @@ function assertCanCheckIn(status) {
     const normalized = normalizeVisitStatus(status);
     if (normalized !== exports.VISIT_STATUS.PRE_REGISTERED) {
         throw new Error("invalid_check_in_status");
-    }
-}
-function assertVisitApprovedForCheckIn(approvalStatus) {
-    const normalized = approvalStatus || exports.APPROVAL_STATUS.NOT_REQUIRED;
-    if (normalized === exports.APPROVAL_STATUS.PENDING) {
-        throw new Error("visit_approval_pending");
-    }
-    if (normalized === exports.APPROVAL_STATUS.REJECTED) {
-        throw new Error("visit_approval_rejected");
     }
 }
 function assertCanCheckOut(status, signature) {

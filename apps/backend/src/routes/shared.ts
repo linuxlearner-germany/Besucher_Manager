@@ -96,15 +96,6 @@ export function handleUnexpectedError(
   return sendError(response, 500, fallbackErrorCode, fallbackMessage);
 }
 
-export function buildFieldKeyFromLabel(label: string): string {
-  return label
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .replace(/_{2,}/g, "_")
-    .slice(0, 100);
-}
-
 export function normalizeImportOptions(options: unknown): string | null {
   if (options === null || options === undefined) {
     return null;

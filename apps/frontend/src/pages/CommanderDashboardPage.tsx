@@ -75,10 +75,6 @@ export function CommanderDashboardPage() {
                 <span className="hero-stat-label">Ausnahmen</span>
                 <strong className="hero-stat-value">{summary?.signaturesExceptions ?? "-"}</strong>
               </div>
-              <div className="hero-stat-card">
-                <span className="hero-stat-label">Freigaben offen</span>
-                <strong className="hero-stat-value">{summary?.approvalsPending ?? "-"}</strong>
-              </div>
             </div>
           </div>
         </section>

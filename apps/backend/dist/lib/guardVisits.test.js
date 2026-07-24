@@ -11,10 +11,10 @@ function createBaseVisit() {
         firstName: "Max",
         lastName: "Mustermann",
         company: "Muster GmbH",
+        nationalityCode: "DE",
         hostName: "Erika Beispiel",
         hostPhone: "01234",
         purpose: "Besprechung",
-        approvalStatus: "approved",
         validFrom: "2026-05-26T08:00:00.000Z",
         validUntil: "2026-05-26T10:00:00.000Z",
         gateId: null,
@@ -140,21 +140,13 @@ function createBaseVisit() {
     strict_1.default.equal(completeness.canCheckIn, true);
     strict_1.default.equal(completeness.errors.some((issue) => issue.field === "Ansprechpartner Telefon"), false);
 });
-(0, node_test_1.default)("completeness blocks pending approvals before check-in", () => {
+(0, node_test_1.default)("completeness blocks missing nationality", () => {
     const { getVisitCompleteness } = require("./guardVisits");
     const visit = createBaseVisit();
-    visit.approvalStatus = "pending";
+    visit.nationalityCode = null;
     const completeness = getVisitCompleteness(visit);
     strict_1.default.equal(completeness.canCheckIn, false);
-    strict_1.default.equal(completeness.errors.some((issue) => issue.field === "approval_status" && issue.message.includes("SiBe-Genehmigung")), true);
-});
-(0, node_test_1.default)("completeness blocks rejected approvals before check-in", () => {
-    const { getVisitCompleteness } = require("./guardVisits");
-    const visit = createBaseVisit();
-    visit.approvalStatus = "rejected";
-    const completeness = getVisitCompleteness(visit);
-    strict_1.default.equal(completeness.canCheckIn, false);
-    strict_1.default.equal(completeness.errors.some((issue) => issue.field === "approval_status" && issue.message.includes("abgelehnt")), true);
+    strict_1.default.equal(completeness.errors.some((issue) => issue.field === "Nationalität"), true);
 });
 (0, node_test_1.default)("guard visitor search is allowed for guard and admin only", () => {
     const { canUseGuardVisitorSearch } = require("./guardVisits");

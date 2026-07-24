@@ -45,7 +45,6 @@ export function SibeDashboardPage() {
       .slice(0, 8),
     [recentVisits]
   );
-
   return (
     <AppLayout>
       <main className="page-panel page-shell-wide">
@@ -74,10 +73,6 @@ export function SibeDashboardPage() {
               <div className="hero-stat-card">
                 <span className="hero-stat-label">Ausnahmen</span>
                 <strong className="hero-stat-value">{summary?.signaturesExceptions ?? "-"}</strong>
-              </div>
-              <div className="hero-stat-card">
-                <span className="hero-stat-label">Freigaben offen</span>
-                <strong className="hero-stat-value">{summary?.approvalsPending ?? "-"}</strong>
               </div>
             </div>
           </div>

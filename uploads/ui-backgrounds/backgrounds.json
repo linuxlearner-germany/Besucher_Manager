@@ -1,0 +1,141 @@
+{
+  "version": 1,
+  "backgrounds": [
+    {
+      "id": "standard",
+      "name": "Standard",
+      "fileName": "standard.png",
+      "previewFileName": "standard.webp",
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "id": "desktop-full-hd-aktuell",
+      "name": "Desktop Full HD – Aktuell",
+      "fileName": "desktop-full-hd-aktuell.png",
+      "previewFileName": "desktop-full-hd-aktuell.webp",
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "id": "desktop-full-hd",
+      "name": "Desktop Full HD",
+      "fileName": "desktop-full-hd.png",
+      "previewFileName": "desktop-full-hd.webp",
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "id": "desktop",
+      "name": "Desktop",
+      "fileName": "desktop.jpg",
+      "previewFileName": "desktop.webp",
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "id": "desktop-full-hd-wiweb",
+      "name": "Desktop Full HD – WIWeB",
+      "fileName": "desktop-full-hd-wiweb.png",
+      "previewFileName": "desktop-full-hd-wiweb.webp",
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "id": "desktop-full-hd-wiweb-kreis",
+      "name": "Desktop Full HD – WIWeB mit Kreis",
+      "fileName": "desktop-full-hd-wiweb-kreis.png",
+      "previewFileName": "desktop-full-hd-wiweb-kreis.webp",
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "id": "desktop-full-hd-modern",
+      "name": "Desktop Full HD – Modern asymmetrisch",
+      "fileName": "desktop-full-hd-modern.png",
+      "previewFileName": "desktop-full-hd-modern.webp",
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "id": "desktop-full-hd-modern-logo-rechts",
+      "name": "Desktop Full HD – Modern mit Logo rechts",
+      "fileName": "desktop-full-hd-modern-logo-rechts.png",
+      "previewFileName": "desktop-full-hd-modern-logo-rechts.webp",
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "id": "desktop-2560-modern-logo-rechts",
+      "name": "Desktop 2560 × 1440 – Modern mit Logo rechts",
+      "fileName": "desktop-2560-modern-logo-rechts.png",
+      "previewFileName": "desktop-2560-modern-logo-rechts.webp",
+      "width": 2560,
+      "height": 1440
+    },
+    {
+      "id": "desktop-4k-modern-logo-rechts",
+      "name": "Desktop 4K – Modern mit Logo rechts",
+      "fileName": "desktop-4k-modern-logo-rechts.png",
+      "previewFileName": "desktop-4k-modern-logo-rechts.webp",
+      "width": 4096,
+      "height": 2160
+    },
+    {
+      "id": "desktop-full-hd-alternative-1-jpeg",
+      "name": "Desktop Full HD – 1. Alternative (JPEG)",
+      "fileName": "desktop-full-hd-alternative-1-jpeg.jpg",
+      "previewFileName": "desktop-full-hd-alternative-1-jpeg.webp",
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "id": "desktop-full-hd-alternative-1-png",
+      "name": "Desktop Full HD – 1. Alternative (PNG)",
+      "fileName": "desktop-full-hd-alternative-1-png.png",
+      "previewFileName": "desktop-full-hd-alternative-1-png.webp",
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "id": "desktop-full-hd-alternative-2",
+      "name": "Desktop Full HD – 2. Alternative",
+      "fileName": "desktop-full-hd-alternative-2.png",
+      "previewFileName": "desktop-full-hd-alternative-2.webp",
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "id": "windows-hintergrund-1",
+      "name": "Windows Bildschirmhintergrund 1",
+      "fileName": "windows-hintergrund-1.jpg",
+      "previewFileName": "windows-hintergrund-1.webp",
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "id": "windows-hintergrund-2",
+      "name": "Windows Bildschirmhintergrund 2",
+      "fileName": "windows-hintergrund-2.jpg",
+      "previewFileName": "windows-hintergrund-2.webp",
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "id": "windows-hintergrund-3",
+      "name": "Windows Bildschirmhintergrund 3",
+      "fileName": "windows-hintergrund-3.jpg",
+      "previewFileName": "windows-hintergrund-3.webp",
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "id": "windows-hintergrund-4",
+      "name": "Windows Bildschirmhintergrund 4",
+      "fileName": "windows-hintergrund-4.jpg",
+      "previewFileName": "windows-hintergrund-4.webp",
+      "width": 1920,
+      "height": 1080
+    }
+  ]
+}

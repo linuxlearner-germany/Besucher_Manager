@@ -6,6 +6,3 @@ mailRelay:
   username: relay-user
   password: relay-pass
   fromAddress: "Besucher Manager <noreply@example.org>"
-  approvalRecipients:
-    - sibe1@example.org
-    - sibe2@example.org

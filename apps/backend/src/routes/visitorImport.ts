@@ -87,6 +87,14 @@ export function handleVisitorImportUpload(
         ...imported
       });
     } catch (importError) {
+      if (importError instanceof Error && importError.message === "invalid_import_nationalities") {
+        const rows = (importError as Error & { rows?: number[] }).rows ?? [];
+        return sendValidationError(response, {
+          fieldErrors: {
+            nationalityCode: [`Nationalität fehlt oder ist unbekannt in Excel-Zeile(n): ${rows.join(", ")}. Es wurden keine Datensätze importiert.`]
+          }
+        });
+      }
       return handleUnexpectedError(response, importError, "IMPORT_ERROR", "Der Besucherimport konnte nicht verarbeitet werden.");
     }
   });

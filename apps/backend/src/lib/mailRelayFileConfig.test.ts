@@ -35,10 +35,7 @@ test("mail relay YML is parsed as smtp outbound relay config", async () => {
     "  auth:",
     "    username: relay-user",
     "    password: relay-pass",
-    "  from: Besucher Manager <noreply@example.org>",
-    "  approvalRecipients:",
-    "    - sibe1@example.org",
-    "    - sibe2@example.org"
+    "  from: Besucher Manager <noreply@example.org>"
   ].join("\n"), "utf8");
 
   const { loadMailRelayFileConfig } = loadModuleWithConfig(configPath);
@@ -52,7 +49,6 @@ test("mail relay YML is parsed as smtp outbound relay config", async () => {
   assert.equal(config.username, "relay-user");
   assert.equal(config.password, "relay-pass");
   assert.equal(config.fromAddress, "Besucher Manager <noreply@example.org>");
-  assert.deepEqual(config.approvalRecipients, ["sibe1@example.org", "sibe2@example.org"]);
 });
 
 test("missing YML falls back to no relay file config", async () => {

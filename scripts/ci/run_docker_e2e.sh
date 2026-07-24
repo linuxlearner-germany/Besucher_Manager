@@ -9,7 +9,7 @@ CREATED_DEFAULT_ENV=0
 
 cleanup() {
   cd "${ROOT_DIR}"
-  docker compose --env-file "${ENV_FILE}" down -v >/dev/null 2>&1 || true
+  docker compose --env-file "${ENV_FILE}" --profile local-db down -v >/dev/null 2>&1 || true
   rm -f "${ENV_FILE}"
   if [[ "${CREATED_DEFAULT_ENV}" -eq 1 ]]; then
     rm -f "${DEFAULT_ENV_FILE}"
@@ -46,7 +46,7 @@ if [[ ! -f "${DEFAULT_ENV_FILE}" ]]; then
 fi
 
 cd "${ROOT_DIR}"
-docker compose --env-file "${ENV_FILE}" up -d --build
+docker compose --env-file "${ENV_FILE}" --profile local-db up -d --build
 
 for attempt in $(seq 1 60); do
   if curl -fsS "${BASE_URL}/health" >/dev/null; then
@@ -57,7 +57,7 @@ done
 
 curl -fsS "${BASE_URL}/health" >/dev/null
 
-docker compose --env-file "${ENV_FILE}" exec -T app npm run seed:sample:compiled --workspace @besucher-manager/backend
+docker compose --env-file "${ENV_FILE}" --profile local-db exec -T app npm run seed:sample:compiled --workspace @besucher-manager/backend
 
 python3 scripts/ops/verify_role_access.py \
   --base-url "${BASE_URL}" \

@@ -2169,6 +2169,62 @@ input[type="checkbox"] {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 16px;
+  margin-top: 18px;
+}
+
+.background-catalog-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.background-catalog-card {
+  display: grid;
+  overflow: hidden;
+  padding: 0;
+  color: var(--text-primary);
+  text-align: left;
+  border: 2px solid transparent;
+  border-radius: 12px;
+  background: var(--surface-subtle);
+  box-shadow: 0 0 0 1px var(--panel-border);
+}
+
+.background-catalog-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  transform: translateY(-1px);
+}
+
+.background-catalog-card.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.background-catalog-card img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.background-catalog-content {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+}
+
+.background-catalog-content > span {
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+}
+
+.background-active-badge {
+  justify-self: start;
+  padding: 3px 8px;
+  color: var(--accent-strong) !important;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
 .admin-site-map-preview {
@@ -2210,42 +2266,6 @@ input[type="checkbox"] {
   margin-top: 10px;
   font-size: 20px;
   font-weight: 700;
-}
-
-.approval-stat-grid {
-  gap: 12px;
-}
-
-.approval-mini-card {
-  min-height: 92px;
-  padding: 12px 14px;
-}
-
-.approval-mini-card h3 {
-  font-size: 15px;
-  line-height: 1.2;
-  margin-bottom: 8px;
-}
-
-.approval-mini-card p {
-  margin-top: 0;
-  font-size: 20px;
-}
-
-.approval-filter-actions {
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: center;
-}
-
-.approval-note-input {
-  min-width: 200px;
-  width: 100%;
-}
-
-.approval-action-row {
-  justify-content: flex-start;
-  align-items: stretch;
 }
 
 .guard-stat-grid {
@@ -2519,10 +2539,6 @@ input[type="checkbox"] {
   align-items: center;
 }
 
-.approval-table-shell .data-table {
-  min-width: 1120px;
-}
-
 .print-panel {
   padding: 16px;
 }
@@ -2548,6 +2564,64 @@ input[type="checkbox"] {
   background: var(--panel-bg);
   width: min(100%, 210mm);
   margin: 0 auto;
+}
+
+.paper-a5 .badge-sheet {
+  width: min(100%, 148mm);
+  min-height: 210mm;
+}
+
+.paper-a4 .badge-sheet {
+  width: min(100%, 210mm);
+  min-height: 297mm;
+}
+
+.paper-size-choice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+}
+
+.paper-size-choice legend {
+  padding: 0 4px;
+  font-size: 12px;
+}
+
+.paper-size-choice label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.country-checklist {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px 18px;
+  min-height: 480px;
+  max-height: 620px;
+  margin-top: 18px;
+  padding: 18px;
+  overflow: auto;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+}
+
+.country-notification-card {
+  min-height: 680px;
+  padding: 28px;
+}
+
+.country-notification-card .filter-bar {
+  gap: 12px;
+  align-items: center;
+}
+
+.country-notification-card .filter-bar input {
+  min-width: min(420px, 100%);
 }
 
 .badge-header {

@@ -52,7 +52,7 @@ def badge_context(visit):
         "safety_text": text_by_type.get(BadgeTextTemplate.TextType.SAFETY, ""),
         "photography_text": text_by_type.get(
             BadgeTextTemplate.TextType.PHOTOGRAPHY,
-            "Fotografieren und Filmen sind auf dem Gelaende nur mit ausdruecklicher Genehmigung erlaubt.",
+            "Fotografieren und Filmen sind auf dem Gelaende nur nach ausdruecklicher Erlaubnis gestattet.",
         ),
         "rules_text": text_by_type.get(
             BadgeTextTemplate.TextType.RULES,

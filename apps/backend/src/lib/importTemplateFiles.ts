@@ -3,6 +3,7 @@ import {
   getVisitorImportExcelTemplateColumns,
   getVisitorImportTemplateSampleRows
 } from "./visitImportDefinitions";
+import { COUNTRIES } from "./countries";
 
 export async function buildImportTemplateWorkbookBuffer(): Promise<Buffer> {
   const columns = getVisitorImportExcelTemplateColumns();
@@ -24,6 +25,7 @@ export async function buildImportTemplateWorkbookBuffer(): Promise<Buffer> {
     "Vorname [Pflicht]": 18,
     "Nachname [Pflicht]": 18,
     "Firma / Organisation [Pflicht]": 28,
+    "Nationalität [Pflicht]": 24,
     "Geburtsdatum [Optional]": 16,
     "Telefon [Optional]": 18,
     "E-Mail [Optional]": 26,
@@ -45,6 +47,7 @@ export async function buildImportTemplateWorkbookBuffer(): Promise<Buffer> {
     "Vorname [Pflicht]": "Vorname der besuchenden Person.",
     "Nachname [Pflicht]": "Nachname der besuchenden Person.",
     "Firma / Organisation [Pflicht]": "Firma oder Organisation der besuchenden Person.",
+    "Nationalität [Pflicht]": "Pflichtfeld. Bitte über die vollständige Länderliste wählen.",
     "Geburtsdatum [Optional]": "Optional, Format TT.MM.JJJJ.",
     "Telefon [Optional]": "Telefon der besuchenden Person.",
     "E-Mail [Optional]": "E-Mail der besuchenden Person.",
@@ -129,13 +132,17 @@ export async function buildImportTemplateWorkbookBuffer(): Promise<Buffer> {
     to: { row: 1, column: headers.length }
   };
 
-  const idDocumentOptions = ["Personalausweis", "Reisepass", "Sonstiges"];
+  const idDocumentOptions = ["Personalausweis", "Reisepass", "Dienstausweis", "Sonstiges"];
   idDocumentOptions.forEach((value, index) => {
     listSheet.getCell(`A${index + 1}`).value = value;
+  });
+  COUNTRIES.forEach((country, index) => {
+    listSheet.getCell(`B${index + 1}`).value = country.name;
   });
   listSheet.state = "veryHidden";
 
   const idDocumentTypeColumnIndex = headers.indexOf("Ausweisart [Pflicht]") + 1;
+  const nationalityColumnIndex = headers.indexOf("Nationalität [Pflicht]") + 1;
   const dateColumnIndexes = [
     headers.indexOf("Gültig von [Pflicht]") + 1,
     headers.indexOf("Gültig bis [Pflicht]") + 1,
@@ -154,6 +161,16 @@ export async function buildImportTemplateWorkbookBuffer(): Promise<Buffer> {
         error: "Bitte eine Ausweisart aus der Liste wählen."
       };
     }
+    if (nationalityColumnIndex > 0) {
+      worksheet.getCell(rowNumber, nationalityColumnIndex).dataValidation = {
+        type: "list",
+        allowBlank: false,
+        formulae: [`Listen!$B$1:$B$${COUNTRIES.length}`],
+        showErrorMessage: true,
+        errorTitle: "Ungültige Nationalität",
+        error: "Bitte eine Nationalität aus der Liste wählen."
+      };
+    }
 
     for (const columnIndex of dateColumnIndexes) {
       const cell = worksheet.getCell(rowNumber, columnIndex);
@@ -165,11 +182,11 @@ export async function buildImportTemplateWorkbookBuffer(): Promise<Buffer> {
   hintsSheet.getCell("A1").value = "Excel-Importvorlage";
   hintsSheet.getCell("A1").font = { bold: true, size: 14 };
   hintsSheet.getCell("A3").value = "Pflichtfelder";
-  hintsSheet.getCell("B3").value = "Vorname, Nachname, Firma / Organisation, Ausweisart, Ausweisnummer, Ansprechpartner, Ansprechpartner Telefon, Besuchszweck, Gültig von, Gültig bis";
+  hintsSheet.getCell("B3").value = "Vorname, Nachname, Firma / Organisation, Nationalität, Ausweisart, Ausweisnummer, Ansprechpartner, Ansprechpartner Telefon, Besuchszweck, Gültig von, Gültig bis";
   hintsSheet.getCell("A4").value = "Spaltengruppen";
   hintsSheet.getCell("B4").value = "Blau = Besucher, Grün = Ansprechpartner, Gelb = Besuch.";
   hintsSheet.getCell("A5").value = "Dropdowns";
-  hintsSheet.getCell("B5").value = "Für Ausweisart steht eine Auswahlliste bereit.";
+  hintsSheet.getCell("B5").value = "Für Nationalität und Ausweisart stehen Auswahllisten bereit.";
   hintsSheet.getCell("A6").value = "Datumsformat";
   hintsSheet.getCell("B6").value = "TT.MM.JJJJ";
   hintsSheet.columns = [

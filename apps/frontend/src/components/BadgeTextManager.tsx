@@ -90,7 +90,7 @@ export function BadgeTextManager({
   const loadTexts = useCallback(async () => {
     setError(null);
     try {
-      const payload = await fetchJson<{ texts: AdminBadgeText[] }>("/api/admin/badge-texts", { method: "GET", headers: {} });
+      const payload = await fetchJson<{ texts: AdminBadgeText[] }>("/api/texts", { method: "GET", headers: {} });
       setTexts(payload.texts);
       setEditableTexts(Object.fromEntries(payload.texts.map((text) => [text.id, createDraft(text)])));
       setSelectedTextId((current) => {
@@ -200,7 +200,7 @@ export function BadgeTextManager({
   async function createText(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     try {
-      await fetchJson("/api/admin/badge-texts", {
+      await fetchJson("/api/texts", {
         method: "POST",
         body: JSON.stringify(newText)
       });
@@ -217,7 +217,7 @@ export function BadgeTextManager({
   async function saveText(text: AdminBadgeText, draft: BadgeTextDraft) {
     setSavePendingId(text.id);
     try {
-      await fetchJson(`/api/admin/badge-texts/${text.id}`, {
+      await fetchJson(`/api/texts/${text.id}`, {
         method: "PUT",
         body: JSON.stringify(draft)
       });
@@ -234,7 +234,7 @@ export function BadgeTextManager({
 
   async function toggleTextActive(text: AdminBadgeText) {
     try {
-      await fetchJson(`/api/admin/badge-texts/${text.id}/${text.isActive ? "deactivate" : "reactivate"}`, {
+      await fetchJson(`/api/texts/${text.id}/${text.isActive ? "deactivate" : "reactivate"}`, {
         method: "POST",
         body: JSON.stringify({})
       });
@@ -249,7 +249,7 @@ export function BadgeTextManager({
 
   async function moveText(text: AdminBadgeText, direction: "up" | "down") {
     try {
-      await fetchJson(`/api/admin/badge-texts/${text.id}/move-${direction}`, {
+      await fetchJson(`/api/texts/${text.id}/move-${direction}`, {
         method: "POST",
         body: JSON.stringify({})
       });

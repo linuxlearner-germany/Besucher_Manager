@@ -1,8 +1,14 @@
 import { Router } from "express";
 import { z } from "zod";
+import { COUNTRIES, normalizeCountryCode } from "../lib/countries";
 import { clearSessionCookie, setSessionCookie } from "../lib/authSession";
 import { createPreRegistration, findActiveGateById, listActiveGates } from "../lib/publicPreRegistrations";
-import { publicPreRegistrationSchema } from "../lib/publicPreRegistrationSchema";
+import {
+  createPublicPreRegistrationSchema,
+  PUBLIC_FIELD_INPUT_MAP,
+  type PublicFieldKey
+} from "../lib/publicPreRegistrationSchema";
+import { listFieldDefinitions } from "../lib/fieldDefinitions";
 import { checkRateLimit } from "../lib/rateLimit";
 import { findUserById, findUserForLogin, verifyPassword } from "../lib/users";
 import { createImportedPreRegistrations } from "../lib/visitImport";
@@ -38,11 +44,19 @@ const publicGroupPreRegistrationSchema = z.object({
     firstName: z.string().trim().optional().or(z.literal("")),
     lastName: z.string().trim().optional().or(z.literal("")),
     company: z.string().trim().optional().or(z.literal("")),
+    nationalityCode: z.string().trim().transform((value, context) => {
+      const code = normalizeCountryCode(value);
+      if (!code) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "Bitte eine gültige Nationalität auswählen." });
+        return z.NEVER;
+      }
+      return code;
+    }),
     birthDate: z.string().trim().optional().or(z.literal("")),
     phone: z.string().trim().optional().or(z.literal("")),
     email: z.string().trim().email("Ungueltige E-Mail-Adresse.").optional().or(z.literal("")),
     licensePlate: z.string().trim().optional().or(z.literal("")),
-    idDocumentType: z.enum(["identity_card", "passport", "other"]).optional().or(z.literal("")),
+    idDocumentType: z.enum(["identity_card", "passport", "service_id", "other"]).optional().or(z.literal("")),
     idDocumentValidUntil: z.string().trim().optional().or(z.literal("")),
     idDocumentNumber: z.string().trim().optional().or(z.literal(""))
   })).min(1).max(50)
@@ -55,6 +69,10 @@ apiRouter.get("/api/meta", (_request, response) => {
     modules: ["public-pre-registration", "guard-dashboard", "admin-panel"],
     status: "active"
   });
+});
+
+apiRouter.get("/api/countries", (_request, response) => {
+  response.json({ countries: COUNTRIES });
 });
 
 apiRouter.get("/api/ui-settings", async (_request, response) => {
@@ -156,8 +174,6 @@ apiRouter.post("/api/auth/login", async (request, response) => {
       ? "/admin"
       : menuAccess.includes("wache")
         ? "/wache"
-        : menuAccess.includes("genehmigung")
-          ? "/genehmigungen"
         : menuAccess.includes("sibe")
           ? "/sibe"
           : menuAccess.includes("kaskdt")
@@ -221,7 +237,7 @@ apiRouter.post("/api/public/pre-registrations/group", async (request, response) 
     );
 
     return response.status(201).json({
-      message: `${created.imported} Besucher wurden als Voranmeldung gespeichert und zur SiBe-Freigabe eingereicht.`,
+      message: `${created.imported} Besucher wurden als Voranmeldung gespeichert.`,
       ...created
     });
   } catch (error) {
@@ -282,25 +298,29 @@ apiRouter.post("/api/public/pre-registrations", async (request, response) => {
     });
   }
 
-  const parsed = publicPreRegistrationSchema.safeParse(request.body);
-  if (!parsed.success) {
-    return sendValidationError(response, parsed.error.flatten());
-  }
-
   try {
+    const definitions = await listFieldDefinitions("public");
+    const supportedKeys = new Set(Object.keys(PUBLIC_FIELD_INPUT_MAP));
+    const requiredKeys = new Set<PublicFieldKey>(
+      definitions
+        .filter((field) => field.requiredPublic && supportedKeys.has(field.fieldKey))
+        .map((field) => field.fieldKey as PublicFieldKey)
+    );
+    const parsed = createPublicPreRegistrationSchema(requiredKeys).safeParse(request.body);
+    if (!parsed.success) {
+      return sendValidationError(response, parsed.error.flatten());
+    }
+
     const created = await createPreRegistration({
       ...parsed.data,
       submittedIpAddress: request.ip || request.socket.remoteAddress || null,
       userAgent: typeof request.headers["user-agent"] === "string" ? request.headers["user-agent"] : null
     });
     return response.status(201).json({
-      message: created.approvalStatus === "pending"
-        ? "Voranmeldung gespeichert und zur SiBe-Freigabe eingereicht."
-        : "Voranmeldung erfolgreich gespeichert.",
+      message: "Voranmeldung erfolgreich gespeichert.",
       visitId: created.visitId,
       visitorId: created.visitorId,
-      status: created.status,
-      approvalStatus: created.approvalStatus
+      status: created.status
     });
   } catch (error) {
     return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Voranmeldung konnte nicht gespeichert werden.");

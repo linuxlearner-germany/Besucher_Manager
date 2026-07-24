@@ -1,21 +1,8 @@
-import fs from "node:fs/promises";
-import path from "node:path";
-import crypto from "node:crypto";
 import multer, { MulterError } from "multer";
 import sql from "mssql";
 import { Router, type Request, type Response } from "express";
 import { z } from "zod";
 import { getPool } from "../lib/db";
-import {
-  ALLOWED_SITE_MAP_MIME_TYPES,
-  SITE_MAP_MAX_FILE_SIZE_BYTES,
-  SITE_MAP_UPLOAD_SUBDIRECTORY,
-  buildSiteMapPublicPath,
-  buildStoredSiteMapFileName,
-  getNormalizedExtension,
-  isAllowedSiteMapExtension,
-  isAllowedSiteMapMimeType
-} from "../lib/siteMaps";
 import {
   hashPassword,
   loadUserGroupsAndMenuAccess,
@@ -23,14 +10,13 @@ import {
   normalizePermissions,
   replaceUserGroupsAndMenuAccess
 } from "../lib/users";
-import { loadWorkflowSettings, upsertSystemSettings, WORKFLOW_SETTING_KEYS } from "../lib/systemSettings";
+import { loadSystemSettings, loadWorkflowSettings, upsertSystemSettings, WORKFLOW_SETTING_KEYS, SITE_MAP_SETTING_KEY } from "../lib/systemSettings";
 import { writeAuditLog } from "../lib/auditLog";
 import { env } from "../config/env";
 import { sendMailRelayPreview, verifyMailRelayConnection, type MailRelayTestKind } from "../lib/mailRelay";
-import { buildUserImportTemplateCsv, parseUserImportCsv, type UserCsvImportRawRow } from "../lib/userCsvImport";
+import { buildUserExportCsv, buildUserImportTemplateCsv, parseUserImportCsv, type UserCsvImportRawRow } from "../lib/userCsvImport";
 import { adminFieldDefinitionsRouter } from "./adminFieldDefinitions";
 import {
-  APPROVAL_STATUS,
   APP_MENU_KEYS,
   getAllowedMenuAccessForRole,
   getDefaultMenuAccessForRole,
@@ -47,6 +33,8 @@ import {
   isBadgeTextSectionType,
   toBadgeTextResponseRecord
 } from "../lib/badgeTexts";
+import { getUiBackgroundById, listUiBackgrounds } from "../lib/uiBackgrounds";
+import { listSiteMapCatalog, selectSiteMapCatalogEntry } from "../lib/siteMapCatalog";
 import {
   countUserReferences,
   getRequestIp,
@@ -73,7 +61,6 @@ const permissionFlagsSchema = z.object({
     guard: z.boolean().optional(),
     import: z.boolean().optional(),
     admin: z.boolean().optional(),
-    approvals: z.boolean().optional(),
     sibe: z.boolean().optional(),
     commander: z.boolean().optional(),
     texts: z.boolean().optional()
@@ -90,12 +77,7 @@ const permissionFlagsSchema = z.object({
   imports: z.object({
     execute: z.boolean().optional()
   }).optional(),
-  approvals: z.object({
-    read: z.boolean().optional(),
-    review: z.boolean().optional(),
-    approve: z.boolean().optional(),
-    reject: z.boolean().optional()
-  }).optional(),
+  texts: z.object({ manage: z.boolean().optional() }).optional(),
   dashboards: z.object({
     sibe: z.boolean().optional(),
     commander: z.boolean().optional()
@@ -103,7 +85,6 @@ const permissionFlagsSchema = z.object({
   admin: z.object({
     users: z.boolean().optional(),
     guards: z.boolean().optional(),
-    texts: z.boolean().optional(),
     map: z.boolean().optional(),
     fields: z.boolean().optional(),
     system: z.boolean().optional()
@@ -216,11 +197,7 @@ const badgeTextUpdateSchema = z.object({
   }
 });
 const badgeTextCreateSchema = badgeTextUpdateSchema;
-const siteMapUploadNameSchema = z.object({
-  name: z.string().trim().min(1).max(255).optional()
-});
 const workflowSettingsUpdateSchema = z.object({
-  approvalRequired: z.boolean(),
   backgroundMode: z.enum(["image", "subtle", "plain"]),
   emailRelay: z.object({
     enabled: z.boolean(),
@@ -229,13 +206,16 @@ const workflowSettingsUpdateSchema = z.object({
     secure: z.boolean(),
     username: z.string().trim().max(255).optional().or(z.literal("")),
     password: z.string().max(500).optional().or(z.literal("")),
-    fromAddress: z.string().trim().email("Ungueltige Absenderadresse.").optional().or(z.literal("")),
-    approvalRecipients: z.array(z.string().trim().email("Ungueltige E-Mail-Adresse.")).max(20)
+    fromAddress: z.string().trim().email("Ungueltige Absenderadresse.").optional().or(z.literal(""))
   })
+});
+const uiBackgroundSelectionSchema = z.object({
+  backgroundId: z.string().trim().regex(/^[a-z0-9][a-z0-9-]{0,79}$/, "Ungültige Hintergrund-ID."),
+  backgroundMode: z.enum(["image", "subtle", "plain"])
 });
 const mailRelayTestSchema = z.object({
   recipient: z.string().trim().email("Ungueltige Testadresse.").optional().or(z.literal("")),
-  kind: z.enum(["relay", "approval_request", "approval_approved", "approval_rejected"]).optional()
+  kind: z.enum(["relay", "nationality"]).optional()
 });
 
 export const apiRouter = Router();
@@ -252,38 +232,6 @@ function normalizePermissionsPayload(
   return JSON.stringify(normalizePermissions(role, permissions ?? null, menuAccess));
 }
 
-type SiteMapRow = {
-  id: string;
-  name: string;
-  filePath: string;
-  originalFileName: string | null;
-  storedFileName: string | null;
-  mimeType: string | null;
-  fileSizeBytes: number | null;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string | null;
-  uploadedBy: string | null;
-};
-
-const siteMapUpload = multer({
-  storage: multer.memoryStorage(),
-  limits: {
-    fileSize: SITE_MAP_MAX_FILE_SIZE_BYTES,
-    files: 1
-  },
-  fileFilter: (_request, file, callback) => {
-    const extension = getNormalizedExtension(file.originalname);
-
-    if (!extension || !isAllowedSiteMapExtension(extension) || !isAllowedSiteMapMimeType(file.mimetype)) {
-      callback(new Error("invalid_site_map_file"));
-      return;
-    }
-
-    callback(null, true);
-  }
-});
-
 const userCsvUpload = multer({
   storage: multer.memoryStorage(),
   limits: {
@@ -291,68 +239,6 @@ const userCsvUpload = multer({
     files: 1
   }
 });
-
-const UI_BACKGROUND_UPLOAD_SUBDIRECTORY = "ui-backgrounds";
-
-function buildStoredUiBackgroundFileName(extension: string): string {
-  return `ui-background-${Date.now()}-${crypto.randomUUID()}${extension}`;
-}
-
-function buildUiBackgroundPublicPath(storedFileName: string): string {
-  return `/uploads/${UI_BACKGROUND_UPLOAD_SUBDIRECTORY}/${storedFileName}`;
-}
-
-async function ensureUiBackgroundUploadDirectory(): Promise<string> {
-  const uploadDirectory = path.join(env.uploadDir, UI_BACKGROUND_UPLOAD_SUBDIRECTORY);
-  await fs.mkdir(uploadDirectory, { recursive: true });
-  return uploadDirectory;
-}
-
-async function parseSingleUiBackgroundUpload(request: Request, response: Response): Promise<Express.Multer.File | null> {
-  return await new Promise((resolve) => {
-    siteMapUpload.array("file", 1)(request, response, (error) => {
-      if (!error) {
-        const files = request.files;
-        if (!Array.isArray(files) || files.length === 0) {
-          sendValidationError(response, { fieldErrors: { file: ["Bitte wählen Sie eine Bilddatei aus."] } });
-          return resolve(null);
-        }
-
-        if (files.length > 1) {
-          sendValidationError(response, { fieldErrors: { file: ["Bitte nur eine Bilddatei hochladen."] } });
-          return resolve(null);
-        }
-
-        return resolve(files[0]);
-      }
-
-      if (error instanceof MulterError) {
-        if (error.code === "LIMIT_FILE_SIZE") {
-          sendError(response, 400, "FILE_TOO_LARGE", "Die Bilddatei ist größer als 10 MB.");
-          return resolve(null);
-        }
-
-        if (error.code === "LIMIT_FILE_COUNT" || error.code === "LIMIT_UNEXPECTED_FILE") {
-          sendValidationError(response, { fieldErrors: { file: ["Bitte nur eine Bilddatei hochladen."] } });
-          return resolve(null);
-        }
-      }
-
-      if (error instanceof Error && error.message === "invalid_site_map_file") {
-        sendValidationError(response, {
-          fieldErrors: {
-            file: ["Erlaubt sind nur PNG-, JPG- und WEBP-Dateien."]
-          }
-        });
-        return resolve(null);
-      }
-
-      console.error(error);
-      sendError(response, 500, "UPLOAD_ERROR", "Die Bilddatei konnte nicht verarbeitet werden.");
-      return resolve(null);
-    });
-  });
-}
 
 type UserImportIssue = {
   lineNumber: number;
@@ -399,160 +285,11 @@ function sendUserImportTemplate(response: Response) {
   return response.status(200).send(buildUserImportTemplateCsv());
 }
 
-async function parseSingleSiteMapUpload(request: Request, response: Response): Promise<Express.Multer.File | null> {
-  return await new Promise((resolve) => {
-    siteMapUpload.array("file", 1)(request, response, (error) => {
-      if (!error) {
-        const files = request.files;
-        if (!Array.isArray(files) || files.length === 0) {
-          sendValidationError(response, { fieldErrors: { file: ["Bitte waehlen Sie eine Datei aus."] } });
-          return resolve(null);
-        }
-
-        if (files.length > 1) {
-          sendValidationError(response, { fieldErrors: { file: ["Bitte nur eine Datei hochladen."] } });
-          return resolve(null);
-        }
-
-        return resolve(files[0]);
-      }
-
-      if (error instanceof MulterError) {
-        if (error.code === "LIMIT_FILE_SIZE") {
-          sendError(response, 400, "FILE_TOO_LARGE", "Die Datei ist groesser als 10 MB.");
-          return resolve(null);
-        }
-
-        if (error.code === "LIMIT_FILE_COUNT" || error.code === "LIMIT_UNEXPECTED_FILE") {
-          sendValidationError(response, { fieldErrors: { file: ["Bitte nur eine Datei hochladen."] } });
-          return resolve(null);
-        }
-      }
-
-      if (error instanceof Error && error.message === "invalid_site_map_file") {
-        sendValidationError(response, {
-          fieldErrors: {
-            file: ["Erlaubt sind nur PNG-, JPG- und WEBP-Dateien."]
-          }
-        });
-        return resolve(null);
-      }
-
-      console.error(error);
-      sendError(response, 500, "UPLOAD_ERROR", "Die Datei konnte nicht verarbeitet werden.");
-      return resolve(null);
-    });
-  });
-}
-
-async function ensureSiteMapUploadDirectory(): Promise<string> {
-  const uploadDirectory = path.join(env.uploadDir, SITE_MAP_UPLOAD_SUBDIRECTORY);
-  await fs.mkdir(uploadDirectory, { recursive: true });
-  return uploadDirectory;
-}
-
-async function listSiteMaps(): Promise<SiteMapRow[]> {
-  const pool = await getPool();
-  const result = await pool.request().query<SiteMapRow>(`
-    SELECT
-      sm.id,
-      sm.name,
-      sm.file_path AS filePath,
-      sm.original_file_name AS originalFileName,
-      sm.stored_file_name AS storedFileName,
-      sm.mime_type AS mimeType,
-      sm.file_size_bytes AS fileSizeBytes,
-      sm.is_active AS isActive,
-      CONVERT(NVARCHAR(30), sm.created_at, 127) AS createdAt,
-      CONVERT(NVARCHAR(30), sm.updated_at, 127) AS updatedAt,
-      uploader.username AS uploadedBy
-    FROM dbo.site_maps sm
-    LEFT JOIN dbo.users uploader ON uploader.id = sm.uploaded_by
-    ORDER BY sm.is_active DESC, sm.created_at DESC
-  `);
-
-  return result.recordset;
-}
-
-async function getActiveSiteMap(): Promise<SiteMapRow | null> {
-  const maps = await listSiteMaps();
-  return maps.find((entry) => entry.isActive) ?? null;
-}
-
-async function deactivateSiteMaps(
-  user: AuthenticatedUser,
-  request: Request,
-  ids: string[]
-): Promise<void> {
-  for (const id of ids) {
-    await writeAuditLog({
-      user: user.username,
-      userId: user.id,
-      action: "SITE_MAP_DEACTIVATED",
-      objectType: "site_map",
-      objectId: id,
-      ipAddress: getRequestIp(request),
-      userAgent: getRequestUserAgent(request)
-    });
-  }
-}
-
-async function activateSiteMapById(
-  user: AuthenticatedUser,
-  request: Request,
-  siteMapId: string
-): Promise<void> {
-  const pool = await getPool();
-  const activeBefore = await pool.request()
-    .input("id", sql.UniqueIdentifier, siteMapId)
-    .query<{ id: string }>(`
-      SELECT id
-      FROM dbo.site_maps
-      WHERE is_active = 1 AND id <> @id
-    `);
-
-  await pool.request()
-    .input("id", sql.UniqueIdentifier, siteMapId)
-    .input("deactivatedBy", sql.UniqueIdentifier, user.id)
-    .query(`
-      UPDATE dbo.site_maps
-      SET
-        is_active = 0,
-        deactivated_at = SYSUTCDATETIME(),
-        deactivated_by = @deactivatedBy,
-        updated_at = SYSUTCDATETIME()
-      WHERE is_active = 1 AND id <> @id
-    `);
-
-  await pool.request()
-    .input("id", sql.UniqueIdentifier, siteMapId)
-    .query(`
-      UPDATE dbo.site_maps
-      SET
-        is_active = 1,
-        deactivated_at = NULL,
-        deactivated_by = NULL,
-        updated_at = SYSUTCDATETIME()
-      WHERE id = @id
-    `);
-
-  await deactivateSiteMaps(user, request, activeBefore.recordset.map((entry) => entry.id));
-  await writeAuditLog({
-    user: user.username,
-    userId: user.id,
-    action: "SITE_MAP_ACTIVATED",
-    objectType: "site_map",
-    objectId: siteMapId,
-    ipAddress: getRequestIp(request),
-    userAgent: getRequestUserAgent(request)
-  });
-}
-
 export const adminRouter = Router();
 adminRouter.use(adminFieldDefinitionsRouter);
 
-adminRouter.get("/api/admin/badge-texts", async (request, response) => {
-  const user = await requirePermission(request, response, "admin.texts");
+adminRouter.get("/api/texts", async (request, response) => {
+  const user = await requirePermission(request, response, "texts.manage");
 
   if (!user) {
     return;
@@ -585,8 +322,8 @@ adminRouter.get("/api/admin/badge-texts", async (request, response) => {
   });
 });
 
-adminRouter.post("/api/admin/badge-texts", async (request, response) => {
-  const user = await requirePermission(request, response, "admin.texts");
+adminRouter.post("/api/texts", async (request, response) => {
+  const user = await requirePermission(request, response, "texts.manage");
   if (!user) return;
 
   const parsed = badgeTextCreateSchema.safeParse(request.body);
@@ -634,7 +371,7 @@ adminRouter.post("/api/admin/badge-texts", async (request, response) => {
 
 
 adminRouter.get("/api/admin/bootstrap", async (request, response) => {
-  const user = await requireAnyPermission(request, response, ["admin.users", "admin.guards", "admin.texts", "admin.map", "admin.fields", "admin.system", "logs.audit", "logs.errors"]);
+  const user = await requireAnyPermission(request, response, ["admin.users", "admin.guards", "texts.manage", "admin.map", "admin.fields", "admin.system", "logs.audit", "logs.errors"]);
 
   if (!user) {
     return;
@@ -897,6 +634,69 @@ adminRouter.get("/api/admin/users/import-template.csv", async (request, response
   const user = await requirePermission(request, response, "admin.users");
   if (!user) return;
   return sendUserImportTemplate(response);
+});
+
+adminRouter.get("/api/admin/users/export.csv", async (request, response) => {
+  const user = await requirePermission(request, response, "admin.users");
+  if (!user) return;
+
+  try {
+    const pool = await getPool();
+    const result = await pool.request().query<{
+      id: string;
+      username: string;
+      displayName: string;
+      email: string | null;
+      role: string;
+      gate: string | null;
+      isActive: boolean;
+      lastLoginAt: string | null;
+    }>(`
+      SELECT
+        u.id,
+        u.username,
+        u.display_name AS displayName,
+        u.user_email AS email,
+        u.role,
+        g.name AS gate,
+        u.is_active AS isActive,
+        CONVERT(NVARCHAR(30), u.last_login_at, 127) AS lastLoginAt
+      FROM dbo.users u
+      LEFT JOIN dbo.gates g ON g.id = u.gate_id
+      ORDER BY u.username ASC
+    `);
+    const { groupsByUserId, menuAccessByUserId } = await loadUserGroupsAndMenuAccess(
+      result.recordset.map((entry) => entry.id)
+    );
+    const csv = buildUserExportCsv(result.recordset.map((entry) => ({
+      ...entry,
+      groups: groupsByUserId[entry.id] ?? [],
+      menuAccess: normalizeMenuAccess(
+        entry.role as AuthenticatedUser["role"],
+        menuAccessByUserId[entry.id]?.length
+          ? menuAccessByUserId[entry.id]
+          : getDefaultMenuAccessForRole(entry.role as AuthenticatedUser["role"])
+      )
+    })));
+
+    await writeAuditLog({
+      user: user.username,
+      userId: user.id,
+      action: "ADMIN_USERS_EXPORTED_CSV",
+      objectType: "users",
+      objectId: "all",
+      ipAddress: getRequestIp(request),
+      userAgent: getRequestUserAgent(request),
+      metadata: { count: result.recordset.length }
+    });
+
+    const date = new Date().toISOString().slice(0, 10);
+    response.setHeader("Content-Type", "text/csv; charset=utf-8");
+    response.setHeader("Content-Disposition", `attachment; filename="benutzer-export-${date}.csv"`);
+    return response.status(200).send(csv);
+  } catch (error) {
+    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der Benutzerexport konnte nicht erstellt werden.");
+  }
 });
 
 adminRouter.post("/api/admin/users/import-csv", async (request, response) => {
@@ -1512,8 +1312,8 @@ adminRouter.delete("/api/admin/users/:id", async (request, response) => {
   }
 });
 
-adminRouter.put("/api/admin/badge-texts/:id", async (request, response) => {
-  const user = await requirePermission(request, response, "admin.texts");
+adminRouter.put("/api/texts/:id", async (request, response) => {
+  const user = await requirePermission(request, response, "texts.manage");
   if (!user) return;
   const parsed = badgeTextUpdateSchema.safeParse(request.body);
   if (!parsed.success) return sendValidationError(response, parsed.error.flatten());
@@ -1560,8 +1360,8 @@ adminRouter.put("/api/admin/badge-texts/:id", async (request, response) => {
   }
 });
 
-adminRouter.post("/api/admin/badge-texts/:id/move-up", async (request, response) => {
-  const user = await requirePermission(request, response, "admin.texts");
+adminRouter.post("/api/texts/:id/move-up", async (request, response) => {
+  const user = await requirePermission(request, response, "texts.manage");
   if (!user) return;
 
   try {
@@ -1616,8 +1416,8 @@ adminRouter.post("/api/admin/badge-texts/:id/move-up", async (request, response)
   }
 });
 
-adminRouter.post("/api/admin/badge-texts/:id/move-down", async (request, response) => {
-  const user = await requirePermission(request, response, "admin.texts");
+adminRouter.post("/api/texts/:id/move-down", async (request, response) => {
+  const user = await requirePermission(request, response, "texts.manage");
   if (!user) return;
 
   try {
@@ -1672,8 +1472,8 @@ adminRouter.post("/api/admin/badge-texts/:id/move-down", async (request, respons
   }
 });
 
-adminRouter.post("/api/admin/badge-texts/:id/deactivate", async (request, response) => {
-  const user = await requirePermission(request, response, "admin.texts");
+adminRouter.post("/api/texts/:id/deactivate", async (request, response) => {
+  const user = await requirePermission(request, response, "texts.manage");
   if (!user) return;
 
   try {
@@ -1706,8 +1506,8 @@ adminRouter.post("/api/admin/badge-texts/:id/deactivate", async (request, respon
   }
 });
 
-adminRouter.post("/api/admin/badge-texts/:id/reactivate", async (request, response) => {
-  const user = await requirePermission(request, response, "admin.texts");
+adminRouter.post("/api/texts/:id/reactivate", async (request, response) => {
+  const user = await requirePermission(request, response, "texts.manage");
   if (!user) return;
 
   try {
@@ -1742,108 +1542,7 @@ adminRouter.post("/api/admin/badge-texts/:id/reactivate", async (request, respon
 adminRouter.post("/api/admin/site-map/upload", async (request, response) => {
   const user = await requirePermission(request, response, "admin.map");
   if (!user) return;
-
-  const file = await parseSingleSiteMapUpload(request, response);
-  if (!file) return;
-
-  const parsed = siteMapUploadNameSchema.safeParse(request.body);
-  if (!parsed.success) return sendValidationError(response, parsed.error.flatten());
-
-  const extension = getNormalizedExtension(file.originalname);
-  if (!extension || !isAllowedSiteMapExtension(extension) || !isAllowedSiteMapMimeType(file.mimetype)) {
-    return sendValidationError(response, { fieldErrors: { file: ["Erlaubt sind nur PNG-, JPG- und WEBP-Dateien."] } });
-  }
-
-  const storedFileName = buildStoredSiteMapFileName(extension);
-  const filePath = buildSiteMapPublicPath(storedFileName);
-  const uploadDirectory = await ensureSiteMapUploadDirectory();
-  const targetPath = path.join(uploadDirectory, storedFileName);
-  const pool = await getPool();
-
-  try {
-    const activeBefore = await pool.request().query<{ id: string }>(`
-      SELECT id
-      FROM dbo.site_maps
-      WHERE is_active = 1
-    `);
-
-    await fs.writeFile(targetPath, file.buffer);
-
-    await pool.request()
-      .input("deactivatedBy", sql.UniqueIdentifier, user.id)
-      .query(`
-        UPDATE dbo.site_maps
-        SET
-          is_active = 0,
-          deactivated_at = SYSUTCDATETIME(),
-          deactivated_by = @deactivatedBy,
-          updated_at = SYSUTCDATETIME()
-        WHERE is_active = 1
-      `);
-
-    const created = await pool.request()
-      .input("name", sql.NVarChar(255), parsed.data.name || path.basename(file.originalname, path.extname(file.originalname)))
-      .input("filePath", sql.NVarChar(500), filePath)
-      .input("originalFileName", sql.NVarChar(255), file.originalname)
-      .input("storedFileName", sql.NVarChar(255), storedFileName)
-      .input("mimeType", sql.NVarChar(120), file.mimetype)
-      .input("fileSizeBytes", sql.BigInt, file.size)
-      .input("uploadedBy", sql.UniqueIdentifier, user.id)
-      .query<{ id: string }>(`
-        INSERT INTO dbo.site_maps (
-          name,
-          file_path,
-          original_file_name,
-          stored_file_name,
-          mime_type,
-          file_size_bytes,
-          is_active,
-          uploaded_by,
-          created_at,
-          updated_at
-        )
-        OUTPUT inserted.id
-        VALUES (
-          @name,
-          @filePath,
-          @originalFileName,
-          @storedFileName,
-          @mimeType,
-          @fileSizeBytes,
-          1,
-          @uploadedBy,
-          SYSUTCDATETIME(),
-          SYSUTCDATETIME()
-        )
-      `);
-
-    await deactivateSiteMaps(user, request, activeBefore.recordset.map((entry) => entry.id));
-    await writeAuditLog({
-      user: user.username,
-      userId: user.id,
-      action: "ADMIN_SITE_MAP_UPLOADED",
-      objectType: "site_map",
-      objectId: created.recordset[0].id,
-      ipAddress: getRequestIp(request),
-      userAgent: getRequestUserAgent(request),
-      metadata: {
-        site_map_id: created.recordset[0].id,
-        original_file_name: file.originalname,
-        stored_file_name: storedFileName,
-        mime_type: file.mimetype,
-        file_size_bytes: file.size,
-        uploaded_by: user.id
-      }
-    });
-
-    return response.status(201).json({
-      id: created.recordset[0].id,
-      filePath
-    });
-  } catch (error) {
-    await fs.rm(targetPath, { force: true }).catch(() => undefined);
-    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der Geländeplan konnte nicht hochgeladen werden.");
-  }
+  return sendError(response, 410, "SITE_MAP_UPLOAD_DISABLED", "Der Upload ist deaktiviert. Geländepläne werden über /app/uploads/site-maps bereitgestellt.");
 });
 
 adminRouter.post("/api/admin/ui-background/upload", async (request, response) => {
@@ -1853,8 +1552,82 @@ adminRouter.post("/api/admin/ui-background/upload", async (request, response) =>
     response,
     410,
     "BACKGROUND_UPLOAD_DISABLED",
-    "Der Upload ist deaktiviert. Bitte legen Sie die Bilddatei direkt im Ordner /app/uploads/ui-backgrounds ab und starten Sie die App neu."
+    "Der Upload ist deaktiviert. Hintergründe werden kontrolliert über den Projektkatalog bereitgestellt."
   );
+});
+
+adminRouter.get("/api/admin/ui-backgrounds", async (request, response) => {
+  const user = await requirePermission(request, response, "admin.system");
+  if (!user) return;
+
+  try {
+    const [backgrounds, settings] = await Promise.all([
+      listUiBackgrounds(),
+      loadWorkflowSettings()
+    ]);
+
+    return response.json({
+      backgrounds: backgrounds.map((background) => ({
+        ...background,
+        isActive: background.id === settings.backgroundId
+      })),
+      activeBackgroundId: settings.backgroundId,
+      backgroundMode: settings.backgroundMode
+    });
+  } catch (error) {
+    return handleUnexpectedError(response, error, "BACKGROUND_CATALOG_ERROR", "Der Hintergrundkatalog konnte nicht geladen werden.");
+  }
+});
+
+adminRouter.put("/api/admin/ui-backgrounds/active", async (request, response) => {
+  const user = await requirePermission(request, response, "admin.system");
+  if (!user) return;
+
+  const parsed = uiBackgroundSelectionSchema.safeParse(request.body ?? {});
+  if (!parsed.success) {
+    return sendValidationError(response, parsed.error.flatten());
+  }
+
+  try {
+    const background = await getUiBackgroundById(parsed.data.backgroundId);
+    if (!background) {
+      return sendError(response, 400, "UNKNOWN_BACKGROUND", "Der ausgewählte Hintergrund ist nicht im Katalog vorhanden.");
+    }
+
+    await upsertSystemSettings({
+      [WORKFLOW_SETTING_KEYS.uiBackgroundMode]: parsed.data.backgroundMode,
+      [WORKFLOW_SETTING_KEYS.uiBackgroundId]: background.id,
+      [WORKFLOW_SETTING_KEYS.uiBackgroundImageUrl]: background.imageUrl,
+      [WORKFLOW_SETTING_KEYS.uiBackgroundImageName]: background.name,
+      [WORKFLOW_SETTING_KEYS.uiBackgroundImageOriginalFileName]: background.fileName
+    });
+
+    await writeAuditLog({
+      user: user.username,
+      userId: user.id,
+      action: "ADMIN_UI_BACKGROUND_SELECTED",
+      objectType: "ui_background",
+      objectId: background.id,
+      ipAddress: getRequestIp(request),
+      userAgent: getRequestUserAgent(request),
+      metadata: {
+        background_id: background.id,
+        file_name: background.fileName,
+        background_mode: parsed.data.backgroundMode
+      }
+    });
+
+    return response.json({
+      success: true,
+      backgroundId: background.id,
+      backgroundMode: parsed.data.backgroundMode,
+      backgroundImageUrl: background.imageUrl,
+      backgroundImageName: background.name,
+      backgroundImageOriginalFileName: background.fileName
+    });
+  } catch (error) {
+    return handleUnexpectedError(response, error, "BACKGROUND_SELECTION_ERROR", "Der Hintergrund konnte nicht gespeichert werden.");
+  }
 });
 
 adminRouter.get("/api/admin/site-map/active", async (request, response) => {
@@ -1862,10 +1635,12 @@ adminRouter.get("/api/admin/site-map/active", async (request, response) => {
   if (!user) return;
 
   try {
-    const siteMap = await getActiveSiteMap();
+    const settingMap = await loadSystemSettings([SITE_MAP_SETTING_KEY]);
+    const siteMaps = await listSiteMapCatalog(settingMap.get(SITE_MAP_SETTING_KEY));
+    const siteMap = selectSiteMapCatalogEntry(siteMaps, settingMap.get(SITE_MAP_SETTING_KEY));
     return response.json({ siteMap });
   } catch (error) {
-    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der aktive Geländeplan konnte nicht geladen werden.");
+    return handleUnexpectedError(response, error, "SITE_MAP_CATALOG_ERROR", "Der aktive Geländeplan konnte nicht geladen werden.");
   }
 });
 
@@ -1874,10 +1649,12 @@ adminRouter.get("/api/admin/site-map", async (request, response) => {
   if (!user) return;
 
   try {
-    const siteMap = await getActiveSiteMap();
+    const settingMap = await loadSystemSettings([SITE_MAP_SETTING_KEY]);
+    const siteMaps = await listSiteMapCatalog(settingMap.get(SITE_MAP_SETTING_KEY));
+    const siteMap = selectSiteMapCatalogEntry(siteMaps, settingMap.get(SITE_MAP_SETTING_KEY));
     return response.json({ siteMap });
   } catch (error) {
-    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der aktive Geländeplan konnte nicht geladen werden.");
+    return handleUnexpectedError(response, error, "SITE_MAP_CATALOG_ERROR", "Der aktive Geländeplan konnte nicht geladen werden.");
   }
 });
 
@@ -1886,44 +1663,11 @@ adminRouter.get("/api/admin/site-maps", async (request, response) => {
   if (!user) return;
 
   try {
-    const siteMaps = await listSiteMaps();
+    const settingMap = await loadSystemSettings([SITE_MAP_SETTING_KEY]);
+    const siteMaps = await listSiteMapCatalog(settingMap.get(SITE_MAP_SETTING_KEY));
     return response.json({ siteMaps });
   } catch (error) {
-    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Gelaendeplaene konnten nicht geladen werden.");
-  }
-});
-
-adminRouter.post("/api/admin/site-maps/:id/deactivate", async (request, response) => {
-  const user = await requirePermission(request, response, "admin.map");
-  if (!user) return;
-
-  try {
-    const pool = await getPool();
-    await pool.request()
-      .input("id", sql.UniqueIdentifier, request.params.id)
-      .input("deactivatedBy", sql.UniqueIdentifier, user.id)
-      .query(`
-        UPDATE dbo.site_maps
-        SET
-          is_active = 0,
-          deactivated_at = SYSUTCDATETIME(),
-          deactivated_by = @deactivatedBy,
-          updated_at = SYSUTCDATETIME()
-        WHERE id = @id
-      `);
-
-    await writeAuditLog({
-      user: user.username,
-      userId: user.id,
-      action: "SITE_MAP_DEACTIVATED",
-      objectType: "site_map",
-      objectId: request.params.id,
-      ipAddress: getRequestIp(request),
-      userAgent: getRequestUserAgent(request)
-    });
-    response.json({ success: true });
-  } catch (error) {
-    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der Geländeplan konnte nicht deaktiviert werden.");
+    return handleUnexpectedError(response, error, "SITE_MAP_CATALOG_ERROR", "Die Geländeplanliste konnte nicht geladen werden.");
   }
 });
 
@@ -1932,22 +1676,27 @@ adminRouter.post("/api/admin/site-maps/:id/activate", async (request, response) 
   if (!user) return;
 
   try {
-    await activateSiteMapById(user, request, request.params.id);
+    const siteMaps = await listSiteMapCatalog();
+    const selected = siteMaps.find((entry) => entry.id === request.params.id);
+    if (!selected) {
+      return sendError(response, 400, "UNKNOWN_SITE_MAP", "Der Geländeplan ist nicht im Uploadpfad vorhanden.");
+    }
+
+    await upsertSystemSettings({ [SITE_MAP_SETTING_KEY]: selected.fileName });
+
+    await writeAuditLog({
+      user: user.username,
+      userId: user.id,
+      action: "SITE_MAP_ACTIVATED",
+      objectType: "site_map",
+      objectId: selected.fileName,
+      ipAddress: getRequestIp(request),
+      userAgent: getRequestUserAgent(request),
+      metadata: { file_name: selected.fileName, source: "uploads/site-maps" }
+    });
     response.json({ success: true });
   } catch (error) {
-    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der Geländeplan konnte nicht aktiviert werden.");
-  }
-});
-
-adminRouter.post("/api/admin/site-maps/:id/reactivate", async (request, response) => {
-  const user = await requirePermission(request, response, "admin.map");
-  if (!user) return;
-
-  try {
-    await activateSiteMapById(user, request, request.params.id);
-    response.json({ success: true });
-  } catch (error) {
-    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der Geländeplan konnte nicht aktiviert werden.");
+    return handleUnexpectedError(response, error, "SITE_MAP_SELECTION_ERROR", "Der Geländeplan konnte nicht aktiviert werden.");
   }
 });
 
@@ -2107,7 +1856,7 @@ adminRouter.get("/api/admin/system-status", async (request, response) => {
   if (!user) return;
   try {
     const pool = await getPool();
-    const [activeVisits, configuredGates, openPreRegistrationsToday, signaturesPending, signaturesFollowUp, signaturesExceptions, approvalsPending] = await Promise.all([
+    const [activeVisits, configuredGates, openPreRegistrationsToday, signaturesPending, signaturesFollowUp, signaturesExceptions] = await Promise.all([
       pool.request().query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.visits WHERE status = 'checked_in'"),
       pool.request().query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.gates WHERE is_active = 1"),
       pool.request().query<{ count: number }>(`
@@ -2118,8 +1867,7 @@ adminRouter.get("/api/admin/system-status", async (request, response) => {
       `),
       pool.request().query<{ count: number }>(`SELECT COUNT(*) AS count FROM dbo.visits WHERE ISNULL(host_signature_status, '${HOST_SIGNATURE_STATUS.PENDING}') = '${HOST_SIGNATURE_STATUS.PENDING}'`),
       pool.request().query<{ count: number }>(`SELECT COUNT(*) AS count FROM dbo.visits WHERE host_signature_status = '${HOST_SIGNATURE_STATUS.SIGNED_LATER}'`),
-      pool.request().query<{ count: number }>(`SELECT COUNT(*) AS count FROM dbo.visits WHERE host_signature_status = '${HOST_SIGNATURE_STATUS.MISSING_EXCEPTION}'`),
-      pool.request().query<{ count: number }>(`SELECT COUNT(*) AS count FROM dbo.visits WHERE ISNULL(approval_status, '${APPROVAL_STATUS.NOT_REQUIRED}') = '${APPROVAL_STATUS.PENDING}'`)
+      pool.request().query<{ count: number }>(`SELECT COUNT(*) AS count FROM dbo.visits WHERE host_signature_status = '${HOST_SIGNATURE_STATUS.MISSING_EXCEPTION}'`)
     ]);
     response.json({
       app: "ok",
@@ -2130,7 +1878,6 @@ adminRouter.get("/api/admin/system-status", async (request, response) => {
       signaturesPending: signaturesPending.recordset[0]?.count ?? 0,
       signaturesFollowUp: signaturesFollowUp.recordset[0]?.count ?? 0,
       signaturesExceptions: signaturesExceptions.recordset[0]?.count ?? 0,
-      approvalsPending: approvalsPending.recordset[0]?.count ?? 0,
       dbHost: env.MSSQL_HOST,
       dbName: env.MSSQL_DATABASE
     });
@@ -2146,8 +1893,8 @@ adminRouter.get("/api/admin/system-settings/workflow-email", async (request, res
   try {
     const settings = await loadWorkflowSettings();
     return response.json({
-      approvalRequired: settings.approvalRequired,
       backgroundMode: settings.backgroundMode,
+      backgroundId: settings.backgroundId,
       backgroundImageUrl: settings.backgroundImageUrl,
       backgroundImageName: settings.backgroundImageName,
       backgroundImageOriginalFileName: settings.backgroundImageOriginalFileName,
@@ -2161,7 +1908,6 @@ adminRouter.get("/api/admin/system-settings/workflow-email", async (request, res
         secure: settings.emailRelay.secure,
         username: settings.emailRelay.username,
         fromAddress: settings.emailRelay.fromAddress,
-        approvalRecipients: settings.emailRelay.approvalRecipients,
         hasPassword: settings.emailRelay.hasPassword
       }
     });
@@ -2182,17 +1928,8 @@ adminRouter.put("/api/admin/system-settings/workflow-email", async (request, res
   try {
     const currentSettings = await loadWorkflowSettings({ includeSecrets: true });
     const settingsToPersist: Record<string, string> = {
-      [WORKFLOW_SETTING_KEYS.approvalRequired]: String(parsed.data.approvalRequired),
       [WORKFLOW_SETTING_KEYS.uiBackgroundMode]: parsed.data.backgroundMode
     };
-
-    if (parsed.data.backgroundMode === "plain") {
-      Object.assign(settingsToPersist, {
-        [WORKFLOW_SETTING_KEYS.uiBackgroundImageUrl]: "",
-        [WORKFLOW_SETTING_KEYS.uiBackgroundImageName]: "",
-        [WORKFLOW_SETTING_KEYS.uiBackgroundImageOriginalFileName]: ""
-      });
-    }
 
     if (currentSettings.emailRelay.source !== "yml") {
       const nextPassword = parsed.data.emailRelay.password?.trim()
@@ -2206,8 +1943,7 @@ adminRouter.put("/api/admin/system-settings/workflow-email", async (request, res
         [WORKFLOW_SETTING_KEYS.relaySecure]: String(parsed.data.emailRelay.secure),
         [WORKFLOW_SETTING_KEYS.relayUsername]: parsed.data.emailRelay.username?.trim() || "",
         [WORKFLOW_SETTING_KEYS.relayPassword]: nextPassword,
-        [WORKFLOW_SETTING_KEYS.relayFrom]: parsed.data.emailRelay.fromAddress?.trim() || "",
-        [WORKFLOW_SETTING_KEYS.relayApprovalTo]: parsed.data.emailRelay.approvalRecipients.join(", ")
+        [WORKFLOW_SETTING_KEYS.relayFrom]: parsed.data.emailRelay.fromAddress?.trim() || ""
       });
     }
 
