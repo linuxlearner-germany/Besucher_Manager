@@ -18,6 +18,8 @@ export const WORKFLOW_SETTING_KEYS = {
   uiBackgroundImageOriginalFileName: "ui_background_image_original_file_name"
 } as const;
 
+export const SITE_MAP_SETTING_KEY = "site_map_file_name";
+
 export type WorkflowSettings = {
   backgroundMode: "image" | "subtle" | "plain";
   backgroundId: string | null;

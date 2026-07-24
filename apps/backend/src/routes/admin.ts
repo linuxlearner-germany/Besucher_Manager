@@ -1,20 +1,8 @@
-import fs from "node:fs/promises";
-import path from "node:path";
 import multer, { MulterError } from "multer";
 import sql from "mssql";
 import { Router, type Request, type Response } from "express";
 import { z } from "zod";
 import { getPool } from "../lib/db";
-import {
-  ALLOWED_SITE_MAP_MIME_TYPES,
-  SITE_MAP_MAX_FILE_SIZE_BYTES,
-  SITE_MAP_UPLOAD_SUBDIRECTORY,
-  buildSiteMapPublicPath,
-  buildStoredSiteMapFileName,
-  getNormalizedExtension,
-  isAllowedSiteMapExtension,
-  isAllowedSiteMapMimeType
-} from "../lib/siteMaps";
 import {
   hashPassword,
   loadUserGroupsAndMenuAccess,
@@ -22,7 +10,7 @@ import {
   normalizePermissions,
   replaceUserGroupsAndMenuAccess
 } from "../lib/users";
-import { loadWorkflowSettings, upsertSystemSettings, WORKFLOW_SETTING_KEYS } from "../lib/systemSettings";
+import { loadSystemSettings, loadWorkflowSettings, upsertSystemSettings, WORKFLOW_SETTING_KEYS, SITE_MAP_SETTING_KEY } from "../lib/systemSettings";
 import { writeAuditLog } from "../lib/auditLog";
 import { env } from "../config/env";
 import { sendMailRelayPreview, verifyMailRelayConnection, type MailRelayTestKind } from "../lib/mailRelay";
@@ -46,6 +34,7 @@ import {
   toBadgeTextResponseRecord
 } from "../lib/badgeTexts";
 import { getUiBackgroundById, listUiBackgrounds } from "../lib/uiBackgrounds";
+import { listSiteMapCatalog, selectSiteMapCatalogEntry } from "../lib/siteMapCatalog";
 import {
   countUserReferences,
   getRequestIp,
@@ -208,9 +197,6 @@ const badgeTextUpdateSchema = z.object({
   }
 });
 const badgeTextCreateSchema = badgeTextUpdateSchema;
-const siteMapUploadNameSchema = z.object({
-  name: z.string().trim().min(1).max(255).optional()
-});
 const workflowSettingsUpdateSchema = z.object({
   backgroundMode: z.enum(["image", "subtle", "plain"]),
   emailRelay: z.object({
@@ -245,38 +231,6 @@ function normalizePermissionsPayload(
 ) {
   return JSON.stringify(normalizePermissions(role, permissions ?? null, menuAccess));
 }
-
-type SiteMapRow = {
-  id: string;
-  name: string;
-  filePath: string;
-  originalFileName: string | null;
-  storedFileName: string | null;
-  mimeType: string | null;
-  fileSizeBytes: number | null;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string | null;
-  uploadedBy: string | null;
-};
-
-const siteMapUpload = multer({
-  storage: multer.memoryStorage(),
-  limits: {
-    fileSize: SITE_MAP_MAX_FILE_SIZE_BYTES,
-    files: 1
-  },
-  fileFilter: (_request, file, callback) => {
-    const extension = getNormalizedExtension(file.originalname);
-
-    if (!extension || !isAllowedSiteMapExtension(extension) || !isAllowedSiteMapMimeType(file.mimetype)) {
-      callback(new Error("invalid_site_map_file"));
-      return;
-    }
-
-    callback(null, true);
-  }
-});
 
 const userCsvUpload = multer({
   storage: multer.memoryStorage(),
@@ -329,155 +283,6 @@ function sendUserImportTemplate(response: Response) {
   response.setHeader("Content-Type", "text/csv; charset=utf-8");
   response.setHeader("Content-Disposition", 'attachment; filename="benutzer-import-vorlage.csv"');
   return response.status(200).send(buildUserImportTemplateCsv());
-}
-
-async function parseSingleSiteMapUpload(request: Request, response: Response): Promise<Express.Multer.File | null> {
-  return await new Promise((resolve) => {
-    siteMapUpload.array("file", 1)(request, response, (error) => {
-      if (!error) {
-        const files = request.files;
-        if (!Array.isArray(files) || files.length === 0) {
-          sendValidationError(response, { fieldErrors: { file: ["Bitte waehlen Sie eine Datei aus."] } });
-          return resolve(null);
-        }
-
-        if (files.length > 1) {
-          sendValidationError(response, { fieldErrors: { file: ["Bitte nur eine Datei hochladen."] } });
-          return resolve(null);
-        }
-
-        return resolve(files[0]);
-      }
-
-      if (error instanceof MulterError) {
-        if (error.code === "LIMIT_FILE_SIZE") {
-          sendError(response, 400, "FILE_TOO_LARGE", "Die Datei ist groesser als 10 MB.");
-          return resolve(null);
-        }
-
-        if (error.code === "LIMIT_FILE_COUNT" || error.code === "LIMIT_UNEXPECTED_FILE") {
-          sendValidationError(response, { fieldErrors: { file: ["Bitte nur eine Datei hochladen."] } });
-          return resolve(null);
-        }
-      }
-
-      if (error instanceof Error && error.message === "invalid_site_map_file") {
-        sendValidationError(response, {
-          fieldErrors: {
-            file: ["Erlaubt sind nur PNG-, JPG- und WEBP-Dateien."]
-          }
-        });
-        return resolve(null);
-      }
-
-      console.error(error);
-      sendError(response, 500, "UPLOAD_ERROR", "Die Datei konnte nicht verarbeitet werden.");
-      return resolve(null);
-    });
-  });
-}
-
-async function ensureSiteMapUploadDirectory(): Promise<string> {
-  const uploadDirectory = path.join(env.uploadDir, SITE_MAP_UPLOAD_SUBDIRECTORY);
-  await fs.mkdir(uploadDirectory, { recursive: true });
-  return uploadDirectory;
-}
-
-async function listSiteMaps(): Promise<SiteMapRow[]> {
-  const pool = await getPool();
-  const result = await pool.request().query<SiteMapRow>(`
-    SELECT
-      sm.id,
-      sm.name,
-      sm.file_path AS filePath,
-      sm.original_file_name AS originalFileName,
-      sm.stored_file_name AS storedFileName,
-      sm.mime_type AS mimeType,
-      sm.file_size_bytes AS fileSizeBytes,
-      sm.is_active AS isActive,
-      CONVERT(NVARCHAR(30), sm.created_at, 127) AS createdAt,
-      CONVERT(NVARCHAR(30), sm.updated_at, 127) AS updatedAt,
-      uploader.username AS uploadedBy
-    FROM dbo.site_maps sm
-    LEFT JOIN dbo.users uploader ON uploader.id = sm.uploaded_by
-    ORDER BY sm.is_active DESC, sm.created_at DESC
-  `);
-
-  return result.recordset;
-}
-
-async function getActiveSiteMap(): Promise<SiteMapRow | null> {
-  const maps = await listSiteMaps();
-  return maps.find((entry) => entry.isActive) ?? null;
-}
-
-async function deactivateSiteMaps(
-  user: AuthenticatedUser,
-  request: Request,
-  ids: string[]
-): Promise<void> {
-  for (const id of ids) {
-    await writeAuditLog({
-      user: user.username,
-      userId: user.id,
-      action: "SITE_MAP_DEACTIVATED",
-      objectType: "site_map",
-      objectId: id,
-      ipAddress: getRequestIp(request),
-      userAgent: getRequestUserAgent(request)
-    });
-  }
-}
-
-async function activateSiteMapById(
-  user: AuthenticatedUser,
-  request: Request,
-  siteMapId: string
-): Promise<void> {
-  const pool = await getPool();
-  const activeBefore = await pool.request()
-    .input("id", sql.UniqueIdentifier, siteMapId)
-    .query<{ id: string }>(`
-      SELECT id
-      FROM dbo.site_maps
-      WHERE is_active = 1 AND id <> @id
-    `);
-
-  await pool.request()
-    .input("id", sql.UniqueIdentifier, siteMapId)
-    .input("deactivatedBy", sql.UniqueIdentifier, user.id)
-    .query(`
-      UPDATE dbo.site_maps
-      SET
-        is_active = 0,
-        deactivated_at = SYSUTCDATETIME(),
-        deactivated_by = @deactivatedBy,
-        updated_at = SYSUTCDATETIME()
-      WHERE is_active = 1 AND id <> @id
-    `);
-
-  await pool.request()
-    .input("id", sql.UniqueIdentifier, siteMapId)
-    .query(`
-      UPDATE dbo.site_maps
-      SET
-        is_active = 1,
-        deactivated_at = NULL,
-        deactivated_by = NULL,
-        updated_at = SYSUTCDATETIME()
-      WHERE id = @id
-    `);
-
-  await deactivateSiteMaps(user, request, activeBefore.recordset.map((entry) => entry.id));
-  await writeAuditLog({
-    user: user.username,
-    userId: user.id,
-    action: "SITE_MAP_ACTIVATED",
-    objectType: "site_map",
-    objectId: siteMapId,
-    ipAddress: getRequestIp(request),
-    userAgent: getRequestUserAgent(request)
-  });
 }
 
 export const adminRouter = Router();
@@ -1737,108 +1542,7 @@ adminRouter.post("/api/texts/:id/reactivate", async (request, response) => {
 adminRouter.post("/api/admin/site-map/upload", async (request, response) => {
   const user = await requirePermission(request, response, "admin.map");
   if (!user) return;
-
-  const file = await parseSingleSiteMapUpload(request, response);
-  if (!file) return;
-
-  const parsed = siteMapUploadNameSchema.safeParse(request.body);
-  if (!parsed.success) return sendValidationError(response, parsed.error.flatten());
-
-  const extension = getNormalizedExtension(file.originalname);
-  if (!extension || !isAllowedSiteMapExtension(extension) || !isAllowedSiteMapMimeType(file.mimetype)) {
-    return sendValidationError(response, { fieldErrors: { file: ["Erlaubt sind nur PNG-, JPG- und WEBP-Dateien."] } });
-  }
-
-  const storedFileName = buildStoredSiteMapFileName(extension);
-  const filePath = buildSiteMapPublicPath(storedFileName);
-  const uploadDirectory = await ensureSiteMapUploadDirectory();
-  const targetPath = path.join(uploadDirectory, storedFileName);
-  const pool = await getPool();
-
-  try {
-    const activeBefore = await pool.request().query<{ id: string }>(`
-      SELECT id
-      FROM dbo.site_maps
-      WHERE is_active = 1
-    `);
-
-    await fs.writeFile(targetPath, file.buffer);
-
-    await pool.request()
-      .input("deactivatedBy", sql.UniqueIdentifier, user.id)
-      .query(`
-        UPDATE dbo.site_maps
-        SET
-          is_active = 0,
-          deactivated_at = SYSUTCDATETIME(),
-          deactivated_by = @deactivatedBy,
-          updated_at = SYSUTCDATETIME()
-        WHERE is_active = 1
-      `);
-
-    const created = await pool.request()
-      .input("name", sql.NVarChar(255), parsed.data.name || path.basename(file.originalname, path.extname(file.originalname)))
-      .input("filePath", sql.NVarChar(500), filePath)
-      .input("originalFileName", sql.NVarChar(255), file.originalname)
-      .input("storedFileName", sql.NVarChar(255), storedFileName)
-      .input("mimeType", sql.NVarChar(120), file.mimetype)
-      .input("fileSizeBytes", sql.BigInt, file.size)
-      .input("uploadedBy", sql.UniqueIdentifier, user.id)
-      .query<{ id: string }>(`
-        INSERT INTO dbo.site_maps (
-          name,
-          file_path,
-          original_file_name,
-          stored_file_name,
-          mime_type,
-          file_size_bytes,
-          is_active,
-          uploaded_by,
-          created_at,
-          updated_at
-        )
-        OUTPUT inserted.id
-        VALUES (
-          @name,
-          @filePath,
-          @originalFileName,
-          @storedFileName,
-          @mimeType,
-          @fileSizeBytes,
-          1,
-          @uploadedBy,
-          SYSUTCDATETIME(),
-          SYSUTCDATETIME()
-        )
-      `);
-
-    await deactivateSiteMaps(user, request, activeBefore.recordset.map((entry) => entry.id));
-    await writeAuditLog({
-      user: user.username,
-      userId: user.id,
-      action: "ADMIN_SITE_MAP_UPLOADED",
-      objectType: "site_map",
-      objectId: created.recordset[0].id,
-      ipAddress: getRequestIp(request),
-      userAgent: getRequestUserAgent(request),
-      metadata: {
-        site_map_id: created.recordset[0].id,
-        original_file_name: file.originalname,
-        stored_file_name: storedFileName,
-        mime_type: file.mimetype,
-        file_size_bytes: file.size,
-        uploaded_by: user.id
-      }
-    });
-
-    return response.status(201).json({
-      id: created.recordset[0].id,
-      filePath
-    });
-  } catch (error) {
-    await fs.rm(targetPath, { force: true }).catch(() => undefined);
-    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der Geländeplan konnte nicht hochgeladen werden.");
-  }
+  return sendError(response, 410, "SITE_MAP_UPLOAD_DISABLED", "Der Upload ist deaktiviert. Geländepläne werden über /app/uploads/site-maps bereitgestellt.");
 });
 
 adminRouter.post("/api/admin/ui-background/upload", async (request, response) => {
@@ -1931,10 +1635,12 @@ adminRouter.get("/api/admin/site-map/active", async (request, response) => {
   if (!user) return;
 
   try {
-    const siteMap = await getActiveSiteMap();
+    const settingMap = await loadSystemSettings([SITE_MAP_SETTING_KEY]);
+    const siteMaps = await listSiteMapCatalog(settingMap.get(SITE_MAP_SETTING_KEY));
+    const siteMap = selectSiteMapCatalogEntry(siteMaps, settingMap.get(SITE_MAP_SETTING_KEY));
     return response.json({ siteMap });
   } catch (error) {
-    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der aktive Geländeplan konnte nicht geladen werden.");
+    return handleUnexpectedError(response, error, "SITE_MAP_CATALOG_ERROR", "Der aktive Geländeplan konnte nicht geladen werden.");
   }
 });
 
@@ -1943,10 +1649,12 @@ adminRouter.get("/api/admin/site-map", async (request, response) => {
   if (!user) return;
 
   try {
-    const siteMap = await getActiveSiteMap();
+    const settingMap = await loadSystemSettings([SITE_MAP_SETTING_KEY]);
+    const siteMaps = await listSiteMapCatalog(settingMap.get(SITE_MAP_SETTING_KEY));
+    const siteMap = selectSiteMapCatalogEntry(siteMaps, settingMap.get(SITE_MAP_SETTING_KEY));
     return response.json({ siteMap });
   } catch (error) {
-    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der aktive Geländeplan konnte nicht geladen werden.");
+    return handleUnexpectedError(response, error, "SITE_MAP_CATALOG_ERROR", "Der aktive Geländeplan konnte nicht geladen werden.");
   }
 });
 
@@ -1955,44 +1663,11 @@ adminRouter.get("/api/admin/site-maps", async (request, response) => {
   if (!user) return;
 
   try {
-    const siteMaps = await listSiteMaps();
+    const settingMap = await loadSystemSettings([SITE_MAP_SETTING_KEY]);
+    const siteMaps = await listSiteMapCatalog(settingMap.get(SITE_MAP_SETTING_KEY));
     return response.json({ siteMaps });
   } catch (error) {
-    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Gelaendeplaene konnten nicht geladen werden.");
-  }
-});
-
-adminRouter.post("/api/admin/site-maps/:id/deactivate", async (request, response) => {
-  const user = await requirePermission(request, response, "admin.map");
-  if (!user) return;
-
-  try {
-    const pool = await getPool();
-    await pool.request()
-      .input("id", sql.UniqueIdentifier, request.params.id)
-      .input("deactivatedBy", sql.UniqueIdentifier, user.id)
-      .query(`
-        UPDATE dbo.site_maps
-        SET
-          is_active = 0,
-          deactivated_at = SYSUTCDATETIME(),
-          deactivated_by = @deactivatedBy,
-          updated_at = SYSUTCDATETIME()
-        WHERE id = @id
-      `);
-
-    await writeAuditLog({
-      user: user.username,
-      userId: user.id,
-      action: "SITE_MAP_DEACTIVATED",
-      objectType: "site_map",
-      objectId: request.params.id,
-      ipAddress: getRequestIp(request),
-      userAgent: getRequestUserAgent(request)
-    });
-    response.json({ success: true });
-  } catch (error) {
-    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der Geländeplan konnte nicht deaktiviert werden.");
+    return handleUnexpectedError(response, error, "SITE_MAP_CATALOG_ERROR", "Die Geländeplanliste konnte nicht geladen werden.");
   }
 });
 
@@ -2001,22 +1676,27 @@ adminRouter.post("/api/admin/site-maps/:id/activate", async (request, response) 
   if (!user) return;
 
   try {
-    await activateSiteMapById(user, request, request.params.id);
+    const siteMaps = await listSiteMapCatalog();
+    const selected = siteMaps.find((entry) => entry.id === request.params.id);
+    if (!selected) {
+      return sendError(response, 400, "UNKNOWN_SITE_MAP", "Der Geländeplan ist nicht im Uploadpfad vorhanden.");
+    }
+
+    await upsertSystemSettings({ [SITE_MAP_SETTING_KEY]: selected.fileName });
+
+    await writeAuditLog({
+      user: user.username,
+      userId: user.id,
+      action: "SITE_MAP_ACTIVATED",
+      objectType: "site_map",
+      objectId: selected.fileName,
+      ipAddress: getRequestIp(request),
+      userAgent: getRequestUserAgent(request),
+      metadata: { file_name: selected.fileName, source: "uploads/site-maps" }
+    });
     response.json({ success: true });
   } catch (error) {
-    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der Geländeplan konnte nicht aktiviert werden.");
-  }
-});
-
-adminRouter.post("/api/admin/site-maps/:id/reactivate", async (request, response) => {
-  const user = await requirePermission(request, response, "admin.map");
-  if (!user) return;
-
-  try {
-    await activateSiteMapById(user, request, request.params.id);
-    response.json({ success: true });
-  } catch (error) {
-    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der Geländeplan konnte nicht aktiviert werden.");
+    return handleUnexpectedError(response, error, "SITE_MAP_SELECTION_ERROR", "Der Geländeplan konnte nicht aktiviert werden.");
   }
 });
 

@@ -95,6 +95,7 @@ Solange das SQL-Volume und das eingebundene Hostverzeichnis `uploads/` erhalten 
 - Uploads unter `./uploads`
 - Gelaendeplaene unter `./uploads/site-maps`
 - Hintergrundkatalog unter `./uploads/ui-backgrounds` einschließlich `backgrounds.json`, `catalog/` und `previews/`
+- Geländepläne unter `./uploads/site-maps`; Auswahl erfolgt im Admincenter, Upload nicht über die Weboberfläche
 - importierte Dateien in persistenten Speicherbereichen
 
 Das Uploadverzeichnis vor dem Update separat sichern:

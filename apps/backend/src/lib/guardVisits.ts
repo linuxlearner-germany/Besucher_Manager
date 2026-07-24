@@ -5,6 +5,8 @@ import { notifyNationalitySubscribers } from "./mailRelay";
 import { writeAuditLog } from "./auditLog";
 import { generateBadgeNumberCandidate } from "./badgeNumber";
 import { loadCompletenessFieldConfig, type CompletenessFieldConfig } from "./fieldDefinitions";
+import { listSiteMapCatalog, selectSiteMapCatalogEntry } from "./siteMapCatalog";
+import { SITE_MAP_SETTING_KEY } from "./systemSettings";
 import {
   assertCanCheckIn,
   assertCanCheckOut,
@@ -883,15 +885,15 @@ export async function getVisitDetailForUser(user: AuthenticatedUser, visitId: st
     return null;
   }
 
-  const siteMapResult = await pool.request().query<{ id: string; name: string; filePath: string }>(`
-    SELECT TOP 1
-      id,
-      name,
-      file_path AS filePath
-    FROM dbo.site_maps
-    WHERE is_active = 1
-    ORDER BY created_at DESC
-  `);
+  const siteMapSettingResult = await pool.request()
+    .input("siteMapSettingKey", sql.NVarChar(120), SITE_MAP_SETTING_KEY)
+    .query<{ value: string | null }>(`
+      SELECT TOP 1 [value]
+      FROM dbo.system_settings
+      WHERE [key] = @siteMapSettingKey
+    `);
+  const siteMaps = await listSiteMapCatalog(siteMapSettingResult.recordset[0]?.value);
+  const siteMap = selectSiteMapCatalogEntry(siteMaps, siteMapSettingResult.recordset[0]?.value);
 
   const badgeTextsResult = await pool.request().query<{ id: string; name: string; textType: string; sectionType: string; customHeading: string | null; content: string; sortOrder: number }>(`
     SELECT
@@ -910,7 +912,7 @@ export async function getVisitDetailForUser(user: AuthenticatedUser, visitId: st
   return {
     ...visit,
     nationalityName: getCountryName(visit.nationalityCode),
-    siteMap: siteMapResult.recordset[0] ?? null,
+    siteMap: siteMap ? { id: siteMap.id, name: siteMap.name, filePath: siteMap.filePath } : null,
     badgeTexts: badgeTextsResult.recordset,
     completeness: await getConfiguredVisitCompleteness(visit)
   };

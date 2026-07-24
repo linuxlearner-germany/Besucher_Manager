@@ -501,6 +501,18 @@ export type SiteMapSummary = {
   uploadedBy: string | null;
 } | null;
 
+export type AdminSiteMap = {
+  id: string;
+  name: string;
+  fileName: string;
+  filePath: string;
+  mimeType: string;
+  fileSizeBytes: number;
+  createdAt: string;
+  updatedAt: string;
+  isActive: boolean;
+};
+
 export type SibeSummary = {
   visitorsTotal: number;
   activeVisitors: number;

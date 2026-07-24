@@ -706,6 +706,7 @@ Zusätzlich Forwarded-Header und direkten Zugriff auf Port 3030 kontrollieren.
 ```bash
 docker compose config
 ls -la uploads uploads/site-maps uploads/ui-backgrounds
+find uploads/site-maps -maxdepth 1 -type f -printf '%f\n'
 ls -la uploads/ui-backgrounds/catalog uploads/ui-backgrounds/previews
 docker compose exec app ls -la /app/uploads
 docker compose exec app test -r /app/uploads/ui-backgrounds/backgrounds.json
@@ -714,6 +715,8 @@ docker compose exec app test -r /app/uploads/ui-backgrounds/backgrounds.json
 Das Hostverzeichnis `uploads/` darf bei Updates nicht gelöscht oder durch eine leere Kopie ersetzt werden. `docker compose down -v` würde zusätzlich das lokale SQL-Volume löschen und darf nur nach ausdrücklicher Sicherung verwendet werden.
 
 Die mitgelieferten Anwendungshintergründe sind Bestandteil des Git-Repositories. Nach einem Update müssen `backgrounds.json`, `catalog/` und `previews/` im Hostverzeichnis `uploads/ui-backgrounds/` vorhanden sein. Der Admin wählt das aktive Bild anschließend ohne Neustart im Admincenter aus. Ein freier Hintergrund-Upload ist nicht vorgesehen.
+
+Geländepläne werden ebenfalls ausschließlich über den Hostpfad `uploads/site-maps/` eingebunden. Unterstützt werden PNG, JPG, JPEG, WEBP und SVG. Nach dem Kopieren kann ein Admin den gewünschten Plan im Admincenter aktivieren; ein Upload über die Weboberfläche ist deaktiviert.
 
 ## Deployment-Checkliste
 

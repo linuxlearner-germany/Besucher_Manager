@@ -81,7 +81,7 @@ Die Anwendung bildet den vollständigen Ablauf vom Erfassen eines Besuchs über 
 - Benutzerimport per CSV
 - Benutzerexport per CSV ohne Passwörter oder Passwort-Hashes
 - Systemfeld- und Pflichtfeldkonfiguration
-- Geländepläne aus `uploads/site-maps`
+- Auswahl von Geländeplänen aus `uploads/site-maps` ohne Web-Upload
 - Auswahl aus 17 versionierten Hintergrundbildern mit Vorschaubildern
 - SMTP-Konfiguration und Testmails
 - Audit- und Fehlerlog
@@ -359,6 +359,10 @@ uploads/ui-backgrounds/
 ```
 
 Der Server akzeptiert ausschließlich IDs aus `backgrounds.json`. Unsichere Dateinamen, doppelte IDs und nicht katalogisierte Bilder werden nicht auswählbar. Neue Hintergründe werden kontrolliert zusammen mit Manifest und Vorschaubild als Codeänderung ausgeliefert; ein freier Upload über die Adminoberfläche ist bewusst deaktiviert.
+
+### Geländeplanpfad
+
+Geländepläne werden wie die Hintergrunddateien ausschließlich über den persistenten Pfad `uploads/site-maps` bereitgestellt. Unterstützt werden PNG, JPG, JPEG, WEBP und SVG. Nach dem Kopieren einer Datei erscheint sie im Admincenter unter **Geländeplan** und kann dort aktiviert werden. Der Web-Upload ist deaktiviert; die aktive Datei wird als `site_map_file_name` in den Systemeinstellungen gespeichert.
 
 ## Besucherschein und Druck
 

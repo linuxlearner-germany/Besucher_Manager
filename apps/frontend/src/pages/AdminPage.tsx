@@ -1,6 +1,5 @@
 import {
   type ChangeEvent,
-  type DragEvent,
   useCallback,
   useEffect,
   useState,
@@ -29,18 +28,17 @@ import {
   type AdminErrorLog,
   type AdminFieldDefinition,
   type AdminGate,
+  type AdminSiteMap,
   type AdminUiBackground,
   type AdminWorkflowSettings,
   type AdminUser,
   type ApiError,
   type EditableAdminUser,
-  extractFieldErrors,
   type FieldConfigExportPayload,
   fetchJson,
   getDefaultPermissionsForRole,
   getAllowedMenuAccessForRole,
   hasPermission,
-  type SiteMapSummary,
   type UserPermissions,
   useAuth,
   useThemeMode
@@ -120,8 +118,8 @@ export function AdminPage() {
   const [userImporting, setUserImporting] = useState(false);
   const [userImportIssues, setUserImportIssues] = useState<Array<{ lineNumber: number; username: string | null; message: string }>>([]);
   const [userImportSummary, setUserImportSummary] = useState<{ created: number; updated: number; total: number; fileName: string } | null>(null);
-  const [activeSiteMap, setActiveSiteMap] = useState<SiteMapSummary>(null);
-  const [siteMaps, setSiteMaps] = useState<NonNullable<SiteMapSummary>[]>([]);
+  const [activeSiteMap, setActiveSiteMap] = useState<AdminSiteMap | null>(null);
+  const [siteMaps, setSiteMaps] = useState<AdminSiteMap[]>([]);
   const [fieldDefinitions, setFieldDefinitions] = useState<AdminFieldDefinition[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -165,12 +163,6 @@ export function AdminPage() {
     menuAccess: getAllowedMenuAccessForRole("guard"),
     permissions: getDefaultPermissionsForRole("guard")
   });
-  const [siteMapName, setSiteMapName] = useState("");
-  const [siteMapFile, setSiteMapFile] = useState<File | null>(null);
-  const [siteMapPreviewUrl, setSiteMapPreviewUrl] = useState<string | null>(null);
-  const [siteMapFieldError, setSiteMapFieldError] = useState<string | null>(null);
-  const [siteMapUploading, setSiteMapUploading] = useState(false);
-  const [dragActive, setDragActive] = useState(false);
   const [editableGates, setEditableGates] = useState<Record<string, AdminGate>>({});
   const [editableUsers, setEditableUsers] = useState<Record<string, EditableAdminUser>>({});
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
@@ -221,8 +213,8 @@ export function AdminPage() {
         fetchJson<{ app: string; activeVisits: number; activeGates: number; openPreRegistrationsToday: number; signaturesPending: number; signaturesFollowUp: number; signaturesExceptions: number; dbHost?: string; dbName?: string }>("/api/admin/system-status", { method: "GET", headers: {} }),
         fetchJson<AdminWorkflowSettings>("/api/admin/system-settings/workflow-email", { method: "GET", headers: {} }),
         fetchJson<{ backgrounds: AdminUiBackground[] }>("/api/admin/ui-backgrounds", { method: "GET", headers: {} }),
-        fetchJson<{ siteMap: SiteMapSummary }>("/api/admin/site-map", { method: "GET", headers: {} }),
-        fetchJson<{ siteMaps: NonNullable<SiteMapSummary>[] }>("/api/admin/site-maps", { method: "GET", headers: {} }),
+        fetchJson<{ siteMap: AdminSiteMap | null }>("/api/admin/site-map", { method: "GET", headers: {} }),
+        fetchJson<{ siteMaps: AdminSiteMap[] }>("/api/admin/site-maps", { method: "GET", headers: {} }),
         fetchJson<{ definitions: AdminFieldDefinition[] }>("/api/admin/field-definitions", { method: "GET", headers: {} })
       ]);
 
@@ -260,20 +252,6 @@ export function AdminPage() {
   useEffect(() => {
     void loadAll();
   }, [loadAll]);
-
-  useEffect(() => {
-    if (!siteMapFile) {
-      setSiteMapPreviewUrl(null);
-      return;
-    }
-
-    const nextUrl = URL.createObjectURL(siteMapFile);
-    setSiteMapPreviewUrl(nextUrl);
-
-    return () => {
-      URL.revokeObjectURL(nextUrl);
-    };
-  }, [siteMapFile]);
 
   useEffect(() => {
     if (!selectedFieldDefinitionId) {
@@ -404,52 +382,6 @@ export function AdminPage() {
 
   function downloadUserExport() {
     window.location.assign("/api/admin/users/export.csv");
-  }
-
-  function resetSiteMapSelection() {
-    setSiteMapFile(null);
-    setSiteMapName("");
-    setSiteMapFieldError(null);
-    setDragActive(false);
-  }
-
-  function applySelectedFiles(files: FileList | File[] | null) {
-    if (!files || files.length === 0) {
-      return;
-    }
-
-    if (files.length > 1) {
-      setSiteMapFieldError("Bitte nur eine Datei hochladen.");
-      return;
-    }
-
-    const [file] = Array.from(files);
-    const allowedTypes = ["image/png", "image/jpeg", "image/webp"];
-
-    if (!allowedTypes.includes(file.type)) {
-      setSiteMapFieldError("Erlaubt sind nur PNG-, JPG- und WEBP-Dateien.");
-      return;
-    }
-
-    if (file.size > 10 * 1024 * 1024) {
-      setSiteMapFieldError("Die Datei ist groesser als 10 MB.");
-      return;
-    }
-
-    setSiteMapFieldError(null);
-    setSiteMapFile(file);
-    setSiteMapName((current) => current || file.name.replace(/\.[^.]+$/, ""));
-  }
-
-  function handleSiteMapFileInput(event: ChangeEvent<HTMLInputElement>) {
-    applySelectedFiles(event.target.files);
-    event.target.value = "";
-  }
-
-  function handleSiteMapDrop(event: DragEvent<HTMLLabelElement>) {
-    event.preventDefault();
-    setDragActive(false);
-    applySelectedFiles(event.dataTransfer.files);
   }
 
   function parseGroupText(value: string): string[] {
@@ -586,42 +518,6 @@ export function AdminPage() {
         }
       };
     });
-  }
-
-  async function uploadSiteMap(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    if (!siteMapFile) {
-      setSiteMapFieldError("Bitte wählen Sie eine Datei aus.");
-      return;
-    }
-
-    const formData = new FormData();
-    formData.append("file", siteMapFile);
-    if (siteMapName.trim()) {
-      formData.append("name", siteMapName.trim());
-    }
-
-    try {
-      setSiteMapUploading(true);
-      await fetchJson("/api/admin/site-map/upload", {
-        method: "POST",
-        body: formData
-      });
-      resetSiteMapSelection();
-      setMessage("Geländeplan hochgeladen und aktiviert.");
-      setError(null);
-      await loadAll();
-    } catch (apiError) {
-      const payload = apiError as ApiError;
-      const fieldErrors = extractFieldErrors(payload);
-      if (fieldErrors.file) {
-        setSiteMapFieldError(fieldErrors.file);
-      }
-      setError(payload.message || "Geländeplan konnte nicht hochgeladen werden.");
-    } finally {
-      setSiteMapUploading(false);
-    }
   }
 
   async function activateSiteMap(siteMapId: string) {
@@ -1100,18 +996,6 @@ export function AdminPage() {
 
         {resolvedActiveSection === "karte" ? (
           <AdminSiteMapSection
-            uploadSiteMap={uploadSiteMap}
-            siteMapName={siteMapName}
-            setSiteMapName={setSiteMapName}
-            dragActive={dragActive}
-            setDragActive={setDragActive}
-            handleSiteMapDrop={handleSiteMapDrop}
-            handleSiteMapFileInput={handleSiteMapFileInput}
-            siteMapFile={siteMapFile}
-            siteMapFieldError={siteMapFieldError}
-            siteMapPreviewUrl={siteMapPreviewUrl}
-            siteMapUploading={siteMapUploading}
-            resetSiteMapSelection={resetSiteMapSelection}
             activeSiteMap={activeSiteMap}
             siteMaps={siteMaps}
             activateSiteMap={activateSiteMap}

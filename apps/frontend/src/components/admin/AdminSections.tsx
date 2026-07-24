@@ -5,6 +5,7 @@ import {
   type AdminErrorLog,
   type AdminFieldDefinition,
   type AdminGate,
+  type AdminSiteMap,
   type AdminUiBackground,
   type AdminWorkflowSettings,
   type AdminUser,
@@ -18,7 +19,6 @@ import {
   formatUserAgent,
   getDefaultPermissionsForRole,
   getAllowedMenuAccessForRole,
-  type SiteMapSummary,
   type UserPermissions
 } from "../../app/core";
 
@@ -42,7 +42,7 @@ export function AdminDashboardSection({
   gates: AdminGate[];
   users: AdminUser[];
   texts: Array<{ isActive: boolean }>;
-  activeSiteMap: SiteMapSummary;
+  activeSiteMap: AdminSiteMap | null;
   fieldDefinitions: AdminFieldDefinition[];
   logs: AdminAuditLog[];
   errorLogs: AdminErrorLog[];
@@ -543,101 +543,21 @@ export function AdminUsersSection({
 }
 
 export function AdminSiteMapSection({
-  uploadSiteMap,
-  siteMapName,
-  setSiteMapName,
-  dragActive,
-  setDragActive,
-  handleSiteMapDrop,
-  handleSiteMapFileInput,
-  siteMapFile,
-  siteMapFieldError,
-  siteMapPreviewUrl,
-  siteMapUploading,
-  resetSiteMapSelection,
   activeSiteMap,
   siteMaps,
   activateSiteMap
 }: {
-  uploadSiteMap: (event: FormEvent<HTMLFormElement>) => Promise<void>;
-  siteMapName: string;
-  setSiteMapName: Dispatch<SetStateAction<string>>;
-  dragActive: boolean;
-  setDragActive: Dispatch<SetStateAction<boolean>>;
-  handleSiteMapDrop: (event: DragEvent<HTMLLabelElement>) => void;
-  handleSiteMapFileInput: (event: ChangeEvent<HTMLInputElement>) => void;
-  siteMapFile: File | null;
-  siteMapFieldError: string | null;
-  siteMapPreviewUrl: string | null;
-  siteMapUploading: boolean;
-  resetSiteMapSelection: () => void;
-  activeSiteMap: SiteMapSummary;
-  siteMaps: NonNullable<SiteMapSummary>[];
+  activeSiteMap: AdminSiteMap | null;
+  siteMaps: AdminSiteMap[];
   activateSiteMap: (siteMapId: string) => Promise<void>;
 }) {
   return (
     <Card>
       <h3>Geländeplan</h3>
-      <form className="site-map-upload-stack" onSubmit={uploadSiteMap}>
-        <FormField label="Bezeichnung">
-          <input
-            placeholder="z. B. Werkplan Nord"
-            value={siteMapName}
-            onChange={(event) => setSiteMapName(event.target.value)}
-          />
-        </FormField>
-
-        <label
-          className={`dropzone ${dragActive ? "dropzone-active" : ""}`}
-          onDragEnter={(event) => {
-            event.preventDefault();
-            setDragActive(true);
-          }}
-          onDragOver={(event) => {
-            event.preventDefault();
-            setDragActive(true);
-          }}
-          onDragLeave={(event) => {
-            event.preventDefault();
-            setDragActive(false);
-          }}
-          onDrop={handleSiteMapDrop}
-        >
-          <input
-            className="visually-hidden"
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            onChange={handleSiteMapFileInput}
-          />
-          <div className="dropzone-copy">
-            <strong>Datei ablegen oder anklicken</strong>
-            <span>PNG, JPG oder WEBP bis 10 MB</span>
-          </div>
-          {siteMapFile ? (
-            <div className="dropzone-selected">
-              <span>{siteMapFile.name}</span>
-              <span>{formatFileSize(siteMapFile.size)}</span>
-            </div>
-          ) : null}
-        </label>
-
-        {siteMapFieldError ? <Alert type="error">{siteMapFieldError}</Alert> : null}
-
-        {siteMapPreviewUrl ? (
-          <div className="site-map-preview-card">
-            <img className="admin-site-map-preview" src={siteMapPreviewUrl} alt="Vorschau des neuen Geländeplans" />
-          </div>
-        ) : null}
-
-        <div className="row-actions">
-          <button type="submit" disabled={siteMapUploading || !siteMapFile}>
-            {siteMapUploading ? "Upload läuft..." : "Geländeplan hochladen"}
-          </button>
-          <button className="secondary-button" type="button" onClick={resetSiteMapSelection}>
-            Auswahl leeren
-          </button>
-        </div>
-      </form>
+      <div className="empty-state-box">
+        <strong>Keine Uploads in der Oberfläche</strong>
+        <span>Dateien werden kontrolliert in <code>./uploads/site-maps</code> abgelegt. Nach dem Kopieren erscheinen sie hier zur Auswahl.</span>
+      </div>
 
       <div className="site-map-admin-grid">
         <div className="site-map-current">
@@ -647,8 +567,7 @@ export function AdminSiteMapSection({
               <img className="admin-site-map-preview" src={activeSiteMap.filePath} alt={activeSiteMap.name} />
               <div className="meta-list">
                 <span><strong>Name:</strong> {activeSiteMap.name}</span>
-                <span><strong>Datei:</strong> {activeSiteMap.originalFileName || activeSiteMap.storedFileName || "-"}</span>
-                <span><strong>Typ:</strong> {activeSiteMap.mimeType || "-"}</span>
+                <span><strong>Datei:</strong> {activeSiteMap.filePath.split("/").pop() || "-"}</span>
                 <span><strong>Größe:</strong> {formatFileSize(activeSiteMap.fileSizeBytes)}</span>
                 <span><strong>Hochgeladen:</strong> {formatDateTime(activeSiteMap.createdAt)}</span>
               </div>
@@ -668,7 +587,7 @@ export function AdminSiteMapSection({
                 <th>Datei</th>
                 <th>Typ</th>
                 <th>Größe</th>
-                <th>Upload</th>
+                <th>Änderung</th>
                 <th>Aktion</th>
               </tr>
             </thead>
@@ -677,10 +596,10 @@ export function AdminSiteMapSection({
                 <tr key={map.id}>
                   <td>{map.name}</td>
                   <td><span className={map.isActive ? "badge status-active" : "badge status-cancelled"}>{map.isActive ? "Aktiv" : "Inaktiv"}</span></td>
-                  <td>{map.originalFileName || map.storedFileName || "-"}</td>
-                  <td>{map.mimeType || "-"}</td>
+                  <td>{map.fileName}</td>
+                  <td>{map.mimeType}</td>
                   <td>{formatFileSize(map.fileSizeBytes)}</td>
-                  <td>{formatDateTime(map.createdAt)}</td>
+                  <td>{formatDateTime(map.updatedAt)}</td>
                   <td>
                     {map.isActive ? (
                       <span>Aktiv</span>
@@ -693,7 +612,7 @@ export function AdminSiteMapSection({
                 </tr>
               )) : (
                 <tr>
-                  <td colSpan={7}>Noch keine Geländepläne vorhanden.</td>
+                  <td colSpan={7}>Im Uploadpfad wurden keine Geländepläne gefunden.</td>
                 </tr>
               )}
             </tbody>
