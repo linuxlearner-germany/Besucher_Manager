@@ -152,3 +152,10 @@ test("public pre-registration only requires fields selected by field configurati
 
   assert.equal(result.success, true);
 });
+
+test("public pre-registration allows omitted nationality when it is not configured", () => {
+  const schema = createPublicPreRegistrationSchema(new Set());
+  const result = schema.safeParse({});
+
+  assert.equal(result.success, true);
+});

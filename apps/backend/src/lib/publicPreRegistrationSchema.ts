@@ -47,7 +47,7 @@ export function createPublicPreRegistrationSchema(requiredFieldKeys: ReadonlySet
     firstName: z.string().trim().max(120).optional().default(""),
     lastName: z.string().trim().max(120).optional().default(""),
     company: z.string().trim().max(255).optional().default(""),
-    nationalityCode: z.string().trim().transform((value, context) => {
+    nationalityCode: z.string().trim().optional().transform((value, context) => {
       if (!value) return null;
       const code = normalizeCountryCode(value);
       if (!code) {
