@@ -11,4 +11,5 @@ uploads/*
 !uploads/site-maps/**
 !uploads/ui-backgrounds/
 !uploads/ui-backgrounds/**
+archive/backups/
 config/mail-relay.yml

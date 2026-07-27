@@ -23,6 +23,8 @@ const mailRelay_1 = require("./mailRelay");
 const auditLog_1 = require("./auditLog");
 const badgeNumber_1 = require("./badgeNumber");
 const fieldDefinitions_1 = require("./fieldDefinitions");
+const siteMapCatalog_1 = require("./siteMapCatalog");
+const systemSettings_1 = require("./systemSettings");
 const visitWorkflow_1 = require("./visitWorkflow");
 const MISSING_IMPORT_VALUE = "[fehlt]";
 exports.GUARD_VISITOR_SEARCH_MIN_LENGTH = 2;
@@ -578,15 +580,15 @@ async function getVisitDetailForUser(user, visitId) {
     if (!visit) {
         return null;
     }
-    const siteMapResult = await pool.request().query(`
-    SELECT TOP 1
-      id,
-      name,
-      file_path AS filePath
-    FROM dbo.site_maps
-    WHERE is_active = 1
-    ORDER BY created_at DESC
-  `);
+    const siteMapSettingResult = await pool.request()
+        .input("siteMapSettingKey", mssql_1.default.NVarChar(120), systemSettings_1.SITE_MAP_SETTING_KEY)
+        .query(`
+      SELECT TOP 1 [value]
+      FROM dbo.system_settings
+      WHERE [key] = @siteMapSettingKey
+    `);
+    const siteMaps = await (0, siteMapCatalog_1.listSiteMapCatalog)(siteMapSettingResult.recordset[0]?.value);
+    const siteMap = (0, siteMapCatalog_1.selectSiteMapCatalogEntry)(siteMaps, siteMapSettingResult.recordset[0]?.value);
     const badgeTextsResult = await pool.request().query(`
     SELECT
       id,
@@ -603,7 +605,7 @@ async function getVisitDetailForUser(user, visitId) {
     return {
         ...visit,
         nationalityName: (0, countries_1.getCountryName)(visit.nationalityCode),
-        siteMap: siteMapResult.recordset[0] ?? null,
+        siteMap: siteMap ? { id: siteMap.id, name: siteMap.name, filePath: siteMap.filePath } : null,
         badgeTexts: badgeTextsResult.recordset,
         completeness: await getConfiguredVisitCompleteness(visit)
     };

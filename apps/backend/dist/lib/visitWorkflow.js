@@ -27,7 +27,7 @@ exports.HOST_SIGNATURE_STATUS = {
     SIGNED_LATER: "signed_later",
     MISSING_EXCEPTION: "missing_exception"
 };
-exports.APP_MENU_KEYS = ["voranmeldung", "wache", "import", "admin", "sibe", "kaskdt", "texte"];
+exports.APP_MENU_KEYS = ["voranmeldung", "wache", "import", "admin", "sibe", "laenderbenachrichtigungen", "kaskdt", "texte"];
 exports.APP_PERMISSION_KEYS = [
     "menu.guard",
     "visits.read",
@@ -148,14 +148,14 @@ function mergePermissions(base, override) {
 const defaultMenuAccessByRole = {
     admin: [...exports.APP_MENU_KEYS],
     guard: ["voranmeldung", "wache", "import"],
-    sibe: ["sibe", "import"],
+    sibe: ["sibe", "import", "laenderbenachrichtigungen"],
     kaskdt: ["kaskdt", "texte"],
     custom: []
 };
 const allowedMenuAccessByRole = {
     admin: [...exports.APP_MENU_KEYS],
     guard: ["voranmeldung", "wache", "import"],
-    sibe: ["import", "sibe"],
+    sibe: ["import", "sibe", "laenderbenachrichtigungen"],
     kaskdt: ["kaskdt", "texte"],
     custom: [...exports.APP_MENU_KEYS]
 };
