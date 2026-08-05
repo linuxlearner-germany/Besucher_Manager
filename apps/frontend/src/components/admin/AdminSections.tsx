@@ -22,7 +22,32 @@ import {
   type UserPermissions
 } from "../../app/core";
 
-export type AdminSectionKey = "dashboard" | "wachen" | "benutzer" | "texte" | "karte" | "hintergrund" | "felder" | "audit" | "fehler" | "system";
+export type AdminSectionKey = "dashboard" | "wachen" | "benutzer" | "texte" | "karte" | "hintergrund" | "felder" | "audit" | "fehler" | "system" | "datenloeschung";
+
+export type AdminRetentionSettings = { enabled: boolean; years: number; lastRun: string | null; oldVisits: number };
+
+export function AdminDataRetentionSection({ settings, setSettings, save, runNow }: {
+  settings: AdminRetentionSettings | null;
+  setSettings: Dispatch<SetStateAction<AdminRetentionSettings | null>>;
+  save: () => Promise<void>;
+  runNow: () => Promise<void>;
+}) {
+  return <Card>
+    <h3>Datenlöschung</h3>
+    <p>Abgeschlossene Vorgänge werden nach der eingestellten Frist vollständig aus der Datenbank entfernt.</p>
+    <div className="form-grid two-columns">
+      <FormField label="Aufbewahrung in Jahren" required>
+        <input required type="number" min={1} max={100} value={settings?.years ?? 10} onChange={(event) => setSettings((current) => current ? { ...current, years: Number(event.target.value) } : current)} />
+      </FormField>
+      <label className="checkbox-row"><input type="checkbox" checked={settings?.enabled ?? false} onChange={(event) => setSettings((current) => current ? { ...current, enabled: event.target.checked } : current)} /> Automatische Löschung aktiv</label>
+    </div>
+    <div className="feedback info">Aktuell betroffene alte Vorgänge: {settings?.oldVisits ?? "-"}. Letzter Lauf: {settings?.lastRun ? formatDateTime(settings.lastRun) : "noch nicht ausgeführt"}.</div>
+    <div className="row-actions">
+      <button type="button" onClick={() => void save()}>Einstellungen speichern</button>
+      <button type="button" className="secondary-button" onClick={() => void runNow()}>Jetzt alte Vorgänge löschen</button>
+    </div>
+  </Card>;
+}
 
 function truncateLabel(value: string, maxLength = 36): string {
   return value.length > maxLength ? `${value.slice(0, maxLength - 1)}…` : value;
@@ -92,11 +117,11 @@ export function AdminGatesSection({
         </div>
       </div>
       <form className="admin-inline-form admin-gate-form" onSubmit={createGate}>
-        <FormField label="Name">
-          <input placeholder="z. B. Hauptwache" value={newGate.name} onChange={(event) => setNewGate((current) => ({ ...current, name: event.target.value }))} />
+        <FormField label="Name" required>
+          <input required placeholder="z. B. Hauptwache" value={newGate.name} onChange={(event) => setNewGate((current) => ({ ...current, name: event.target.value }))} />
         </FormField>
-        <FormField label="Standort">
-          <input placeholder="z. B. Werk Nord" value={newGate.location} onChange={(event) => setNewGate((current) => ({ ...current, location: event.target.value }))} />
+        <FormField label="Standort" required>
+          <input required placeholder="z. B. Werk Nord" value={newGate.location} onChange={(event) => setNewGate((current) => ({ ...current, location: event.target.value }))} />
         </FormField>
         <FormField label="Beschreibung">
           <input placeholder="Kurze interne Einordnung" value={newGate.description} onChange={(event) => setNewGate((current) => ({ ...current, description: event.target.value }))} />
@@ -173,6 +198,7 @@ export function AdminUsersSection({
   downloadUserImportTemplate,
   importUsersCsv,
   saveUser,
+  userSaveState,
   toggleUserActive,
   currentUserId
 }: {
@@ -223,6 +249,11 @@ export function AdminUsersSection({
   downloadUserImportTemplate: () => void;
   importUsersCsv: () => Promise<void>;
   saveUser: (userId: string) => Promise<void>;
+  userSaveState: {
+    userId: string;
+    kind: "saving" | "success" | "error";
+    message: string;
+  } | null;
   toggleUserActive: (userId: string, active: boolean) => Promise<void>;
   currentUserId?: string;
 }) {
@@ -263,20 +294,20 @@ export function AdminUsersSection({
           </div>
         </div>
         <form className="admin-user-create-grid" onSubmit={createUser}>
-          <FormField label="Benutzername">
-            <input placeholder="Benutzername" value={newUser.username} onChange={(event) => setNewUser((current) => ({ ...current, username: event.target.value }))} />
+          <FormField label="Benutzername" required>
+            <input required placeholder="Benutzername" value={newUser.username} onChange={(event) => setNewUser((current) => ({ ...current, username: event.target.value }))} />
           </FormField>
           <FormField label="Anzeigename">
             <input placeholder="Anzeigename" value={newUser.displayName} onChange={(event) => setNewUser((current) => ({ ...current, displayName: event.target.value }))} />
           </FormField>
-          <FormField label={newUser.role === "guard" ? "E-Mail (optional)" : "E-Mail (optional)"}>
-            <input type="text" inputMode="email" placeholder="name@firma.de" value={newUser.email} onChange={(event) => setNewUser((current) => ({ ...current, email: event.target.value }))} />
+          <FormField label={newUser.role === "sibe" ? "E-Mail" : "E-Mail (optional)"} required={newUser.role === "sibe"}>
+            <input required={newUser.role === "sibe"} type="email" placeholder="name@firma.de" value={newUser.email} onChange={(event) => setNewUser((current) => ({ ...current, email: event.target.value }))} />
           </FormField>
-          <FormField label="Passwort">
-            <input type="password" placeholder="Mindestens 8 Zeichen" value={newUser.password} onChange={(event) => setNewUser((current) => ({ ...current, password: event.target.value }))} />
+          <FormField label="Passwort" required>
+            <input required type="password" placeholder="Mindestens 8 Zeichen" value={newUser.password} onChange={(event) => setNewUser((current) => ({ ...current, password: event.target.value }))} />
           </FormField>
-          <FormField label="Rolle">
-            <select
+          <FormField label="Rolle" required>
+            <select required
               value={newUser.role}
               onChange={(event) => {
                 const role = event.target.value as AdminUser["role"];
@@ -459,20 +490,20 @@ export function AdminUsersSection({
             <button type="button" className="secondary-button" onClick={() => setSelectedUserId(null)}>Schließen</button>
           </div>
           <div className="admin-user-create-grid">
-            <FormField label="Benutzername">
-              <input value={selectedUser.username} onChange={(event) => setEditableUsers((current) => ({ ...current, [selectedUser.id]: { ...selectedUser, username: event.target.value } }))} />
+            <FormField label="Benutzername" required>
+              <input required value={selectedUser.username} onChange={(event) => setEditableUsers((current) => ({ ...current, [selectedUser.id]: { ...selectedUser, username: event.target.value } }))} />
             </FormField>
             <FormField label="Anzeigename">
               <input value={selectedUser.displayName} onChange={(event) => setEditableUsers((current) => ({ ...current, [selectedUser.id]: { ...selectedUser, displayName: event.target.value } }))} />
             </FormField>
-            <FormField label="E-Mail (optional)">
-              <input type="text" inputMode="email" value={selectedUser.email || ""} onChange={(event) => setEditableUsers((current) => ({ ...current, [selectedUser.id]: { ...selectedUser, email: event.target.value } }))} />
+            <FormField label={selectedUser.role === "sibe" ? "E-Mail" : "E-Mail (optional)"} required={selectedUser.role === "sibe"}>
+              <input required={selectedUser.role === "sibe"} type="email" value={selectedUser.email || ""} onChange={(event) => setEditableUsers((current) => ({ ...current, [selectedUser.id]: { ...selectedUser, email: event.target.value } }))} />
             </FormField>
             <FormField label="Neues Passwort">
               <input type="password" placeholder="Leer lassen für unverändert" value={selectedUser.password || ""} onChange={(event) => setEditableUsers((current) => ({ ...current, [selectedUser.id]: { ...selectedUser, password: event.target.value } }))} />
             </FormField>
-            <FormField label="Rolle">
-              <select value={selectedUser.role} onChange={(event) => updateEditableUserRole(selectedUser.id, event.target.value as AdminUser["role"])}>
+            <FormField label="Rolle" required>
+              <select required value={selectedUser.role} onChange={(event) => updateEditableUserRole(selectedUser.id, event.target.value as AdminUser["role"])}>
                 <option value="guard">Wache</option>
                 <option value="admin">Admin</option>
                 <option value="sibe">SiBe</option>
@@ -481,7 +512,7 @@ export function AdminUsersSection({
               </select>
             </FormField>
             <FormField label="Gruppen">
-              <textarea rows={3} value={formatGroupText(selectedUser.groups)} onChange={(event) => updateEditableUserGroups(selectedUser.id, event.target.value)} />
+              <textarea rows={3} value={selectedUser.groupsText} onChange={(event) => updateEditableUserGroups(selectedUser.id, event.target.value)} />
             </FormField>
             <div className="admin-user-access-shell">
               <div>
@@ -533,8 +564,15 @@ export function AdminUsersSection({
                 <input type="checkbox" checked={selectedUser.isActive} onChange={(event) => setEditableUsers((current) => ({ ...current, [selectedUser.id]: { ...selectedUser, isActive: event.target.checked } }))} />
                 Aktiv
               </label>
-              <button type="button" onClick={() => void saveUser(selectedUser.id)}>Speichern</button>
+              <button type="button" onClick={() => void saveUser(selectedUser.id)} disabled={userSaveState?.userId === selectedUser.id && userSaveState.kind === "saving"}>
+                {userSaveState?.userId === selectedUser.id && userSaveState.kind === "saving" ? "Speichert..." : "Speichern"}
+              </button>
             </div>
+            {userSaveState?.userId === selectedUser.id ? (
+              <div className={`feedback ${userSaveState.kind === "error" ? "error" : userSaveState.kind === "success" ? "success" : "info"} admin-form-span-full`}>
+                {userSaveState.message}
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -765,6 +803,8 @@ export function AdminSystemSection({
 }: {
   systemStatus: {
     app: string;
+    appVersion: string;
+    schemaVersion: number;
     activeVisits: number;
     activeGates: number;
     openPreRegistrationsToday: number;
@@ -800,6 +840,28 @@ export function AdminSystemSection({
 
         <div className="detail-grid">
           <div><dt>Datenbank</dt><dd>{systemStatus?.dbHost || "-"} / {systemStatus?.dbName || "-"}</dd></div>
+          <div><dt>Anwendung</dt><dd>v{systemStatus?.appVersion || "-"} · Schema v{systemStatus?.schemaVersion ?? "-"}</dd></div>
+        </div>
+
+        <div className="panel">
+          <h3>DATAV-Nummer</h3>
+          <div className="form-grid two-columns">
+            <FormField label="Nummer (Buchstaben und Zahlen)">
+              <input
+                value={workflowSettings?.securityNumber ?? ""}
+                onChange={(event) => setWorkflowSettings((current) => current ? {
+                  ...current,
+                  securityNumber: event.target.value.toUpperCase()
+                } : current)}
+                minLength={4}
+                maxLength={32}
+                pattern="(?=.*[A-Za-z])(?=.*[0-9])[A-Za-z0-9]{4,32}"
+                placeholder="z. B. BM2026"
+                autoComplete="off"
+              />
+            </FormField>
+            <div className="feedback info">Wird dauerhaft oben rechts angezeigt und auf jeden Besucherschein gedruckt.</div>
+          </div>
         </div>
 
         <div className="panel">

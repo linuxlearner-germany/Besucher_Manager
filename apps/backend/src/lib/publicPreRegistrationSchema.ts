@@ -1,10 +1,16 @@
 import { z } from "zod";
 import { normalizeCountryCode } from "./countries";
+import { bundeswehrEmailSchema } from "./emailPolicy";
+import type { ImportVisitInput } from "./visitImportDefinitions";
 
 export const PUBLIC_FIELD_INPUT_MAP = {
   visitor_first_name: "firstName",
   visitor_last_name: "lastName",
   visitor_company: "company",
+  visitor_street: "visitorStreet",
+  visitor_house_number: "visitorHouseNumber",
+  visitor_postal_code: "visitorPostalCode",
+  visitor_city: "visitorCity",
   visitor_nationality: "nationalityCode",
   visitor_birth_date: "birthDate",
   visitor_phone: "phone",
@@ -29,6 +35,10 @@ const defaultRequiredFieldKeys = new Set<PublicFieldKey>([
   "visitor_first_name",
   "visitor_last_name",
   "visitor_company",
+  "visitor_street",
+  "visitor_house_number",
+  "visitor_postal_code",
+  "visitor_city",
   "visitor_nationality",
   "host_name",
   "host_phone",
@@ -47,6 +57,10 @@ export function createPublicPreRegistrationSchema(requiredFieldKeys: ReadonlySet
     firstName: z.string().trim().max(120).optional().default(""),
     lastName: z.string().trim().max(120).optional().default(""),
     company: z.string().trim().max(255).optional().default(""),
+    visitorStreet: z.string().trim().max(255).optional().default(""),
+    visitorHouseNumber: z.string().trim().max(40).optional().default(""),
+    visitorPostalCode: z.string().trim().max(20).optional().default(""),
+    visitorCity: z.string().trim().max(120).optional().default(""),
     nationalityCode: z.string().trim().optional().transform((value, context) => {
       if (!value) return null;
       const code = normalizeCountryCode(value);
@@ -57,7 +71,7 @@ export function createPublicPreRegistrationSchema(requiredFieldKeys: ReadonlySet
       return code;
     }),
     hostName: z.string().trim().max(255).optional().default(""),
-    hostEmail: z.string().trim().email("Ungültige Ansprechpartner-E-Mail.").optional().or(z.literal("")),
+    hostEmail: bundeswehrEmailSchema.optional().or(z.literal("")),
     hostPhone: z.string().trim().max(80).optional().default(""),
     hostDepartment: z.string().trim().optional(),
     purpose: z.string().trim().max(500).optional().default(""),
@@ -144,3 +158,76 @@ export function createPublicPreRegistrationSchema(requiredFieldKeys: ReadonlySet
 export const publicPreRegistrationSchema = createPublicPreRegistrationSchema();
 
 export type PublicPreRegistrationInput = z.infer<typeof publicPreRegistrationSchema>;
+
+function normalizeImportDateForValidation(value: string | null | undefined): string {
+  const cleaned = String(value ?? "").trim();
+  if (!cleaned) return "";
+
+  const germanDate = cleaned.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if (germanDate) {
+    const [, day, month, year] = germanDate;
+    const normalized = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+    const parsed = new Date(`${normalized}T00:00:00.000Z`);
+    return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === normalized ? normalized : cleaned;
+  }
+
+  const dateOnly = cleaned.match(/^\d{4}-\d{2}-\d{2}$/);
+  if (dateOnly) {
+    const parsed = new Date(`${cleaned}T00:00:00.000Z`);
+    return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === cleaned ? cleaned : cleaned;
+  }
+
+  return cleaned;
+}
+
+function normalizeImportIdDocumentType(value: string | null | undefined): string {
+  const cleaned = String(value ?? "").trim();
+  if (!cleaned) return "";
+  const normalized = cleaned.toLowerCase().replace(/[\s_-]+/g, "");
+  if (["personalausweis", "identitycard", "ausweis", "idcard"].includes(normalized)) return "identity_card";
+  if (["reisepass", "pass", "passport"].includes(normalized)) return "passport";
+  if (["dienstausweis", "serviceid", "servicecard"].includes(normalized)) return "service_id";
+  if (["sonstiges", "sonstige", "other"].includes(normalized)) return "other";
+  return cleaned;
+}
+
+/** Applies the same public-field and format rules to every Excel import row. */
+export function validateImportedPreRegistrationRows(
+  rows: ImportVisitInput[],
+  requiredFieldKeys: ReadonlySet<PublicFieldKey>
+): string[] {
+  const schema = createPublicPreRegistrationSchema(requiredFieldKeys);
+
+  return rows.flatMap((row, index) => {
+    const parsed = schema.safeParse({
+      gateId: row.gateId ?? "",
+      firstName: row.firstName ?? "",
+      lastName: row.lastName ?? "",
+      company: row.company ?? "",
+      visitorStreet: row.visitorStreet ?? "",
+      visitorHouseNumber: row.visitorHouseNumber ?? "",
+      visitorPostalCode: row.visitorPostalCode ?? "",
+      visitorCity: row.visitorCity ?? "",
+      nationalityCode: row.nationalityCode ?? "",
+      birthDate: normalizeImportDateForValidation(row.birthDate),
+      phone: row.phone ?? "",
+      email: row.email ?? "",
+      licensePlate: row.licensePlate ?? "",
+      hostName: row.hostName ?? "",
+      hostEmail: row.hostEmail ?? "",
+      hostPhone: row.hostPhone ?? "",
+      hostDepartment: row.hostDepartment ?? "",
+      purpose: row.purpose ?? "",
+      validFrom: normalizeImportDateForValidation(row.validFrom),
+      validUntil: normalizeImportDateForValidation(row.validUntil),
+      idDocumentType: normalizeImportIdDocumentType(row.idDocumentType),
+      idDocumentValidUntil: normalizeImportDateForValidation(row.idDocumentValidUntil),
+      idDocumentNumber: row.idDocumentNumber ?? "",
+      notes: row.notes ?? ""
+    });
+    if (parsed.success) return [];
+
+    const rowNumber = row.sourceExcelRowNumber ?? index + 1;
+    return parsed.error.issues.map((issue) => `Zeile ${rowNumber}: ${issue.message}`);
+  });
+}

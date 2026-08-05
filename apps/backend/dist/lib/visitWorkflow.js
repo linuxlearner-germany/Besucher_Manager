@@ -18,7 +18,8 @@ exports.VISIT_STATUS = {
     PRE_REGISTERED: "pre_registered",
     CHECKED_IN: "checked_in",
     CHECKED_OUT: "checked_out",
-    CANCELLED: "cancelled"
+    CANCELLED: "cancelled",
+    REJECTED: "rejected"
 };
 exports.HOST_SIGNATURE_STATUS = {
     NOT_REQUIRED: "not_required",

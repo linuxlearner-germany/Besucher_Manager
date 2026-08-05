@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { COUNTRIES, normalizeCountryCode } from "../lib/countries";
+import { env } from "../config/env";
 import { clearSessionCookie, setSessionCookie } from "../lib/authSession";
 import { createPreRegistration, findActiveGateById, listActiveGates } from "../lib/publicPreRegistrations";
 import {
@@ -10,30 +11,60 @@ import {
 } from "../lib/publicPreRegistrationSchema";
 import { listFieldDefinitions } from "../lib/fieldDefinitions";
 import { checkRateLimit } from "../lib/rateLimit";
-import { findUserById, findUserForLogin, verifyPassword } from "../lib/users";
-import { createImportedPreRegistrations } from "../lib/visitImport";
+import { findUserById, findUserForLogin, hashPassword, verifyPassword } from "../lib/users";
+import { ImportValidationError, createImportedPreRegistrations } from "../lib/visitImport";
 import { loadWorkflowSettings } from "../lib/systemSettings";
+import { APP_VERSION } from "../lib/appVersion";
 import {
+  getRequestIp,
+  getRequestUserAgent,
   handleUnexpectedError,
   issueCsrfToken,
+  requireAuthenticatedUser,
   resolveAuthenticatedUser,
   sendError,
   sendValidationError
 } from "./shared";
+import { writeAuditLog } from "../lib/auditLog";
+import { getPool } from "../lib/db";
+import sql from "mssql";
 import { handleVisitorImportUpload, sendVisitorImportTemplateWorkbook } from "./visitorImport";
 import { adminRouter } from "./admin";
 import { guardRouter } from "./guard";
 import { sibeRouter } from "./sibe";
+import { bundeswehrEmailSchema } from "../lib/emailPolicy";
+import { sendGroupPreRegistrationConfirmation } from "../lib/mailRelay";
 
 const loginSchema = z.object({
   username: z.string().trim().min(1),
   password: z.string().min(1),
   gateId: z.string().uuid().optional().or(z.literal(""))
 });
+const passwordChangeSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(8).max(128),
+  confirmPassword: z.string().min(1)
+}).superRefine((value, context) => {
+  if (value.newPassword !== value.confirmPassword) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["confirmPassword"],
+      message: "Die Passwortbestätigung stimmt nicht überein."
+    });
+  }
+
+  if (value.currentPassword === value.newPassword) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["newPassword"],
+      message: "Das neue Passwort muss sich vom bisherigen Passwort unterscheiden."
+    });
+  }
+});
 const publicGroupPreRegistrationSchema = z.object({
   gateId: z.string().uuid().optional().or(z.literal("")),
   hostName: z.string().trim().optional().or(z.literal("")),
-  hostEmail: z.string().trim().email("Ungueltige Ansprechpartner-E-Mail.").optional().or(z.literal("")),
+  hostEmail: bundeswehrEmailSchema,
   hostPhone: z.string().trim().optional().or(z.literal("")),
   hostDepartment: z.string().trim().optional().or(z.literal("")),
   purpose: z.string().trim().optional().or(z.literal("")),
@@ -53,6 +84,10 @@ const publicGroupPreRegistrationSchema = z.object({
       return code;
     }),
     birthDate: z.string().trim().optional().or(z.literal("")),
+    visitorStreet: z.string().trim().max(255).optional().or(z.literal("")),
+    visitorHouseNumber: z.string().trim().max(40).optional().or(z.literal("")),
+    visitorPostalCode: z.string().trim().max(20).optional().or(z.literal("")),
+    visitorCity: z.string().trim().max(120).optional().or(z.literal("")),
     phone: z.string().trim().optional().or(z.literal("")),
     email: z.string().trim().email("Ungueltige E-Mail-Adresse.").optional().or(z.literal("")),
     licensePlate: z.string().trim().optional().or(z.literal("")),
@@ -61,11 +96,39 @@ const publicGroupPreRegistrationSchema = z.object({
     idDocumentNumber: z.string().trim().optional().or(z.literal(""))
   })).min(1).max(50)
 });
+const publicGroupSharedFieldMap = {
+  host_name: "hostName",
+  host_email: "hostEmail",
+  host_phone: "hostPhone",
+  host_department: "hostDepartment",
+  visit_purpose: "purpose",
+  valid_from: "validFrom",
+  valid_until: "validUntil",
+  visit_note: "notes"
+} as const;
+const publicGroupVisitorFieldMap = {
+  visitor_first_name: "firstName",
+  visitor_last_name: "lastName",
+  visitor_company: "company",
+  visitor_street: "visitorStreet",
+  visitor_house_number: "visitorHouseNumber",
+  visitor_postal_code: "visitorPostalCode",
+  visitor_city: "visitorCity",
+  visitor_nationality: "nationalityCode",
+  visitor_birth_date: "birthDate",
+  visitor_phone: "phone",
+  visitor_email: "email",
+  visitor_license_plate: "licensePlate",
+  id_document_type: "idDocumentType",
+  id_document_valid_until: "idDocumentValidUntil",
+  id_document_number: "idDocumentNumber"
+} as const;
 
 export const apiRouter = Router();
 
 apiRouter.get("/api/meta", (_request, response) => {
   response.json({
+    version: APP_VERSION,
     modules: ["public-pre-registration", "guard-dashboard", "admin-panel"],
     status: "active"
   });
@@ -80,7 +143,8 @@ apiRouter.get("/api/ui-settings", async (_request, response) => {
     const settings = await loadWorkflowSettings();
     return response.json({
       backgroundMode: settings.backgroundMode,
-      backgroundImageUrl: settings.backgroundImageUrl
+      backgroundImageUrl: settings.backgroundImageUrl,
+      securityNumber: settings.securityNumber
     });
   } catch (error) {
     return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Oberflaecheneinstellungen konnten nicht geladen werden.");
@@ -215,6 +279,36 @@ apiRouter.post("/api/public/pre-registrations/group", async (request, response) 
   }
 
   try {
+    const definitions = await listFieldDefinitions("public");
+    const requiredDefinitions = definitions.filter((field) => field.requiredPublic);
+    const supportedKeys = new Set(Object.keys(PUBLIC_FIELD_INPUT_MAP));
+    const requiredPublicFieldKeys = new Set<PublicFieldKey>(
+      requiredDefinitions
+        .filter((field) => supportedKeys.has(field.fieldKey))
+        .map((field) => field.fieldKey as PublicFieldKey)
+    );
+    const missingFields: string[] = [];
+
+    for (const field of requiredDefinitions) {
+      const sharedInput = publicGroupSharedFieldMap[field.fieldKey as keyof typeof publicGroupSharedFieldMap];
+      if (sharedInput && !String(parsed.data[sharedInput] ?? "").trim()) {
+        missingFields.push(`${field.label} fehlt.`);
+      }
+
+      const visitorInput = publicGroupVisitorFieldMap[field.fieldKey as keyof typeof publicGroupVisitorFieldMap];
+      if (visitorInput) {
+        parsed.data.visitors.forEach((visitor, index) => {
+          if (!String(visitor[visitorInput] ?? "").trim()) {
+            missingFields.push(`Zeile ${index + 1}: ${field.label} fehlt.`);
+          }
+        });
+      }
+    }
+
+    if (missingFields.length > 0) {
+      return sendValidationError(response, { fieldErrors: { visitors: missingFields } });
+    }
+
     const created = await createImportedPreRegistrations(
       parsed.data.visitors.map((visitor) => ({
         ...visitor,
@@ -232,15 +326,28 @@ apiRouter.post("/api/public/pre-registrations/group", async (request, response) 
         source: "public_group_form",
         submittedIpAddress: request.ip || request.socket.remoteAddress || null,
         userAgent: typeof request.headers["user-agent"] === "string" ? request.headers["user-agent"] : null,
-        fallbackGateId: parsed.data.gateId || null
+        fallbackGateId: parsed.data.gateId || null,
+        requiredPublicFieldKeys
       }
     );
+    if (parsed.data.hostEmail) {
+      void sendGroupPreRegistrationConfirmation({
+        to: parsed.data.hostEmail,
+        visitorCount: created.imported,
+        validFrom: parsed.data.validFrom || "-",
+        validUntil: parsed.data.validUntil || "-",
+        purpose: parsed.data.purpose || ""
+      }).catch(() => undefined);
+    }
 
     return response.status(201).json({
       message: `${created.imported} Besucher wurden als Voranmeldung gespeichert.`,
       ...created
     });
   } catch (error) {
+    if (error instanceof ImportValidationError) {
+      return sendValidationError(response, { fieldErrors: { visitors: error.messages } });
+    }
     return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der Gruppenimport konnte nicht gespeichert werden.");
   }
 });
@@ -271,6 +378,58 @@ apiRouter.post("/api/auth/logout", async (_request, response) => {
   response.json({ success: true });
 });
 
+apiRouter.put("/api/auth/password", async (request, response) => {
+  const user = await requireAuthenticatedUser(request, response);
+  if (!user) return;
+
+  const rateLimitDecision = checkRateLimit(`password-change:${user.id}`, 5, 300);
+  if (!rateLimitDecision.allowed) {
+    response.setHeader("Retry-After", String(rateLimitDecision.retryAfterSeconds));
+    return sendError(response, 429, "RATE_LIMITED", "Zu viele Passwortänderungsversuche. Bitte warten Sie einige Minuten.");
+  }
+
+  const parsed = passwordChangeSchema.safeParse(request.body ?? {});
+  if (!parsed.success) {
+    return sendValidationError(response, parsed.error.flatten());
+  }
+
+  try {
+    const pool = await getPool();
+    const result = await pool.request()
+      .input("id", sql.UniqueIdentifier, user.id)
+      .query<{ passwordHash: string; isActive: boolean }>(`
+        SELECT password_hash AS passwordHash, is_active AS isActive
+        FROM dbo.users
+        WHERE id = @id
+      `);
+    const account = result.recordset[0];
+
+    if (!account?.isActive || !(await verifyPassword(parsed.data.currentPassword, account.passwordHash))) {
+      return sendError(response, 400, "CURRENT_PASSWORD_INVALID", "Das aktuelle Passwort ist nicht korrekt.");
+    }
+
+    const passwordHash = await hashPassword(parsed.data.newPassword);
+    await pool.request()
+      .input("id", sql.UniqueIdentifier, user.id)
+      .input("passwordHash", sql.NVarChar(255), passwordHash)
+      .query("UPDATE dbo.users SET password_hash = @passwordHash, updated_at = SYSUTCDATETIME() WHERE id = @id");
+
+    await writeAuditLog({
+      user: user.username,
+      userId: user.id,
+      action: "USER_PASSWORD_CHANGED",
+      objectType: "user",
+      objectId: user.id,
+      ipAddress: getRequestIp(request),
+      userAgent: getRequestUserAgent(request)
+    });
+
+    return response.json({ success: true });
+  } catch (error) {
+    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Das Passwort konnte nicht geändert werden.");
+  }
+});
+
 apiRouter.get("/api/public/gates", async (_request, response) => {
   try {
     const [gates, csrfToken] = await Promise.all([
@@ -289,12 +448,13 @@ apiRouter.get("/api/public/gates", async (_request, response) => {
 
 apiRouter.post("/api/public/pre-registrations", async (request, response) => {
   const rateLimitKey = `public-pre-registration:${request.ip || request.socket.remoteAddress || "unknown"}`;
-  const rateLimitDecision = checkRateLimit(rateLimitKey, 20, 60);
+  const rateLimitDecision = checkRateLimit(rateLimitKey, env.PUBLIC_FORM_RATE_LIMIT, env.PUBLIC_FORM_RATE_WINDOW_SECONDS);
   if (!rateLimitDecision.allowed) {
     response.setHeader("Retry-After", String(rateLimitDecision.retryAfterSeconds));
     return response.status(429).json({
       error: "RATE_LIMITED",
-      message: "Zu viele Anfragen. Bitte spaeter erneut versuchen."
+      message: `Zu viele Anfragen. Bitte in ${rateLimitDecision.retryAfterSeconds} Sekunden erneut versuchen.`,
+      retryAfterSeconds: rateLimitDecision.retryAfterSeconds
     });
   }
 

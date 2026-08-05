@@ -290,7 +290,7 @@ Details: https://besucher.example.intern/sibe/besucher/<visit-id>
 
 ### Besucherimport
 
-- Formate: `XLSX`, `XLS`
+- Format: `XLSX`
 - Öffentlicher und interner Import
 - Downloadbare Excel-Vorlage
 - Versteckte vollständige Länderliste mit 249 ISO-3166-1-Einträgen
@@ -457,7 +457,7 @@ npm run report:signatures > unterschriften.csv
 
 ## Datenhaltung und Migrationen
 
-Migrationen liegen unter `apps/backend/migrations` und werden beim Containerstart in Dateinamenreihenfolge ausgeführt. Erfolgreiche Migrationen werden in `dbo.schema_migrations` registriert.
+Migrationen liegen unter `apps/backend/migrations` und werden beim Containerstart nach ihrer führenden Versionsnummer ausgeführt (beispielsweise `030_security_number.sql`). Versionslücken sind zulässig: Es werden alle tatsächlich vorhandenen, noch nicht registrierten Migrationen genau einmal ausgeführt. Erfolgreiche Migrationen werden samt Versionsnummer in `dbo.schema_migrations` registriert. Die aktuelle Anwendungs- und Schemaversion stehen für Administratoren unter **System**.
 
 Wichtige Tabellen:
 
@@ -502,10 +502,10 @@ Die vollständige Installations-, Update-, Backup- und Rollback-Anleitung steht 
 Kurzfassung für eine bereits eingerichtete Docker-Installation:
 
 ```bash
-npm run ops:update -- --pull
+npm run ops:update -- --git-pull
 ```
 
-Der Update-Wrapper erstellt standardmäßig zuerst ein SQL-Backup, baut anschließend das Image und wartet auf einen gesunden App-Container.
+Der Update-Wrapper erstellt standardmäßig zuerst ein SQL-Backup, lädt aktuelle Compose- und Basisimages, baut anschließend das App-Image neu und wartet auf einen gesunden App-Container. Die vorhandene `.env` wird vor dem Update gesichert und unverändert beibehalten.
 
 ## Betrieb und Fehleranalyse
 

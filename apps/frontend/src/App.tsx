@@ -9,11 +9,13 @@ import { PublicPreRegistrationPage } from "./pages/PublicPreRegistrationPage";
 import { CommanderDashboardPage } from "./pages/CommanderDashboardPage";
 import { SibeDashboardPage } from "./pages/SibeDashboardPage";
 import { SibeNationalityNotificationsPage } from "./pages/SibeNationalityNotificationsPage";
+import { SibeRejectionsPage } from "./pages/SibeRejectionsPage";
 import { SibeUsersPage } from "./pages/SibeUsersPage";
 import { SibeVisitDetailPage } from "./pages/SibeVisitDetailPage";
 import { SibeVisitorsPage } from "./pages/SibeVisitorsPage";
 import { TextManagementPage } from "./pages/TextManagementPage";
 import { VisitDetailPage } from "./pages/VisitDetailPage";
+import { SettingsPage } from "./pages/SettingsPage";
 import {
   AuthProvider,
   buildCheckoutStateFromVisit,
@@ -36,6 +38,14 @@ function AppRoutes() {
     <Routes>
       <Route path="/" element={<PublicPreRegistrationPage />} />
       <Route path="/login" element={<LoginPage />} />
+      <Route
+        path="/einstellungen"
+        element={
+          <RequireRoles allowedRoles={["admin", "guard", "sibe", "kaskdt", "custom"]} redirectTo="/login">
+            <SettingsPage />
+          </RequireRoles>
+        }
+      />
       <Route
         path="/wache"
         element={
@@ -73,6 +83,14 @@ function AppRoutes() {
         element={
           <RequireRoles allowedRoles={["admin", "sibe"]} requiredMenuKey="laenderbenachrichtigungen" requiredPermissions={["dashboards.sibe"]} redirectTo="/" >
             <SibeNationalityNotificationsPage />
+          </RequireRoles>
+        }
+      />
+      <Route
+        path="/sibe/ablehnungen"
+        element={
+          <RequireRoles allowedRoles={["admin", "sibe"]} requiredMenuKey="sibe" requiredPermissions={["visits.read"]} redirectTo="/" >
+            <SibeRejectionsPage />
           </RequireRoles>
         }
       />

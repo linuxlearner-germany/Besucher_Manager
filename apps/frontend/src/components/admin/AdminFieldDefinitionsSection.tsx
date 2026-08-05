@@ -85,46 +85,7 @@ export function AdminFieldDefinitionsSection({
   return (
     <Card className="admin-fields-card">
       <h3>Feldkonfiguration</h3>
-      <div className="panel field-config-transfer">
-        <h4>Import / Export</h4>
-        <div className="row-actions action-bar">
-          <button type="button" onClick={() => void exportFieldConfiguration()}>Konfiguration exportieren</button>
-          <label className="secondary-button file-button-inline">
-            JSON-Datei auswählen
-            <input type="file" accept="application/json,.json" onChange={(event) => void handleImportConfigFile(event)} />
-          </label>
-          <button type="button" className="secondary-button" onClick={() => void previewFieldImport()} disabled={!fieldImportText.trim()}>
-            Import prüfen
-          </button>
-        </div>
-        {fieldImportFileName ? <div className="meta-list"><span><strong>Datei:</strong> {fieldImportFileName}</span></div> : null}
-        {fieldImportPreview ? (
-          <div className="panel field-import-preview">
-            <p>
-              <strong>{fieldImportPreview.summary.total}</strong> Felder ·
-              {" "}<strong>{fieldImportPreview.summary.willUpdate}</strong> aktualisiert ·
-              {" "}<strong>{fieldImportPreview.summary.willCreate}</strong> neu
-            </p>
-            <div className="table-wrap">
-              <table className="data-table">
-                <thead><tr><th>Feld</th><th>Aktion</th><th>Label</th></tr></thead>
-                <tbody>
-                  {fieldImportPreview.changes.map((item) => (
-                    <tr key={item.fieldKey}>
-                      <td><code>{item.fieldKey}</code></td>
-                      <td>{item.action === "update" ? "Update" : "Neu"}</td>
-                      <td>{item.label}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="row-actions action-bar">
-              <button type="button" onClick={() => void confirmFieldImport()}>Import bestätigen</button>
-            </div>
-          </div>
-        ) : null}
-      </div>
+      <div className="feedback info">Hier werden nur die vorhandenen Systemfelder verwaltet. Neue Felder werden nicht angelegt; Pflichtregeln lassen sich je Einsatzbereich bearbeiten.</div>
 
       {selectedFieldSectionGroup ? (
         <div className="field-module-detail">
@@ -168,6 +129,12 @@ export function AdminFieldDefinitionsSection({
                   {definition.requiredBeforePrint ? <span className="field-config-badge">Pflicht Druck</span> : null}
                 </div>
                 <div className="field-row-actions">
+                  <div className="field-matrix-controls">
+                    <label className="checkbox-row"><input type="checkbox" checked={editableFieldDefinitions[definition.id]?.requiredPublic ?? definition.requiredPublic} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [definition.id]: { ...(current[definition.id] || definition), requiredPublic: event.target.checked, showInPublic: event.target.checked || (current[definition.id] || definition).showInPublic } }))} /> Pflicht Voranmeldung</label>
+                    <label className="checkbox-row"><input type="checkbox" checked={editableFieldDefinitions[definition.id]?.requiredGuardCheckin ?? definition.requiredGuardCheckin} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [definition.id]: { ...(current[definition.id] || definition), requiredGuardCheckin: event.target.checked, showInGuard: event.target.checked || (current[definition.id] || definition).showInGuard } }))} /> Pflicht Check-in</label>
+                    <label className="checkbox-row"><input type="checkbox" checked={editableFieldDefinitions[definition.id]?.requiredBeforePrint ?? definition.requiredBeforePrint} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [definition.id]: { ...(current[definition.id] || definition), requiredBeforePrint: event.target.checked, showOnBadge: event.target.checked || (current[definition.id] || definition).showOnBadge } }))} /> Pflicht Druck</label>
+                    <button type="button" onClick={() => void saveFieldDefinition(definition.id)}>Speichern</button>
+                  </div>
                   <button type="button" className="secondary-button" onClick={() => setSelectedFieldDefinitionId(definition.id)}>
                     Bearbeiten
                   </button>
@@ -210,7 +177,7 @@ export function AdminFieldDefinitionsSection({
         </div>
       )}
 
-      <details className="field-expert-details">
+      <details className="field-expert-details" hidden>
         <summary>Expertenansicht anzeigen</summary>
         <div className="table-wrap admin-fields-wrap">
           <table className="data-table admin-fields-table">
@@ -278,8 +245,9 @@ export function AdminFieldDefinitionsSection({
             <div className="field-edit-form">
               <h5>Stammdaten</h5>
               <div className="form-grid two-columns">
-                <FormField label="Label">
+                <FormField label="Label" required>
                   <input
+                    required
                     value={selectedFieldDefinition.label}
                     onChange={(event) => setEditableFieldDefinitions((current) => ({
                       ...current,
@@ -293,8 +261,9 @@ export function AdminFieldDefinitionsSection({
                 <FormField label="Typ">
                   <input value={selectedFieldDefinition.fieldType} readOnly />
                 </FormField>
-                <FormField label="Bereich">
+                <FormField label="Bereich" required>
                   <input
+                    required
                     value={selectedFieldDefinition.section}
                     onChange={(event) => setEditableFieldDefinitions((current) => ({
                       ...current,
@@ -302,8 +271,9 @@ export function AdminFieldDefinitionsSection({
                     }))}
                   />
                 </FormField>
-                <FormField label="Sortierung">
+                <FormField label="Sortierung" required>
                   <input
+                    required
                     type="number"
                     value={selectedFieldDefinition.sortOrder}
                     onChange={(event) => setEditableFieldDefinitions((current) => ({

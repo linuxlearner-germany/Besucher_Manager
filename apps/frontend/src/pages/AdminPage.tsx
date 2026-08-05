@@ -14,7 +14,9 @@ import {
   AdminGatesSection,
   AdminSiteMapSection,
   AdminSystemSection,
-  AdminUsersSection
+  AdminUsersSection,
+  AdminDataRetentionSection,
+  type AdminRetentionSettings
 } from "../components/admin/AdminSections";
 import { AdminFieldDefinitionsSection } from "../components/admin/AdminFieldDefinitionsSection";
 import { Alert } from "../components/ui";
@@ -100,6 +102,8 @@ export function AdminPage() {
   const [errorLogs, setErrorLogs] = useState<AdminErrorLog[]>([]);
   const [systemStatus, setSystemStatus] = useState<{
     app: string;
+    appVersion: string;
+    schemaVersion: number;
     activeVisits: number;
     activeGates: number;
     openPreRegistrationsToday: number;
@@ -122,6 +126,7 @@ export function AdminPage() {
   const [activeSiteMap, setActiveSiteMap] = useState<AdminSiteMap | null>(null);
   const [siteMaps, setSiteMaps] = useState<AdminSiteMap[]>([]);
   const [fieldDefinitions, setFieldDefinitions] = useState<AdminFieldDefinition[]>([]);
+  const [retentionSettings, setRetentionSettings] = useState<AdminRetentionSettings | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedAuditLogId, setSelectedAuditLogId] = useState<string | null>(null);
@@ -167,6 +172,11 @@ export function AdminPage() {
   const [editableGates, setEditableGates] = useState<Record<string, AdminGate>>({});
   const [editableUsers, setEditableUsers] = useState<Record<string, EditableAdminUser>>({});
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [userSaveState, setUserSaveState] = useState<{
+    userId: string;
+    kind: "saving" | "success" | "error";
+    message: string;
+  } | null>(null);
   const [editableFieldDefinitions, setEditableFieldDefinitions] = useState<Record<string, AdminFieldDefinition>>({});
   const [selectedFieldDefinitionId, setSelectedFieldDefinitionId] = useState<string | null>(null);
   const [selectedFieldSection, setSelectedFieldSection] = useState<string | null>(null);
@@ -207,16 +217,17 @@ export function AdminPage() {
   const loadAll = useCallback(async () => {
     setError(null);
     try {
-      const [gatePayload, userPayload, textPayload, statusPayload, workflowPayload, backgroundPayload, siteMapPayload, siteMapsPayload, fieldDefinitionsPayload] = await Promise.all([
+      const [gatePayload, userPayload, textPayload, statusPayload, workflowPayload, backgroundPayload, siteMapPayload, siteMapsPayload, fieldDefinitionsPayload, retentionPayload] = await Promise.all([
         fetchJson<{ gates: AdminGate[] }>("/api/admin/gates", { method: "GET", headers: {} }),
         fetchJson<{ users: AdminUser[] }>("/api/admin/users", { method: "GET", headers: {} }),
         fetchJson<{ texts: AdminBadgeText[] }>("/api/texts", { method: "GET", headers: {} }),
-        fetchJson<{ app: string; activeVisits: number; activeGates: number; openPreRegistrationsToday: number; signaturesPending: number; signaturesFollowUp: number; signaturesExceptions: number; dbHost?: string; dbName?: string }>("/api/admin/system-status", { method: "GET", headers: {} }),
+        fetchJson<{ app: string; appVersion: string; schemaVersion: number; activeVisits: number; activeGates: number; openPreRegistrationsToday: number; signaturesPending: number; signaturesFollowUp: number; signaturesExceptions: number; dbHost?: string; dbName?: string }>("/api/admin/system-status", { method: "GET", headers: {} }),
         fetchJson<AdminWorkflowSettings>("/api/admin/system-settings/workflow-email", { method: "GET", headers: {} }),
         fetchJson<{ backgrounds: AdminUiBackground[] }>("/api/admin/ui-backgrounds", { method: "GET", headers: {} }),
         fetchJson<{ siteMap: AdminSiteMap | null }>("/api/admin/site-map", { method: "GET", headers: {} }),
         fetchJson<{ siteMaps: AdminSiteMap[] }>("/api/admin/site-maps", { method: "GET", headers: {} }),
-        fetchJson<{ definitions: AdminFieldDefinition[] }>("/api/admin/field-definitions", { method: "GET", headers: {} })
+        fetchJson<{ definitions: AdminFieldDefinition[] }>("/api/admin/field-definitions", { method: "GET", headers: {} }),
+        fetchJson<AdminRetentionSettings>("/api/admin/data-retention", { method: "GET", headers: {} })
       ]);
 
       setGates(gatePayload.gates);
@@ -231,10 +242,12 @@ export function AdminPage() {
       setActiveSiteMap(siteMapPayload.siteMap);
       setSiteMaps(siteMapsPayload.siteMaps);
       setFieldDefinitions(fieldDefinitionsPayload.definitions);
+      setRetentionSettings(retentionPayload);
       setEditableGates(Object.fromEntries(gatePayload.gates.map((gate) => [gate.id, { ...gate }])));
       setEditableUsers(Object.fromEntries(userPayload.users.map((entry) => [entry.id, {
         ...entry,
         password: "",
+        groupsText: formatGroupText(entry.groups),
         menuAccess: entry.menuAccess?.length ? entry.menuAccess : getAllowedMenuAccessForRole(entry.role),
         groups: entry.groups ?? [],
         permissions: entry.permissions ?? getDefaultPermissionsForRole(entry.role)
@@ -249,6 +262,21 @@ export function AdminPage() {
       setError(payload.message || "Admin-Daten konnten nicht geladen werden.");
     }
   }, [auditFilters, errorLogFilters, loadAuditLogs, loadErrorLogs, setBackgroundImageUrl, setBackgroundMode]);
+
+  async function saveRetentionSettings() {
+    if (!retentionSettings) return;
+    const payload = await fetchJson<AdminRetentionSettings>("/api/admin/data-retention", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled: retentionSettings.enabled, years: retentionSettings.years }) });
+    setRetentionSettings(payload);
+    setMessage("Datenlöschung gespeichert.");
+  }
+
+  async function runRetentionNow() {
+    if (!window.confirm("Alte Vorgänge jetzt endgültig aus der Datenbank löschen?")) return;
+    const payload = await fetchJson<{ visits: number; message: string }>("/api/admin/data-retention/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    setMessage(payload.message);
+    const refreshed = await fetchJson<AdminRetentionSettings>("/api/admin/data-retention", { method: "GET", headers: {} });
+    setRetentionSettings(refreshed);
+  }
 
   useEffect(() => {
     void loadAll();
@@ -472,7 +500,7 @@ export function AdminPage() {
         ...current,
         [userId]: {
           ...currentEntry,
-          groups: parseGroupText(value)
+          groupsText: value
         }
       };
     });
@@ -556,8 +584,13 @@ export function AdminPage() {
   async function saveUser(userId: string) {
     const adminUser = editableUsers[userId];
     if (!adminUser) return;
+    if (adminUser.role === "sibe" && !adminUser.email?.trim()) {
+      setUserSaveState({ userId, kind: "error", message: "Für SiBe ist eine E-Mail-Adresse erforderlich." });
+      return;
+    }
+    setUserSaveState({ userId, kind: "saving", message: "Benutzer wird gespeichert..." });
     try {
-      await fetchJson(`/api/admin/users/${userId}`, {
+      const payload = await fetchJson<{ success: true; user: AdminUser }>(`/api/admin/users/${userId}`, {
         method: "PUT",
         body: JSON.stringify({
           username: adminUser.username,
@@ -566,18 +599,30 @@ export function AdminPage() {
           role: adminUser.role,
           gateId: null,
           isActive: adminUser.isActive,
-          groups: adminUser.groups,
+          groups: parseGroupText(adminUser.groupsText),
           menuAccess: adminUser.menuAccess,
           ...(adminUser.role === "custom" ? { permissions: adminUser.permissions } : {}),
           ...(adminUser.password ? { password: adminUser.password } : {})
         })
       });
+      const savedUser = payload.user;
+      setUsers((current) => current.map((entry) => entry.id === userId ? savedUser : entry));
+      setEditableUsers((current) => ({
+        ...current,
+        [userId]: {
+          ...savedUser,
+          password: "",
+          groupsText: formatGroupText(savedUser.groups)
+        }
+      }));
       setMessage("Benutzer aktualisiert.");
       setError(null);
-      await loadAll();
+      setUserSaveState({ userId, kind: "success", message: "Benutzer wurde erfolgreich aktualisiert." });
     } catch (apiError) {
       const payload = apiError as ApiError;
-      setError(payload.message || "Benutzer konnte nicht aktualisiert werden.");
+      const saveError = payload.message || "Benutzer konnte nicht aktualisiert werden.";
+      setError(saveError);
+      setUserSaveState({ userId, kind: "error", message: saveError });
     }
   }
 
@@ -809,6 +854,7 @@ export function AdminPage() {
         method: "PUT",
         body: JSON.stringify({
           backgroundMode: workflowSettings.backgroundMode,
+          securityNumber: workflowSettings.securityNumber,
           emailRelay: {
             enabled: workflowSettings.emailRelay.enabled,
             host: workflowSettings.emailRelay.host,
@@ -909,6 +955,7 @@ export function AdminPage() {
     { key: "audit" as const, label: "Audit", visible: Boolean(currentUser && hasPermission(currentUser, "logs.audit")) },
     { key: "fehler" as const, label: "Fehlerlog", visible: Boolean(currentUser && hasPermission(currentUser, "logs.errors")) },
     { key: "system" as const, label: "System", visible: Boolean(currentUser && hasPermission(currentUser, "admin.system")) }
+    ,{ key: "datenloeschung" as const, label: "Datenlöschung", visible: Boolean(currentUser && hasPermission(currentUser, "admin.system")) }
   ];
 
   const visibleSectionKeys = sectionTabs.filter((tab) => tab.visible).map((tab) => tab.key);
@@ -990,6 +1037,7 @@ export function AdminPage() {
             downloadUserImportTemplate={downloadUserImportTemplate}
             importUsersCsv={importUsersCsv}
             saveUser={saveUser}
+            userSaveState={userSaveState}
             toggleUserActive={toggleUserActive}
             currentUserId={currentUser?.id}
           />
@@ -1053,6 +1101,8 @@ export function AdminPage() {
             sendWorkflowTestMail={sendWorkflowTestMail}
           />
         ) : null}
+
+        {resolvedActiveSection === "datenloeschung" ? <AdminDataRetentionSection settings={retentionSettings} setSettings={setRetentionSettings} save={saveRetentionSettings} runNow={runRetentionNow} /> : null}
 
         {resolvedActiveSection === "audit" ? (
           <AdminAuditSection

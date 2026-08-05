@@ -40,7 +40,7 @@ export function SibeNationalityNotificationsPage() {
   return (
     <AppLayout>
       <main className="page-panel page-shell-wide">
-        <section className="page-hero"><div className="page-hero-content"><h2>Länderbenachrichtigungen</h2><p>Wählen Sie die Nationalitäten aus, für die Sie je Besuch eine E-Mail erhalten möchten.</p></div></section>
+        <section className="page-hero"><div className="page-hero-content"><h2>Länderbenachrichtigungen</h2></div></section>
         {error ? <Alert type="error">{error}</Alert> : null}
         <Card className="country-notification-card">
           {!accountEmail ? <Alert type="warning">Für Ihr Benutzerkonto ist keine E-Mail-Adresse hinterlegt. Benachrichtigungen können nicht zugestellt werden.</Alert> : <p className="muted">Benachrichtigungen an: {accountEmail}</p>}

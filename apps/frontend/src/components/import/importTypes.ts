@@ -11,6 +11,7 @@ export type ImportResultRow = {
 export type ImportResult = {
   imported: number;
   needsReview: number;
+  ignoredSampleRows?: number;
   message: string;
   rows: ImportResultRow[];
 };

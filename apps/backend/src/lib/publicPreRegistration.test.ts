@@ -3,6 +3,10 @@ import assert from "node:assert/strict";
 import { createPublicPreRegistrationSchema, publicPreRegistrationSchema } from "./publicPreRegistrationSchema";
 
 const idDocumentFields = {
+  visitorStreet: "Musterstraße",
+  visitorHouseNumber: "12",
+  visitorPostalCode: "10115",
+  visitorCity: "Berlin",
   nationalityCode: "DE",
   idDocumentType: "identity_card",
   idDocumentValidUntil: "2030-12-31",
@@ -15,7 +19,7 @@ test("public pre-registration requires validUntil after validFrom", () => {
     lastName: "Mustermann",
     company: "Test GmbH",
     hostName: "Sabine Keller",
-    hostEmail: "sabine@example.com",
+    hostEmail: "sabine.keller@bundeswehr.org",
     hostPhone: "0123",
     purpose: "Besprechung",
     validFrom: "2026-05-21T10:00:00.000Z",
@@ -33,7 +37,7 @@ test("public pre-registration accepts valid input", () => {
     lastName: "Mustermann",
     company: "Test GmbH",
     hostName: "Sabine Keller",
-    hostEmail: "sabine@example.com",
+    hostEmail: "sabine.keller@bundeswehr.org",
     hostPhone: "0123",
     hostDepartment: "",
     purpose: "Besprechung",
@@ -70,12 +74,29 @@ test("public pre-registration rejects invalid e-mail", () => {
     lastName: "Mustermann",
     company: "Test GmbH",
     hostName: "Sabine Keller",
-    hostEmail: "sabine@example.com",
+    hostEmail: "sabine.keller@bundeswehr.org",
     hostPhone: "0123",
     purpose: "Besprechung",
     validFrom: "2026-05-21T08:00:00.000Z",
     validUntil: "2026-05-21T10:00:00.000Z",
     email: "not-an-email",
+    ...idDocumentFields
+  });
+
+  assert.equal(result.success, false);
+});
+
+test("public pre-registration only accepts Bundeswehr address for the registrant", () => {
+  const result = publicPreRegistrationSchema.safeParse({
+    firstName: "Max",
+    lastName: "Mustermann",
+    company: "Test GmbH",
+    hostName: "Sabine Keller",
+    hostEmail: "sabine.keller@gmail.com",
+    hostPhone: "0123",
+    purpose: "Besprechung",
+    validFrom: "2026-05-21T08:00:00.000Z",
+    validUntil: "2026-05-21T10:00:00.000Z",
     ...idDocumentFields
   });
 
@@ -151,6 +172,46 @@ test("public pre-registration only requires fields selected by field configurati
   const result = schema.safeParse({ nationalityCode: "DE" });
 
   assert.equal(result.success, true);
+});
+
+test("public pre-registration requires the complete address by default", () => {
+  const result = publicPreRegistrationSchema.safeParse({
+    firstName: "Max",
+    lastName: "Mustermann",
+    company: "Test GmbH",
+    hostName: "Sabine Keller",
+    hostPhone: "0123",
+    purpose: "Besprechung",
+    validFrom: "2026-05-21",
+    validUntil: "2026-05-21",
+    ...idDocumentFields,
+    visitorStreet: ""
+  });
+
+  assert.equal(result.success, false);
+});
+
+test("public pre-registration validates the complete structured address when configured", () => {
+  const schema = createPublicPreRegistrationSchema(new Set([
+    "visitor_street",
+    "visitor_house_number",
+    "visitor_postal_code",
+    "visitor_city"
+  ]));
+  const complete = schema.safeParse({
+    visitorStreet: "Musterstraße",
+    visitorHouseNumber: "12a",
+    visitorPostalCode: "10115",
+    visitorCity: "Berlin"
+  });
+  const missingPostalCode = schema.safeParse({
+    visitorStreet: "Musterstraße",
+    visitorHouseNumber: "12a",
+    visitorCity: "Berlin"
+  });
+
+  assert.equal(complete.success, true);
+  assert.equal(missingPostalCode.success, false);
 });
 
 test("public pre-registration allows omitted nationality when it is not configured", () => {

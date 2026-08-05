@@ -94,8 +94,8 @@ const envSchema = z.object({
   MSSQL_ENCRYPT: booleanish.default(false),
   MSSQL_TRUST_SERVER_CERTIFICATE: booleanish.default(true),
   UPLOAD_DIR: z.string().default("./uploads"),
-  PUBLIC_FORM_RATE_LIMIT: z.coerce.number().int().positive().default(10),
-  PUBLIC_FORM_RATE_WINDOW_SECONDS: z.coerce.number().int().positive().default(900),
+  PUBLIC_FORM_RATE_LIMIT: z.coerce.number().int().positive().default(120),
+  PUBLIC_FORM_RATE_WINDOW_SECONDS: z.coerce.number().int().positive().default(60),
   MAIL_RELAY_CONFIG_PATH: z.string().trim().optional()
 });
 

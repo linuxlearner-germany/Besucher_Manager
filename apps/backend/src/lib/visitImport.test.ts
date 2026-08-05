@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 
 function loadVisitImportModule() {
   process.env.APP_SECRET = process.env.APP_SECRET || "test-secret";
@@ -22,6 +22,10 @@ test("visitor import template marks required and optional fields in headers", ()
   assert.equal(headers.includes("Besuchszweck [Pflicht]"), true);
   assert.equal(headers.includes("Telefon [Optional]"), true);
   assert.equal(headers.includes("Ansprechpartner E-Mail [Optional]"), true);
+  assert.equal(headers.includes("Straße [Pflicht]"), true);
+  assert.equal(headers.includes("Hausnummer [Pflicht]"), true);
+  assert.equal(headers.includes("PLZ [Pflicht]"), true);
+  assert.equal(headers.includes("Ort [Pflicht]"), true);
 });
 
 test("excel template uses simplified grouped headers", () => {
@@ -35,32 +39,151 @@ test("excel template uses simplified grouped headers", () => {
   assert.equal(headers.includes("Ansprechpartner Telefon [Pflicht]"), true);
 });
 
-test("excel import accepts annotated template headers", () => {
+test("excel template follows visible public fields and their required status", () => {
+  const { getVisitorImportExcelTemplateHeaders } = require("./visitImportDefinitions") as typeof import("./visitImportDefinitions");
+  const headers = getVisitorImportExcelTemplateHeaders([
+    { fieldKey: "visitor_first_name", requiredPublic: true },
+    { fieldKey: "visitor_email", requiredPublic: true },
+    { fieldKey: "visitor_street", requiredPublic: false }
+  ]);
+
+  assert.deepEqual(headers, ["Vorname [Pflicht]", "Straße [Optional]", "E-Mail [Pflicht]"]);
+});
+
+test("excel rows use the same required and format validation as the public form", () => {
+  const { validateImportedPreRegistrationRows } = require("./publicPreRegistrationSchema") as typeof import("./publicPreRegistrationSchema");
+  const errors = validateImportedPreRegistrationRows([{
+    sourceExcelRowNumber: 7,
+    firstName: "Max",
+    lastName: "Muster",
+    company: "Beispiel GmbH",
+    nationalityCode: "Deutschland",
+    visitorStreet: "",
+    visitorHouseNumber: "12",
+    visitorPostalCode: "10115",
+    visitorCity: "Berlin",
+    hostName: "Maria Muster",
+    hostPhone: "123",
+    purpose: "Besprechung",
+    validFrom: "19.06.2026",
+    validUntil: "18.06.2026",
+    idDocumentType: "Personalausweis",
+    idDocumentValidUntil: "31.12.2030",
+    idDocumentNumber: "A123",
+    email: "ungueltig"
+  }], new Set(["visitor_street", "valid_from", "valid_until"]));
+
+  assert.equal(errors.some((message: string) => message.startsWith("Zeile 7:")), true);
+  assert.equal(errors.some((message: string) => message.includes("Dieses Pflichtfeld ist erforderlich.")), true);
+  assert.equal(errors.some((message: string) => message.includes("Ungültige E-Mail-Adresse.")), true);
+  assert.equal(errors.some((message: string) => message.includes("Gültig bis darf nicht vor Gültig von liegen.")), true);
+});
+
+async function buildWorkbookBuffer(rows: unknown[][]): Promise<Buffer> {
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet("Importvorlage");
+  rows.forEach((row) => worksheet.addRow(row));
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
+test("excel import ignores both unchanged template sample rows", async () => {
   const {
     getVisitorImportTemplateHeaders,
     getVisitorImportTemplateSampleRows
   } = require("./visitImportDefinitions") as typeof import("./visitImportDefinitions");
-  const { parseExcelBuffer } = require("./visitImportParsing") as typeof import("./visitImportParsing");
+  const { parseExcelBufferWithMetadata } = require("./visitImportParsing") as typeof import("./visitImportParsing");
   const headers = getVisitorImportTemplateHeaders();
-  const [firstRow] = getVisitorImportTemplateSampleRows();
-  const workbook = XLSX.utils.book_new();
-  const worksheet = XLSX.utils.aoa_to_sheet([headers, firstRow]);
-  XLSX.utils.book_append_sheet(workbook, worksheet, "Importvorlage");
-  const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+  const sampleRows = getVisitorImportTemplateSampleRows();
 
-  const rows = parseExcelBuffer(buffer);
+  const parsed = await parseExcelBufferWithMetadata(await buildWorkbookBuffer([headers, ...sampleRows]));
 
-  assert.equal(rows.length, 1);
-  assert.equal(rows[0]?.firstName, "Max");
-  assert.equal(rows[0]?.lastName, "Muster");
-  assert.equal(rows[0]?.company, "Musterfirma GmbH");
-  assert.equal(rows[0]?.nationalityCode, "Deutschland");
-  assert.equal(rows[0]?.hostName, "Maria Muster");
-  assert.equal(rows[0]?.purpose, "Projektbesprechung");
-  assert.equal(rows[0]?.idDocumentType, "Personalausweis");
-  assert.equal(rows[0]?.idDocumentValidUntil, "31.12.2030");
-  assert.equal(rows[0]?.idDocumentNumber, "L01X00ABC");
-  assert.equal(rows[0]?.notes, "Lieferanteneinsatz am Vormittag");
+  assert.deepEqual(parsed.rows, []);
+  assert.equal(parsed.ignoredSampleRows, 2);
+});
+
+test("excel import ignores sample rows from a template with hidden fields", async () => {
+  const {
+    getVisitorImportTemplateHeaders,
+    getVisitorImportTemplateSampleRows
+  } = require("./visitImportDefinitions") as typeof import("./visitImportDefinitions");
+  const { parseExcelBufferWithMetadata } = require("./visitImportParsing") as typeof import("./visitImportParsing");
+  const definitions = [
+    { fieldKey: "visitor_first_name", requiredPublic: true },
+    { fieldKey: "visitor_last_name", requiredPublic: true },
+    { fieldKey: "visitor_nationality", requiredPublic: true }
+  ];
+
+  const parsed = await parseExcelBufferWithMetadata(await buildWorkbookBuffer([
+    getVisitorImportTemplateHeaders(definitions),
+    ...getVisitorImportTemplateSampleRows(definitions)
+  ]));
+
+  assert.deepEqual(parsed.rows, []);
+  assert.equal(parsed.ignoredSampleRows, 2);
+});
+
+test("excel import treats an edited sample row as visitor data", async () => {
+  const {
+    getVisitorImportTemplateHeaders,
+    getVisitorImportTemplateSampleRows
+  } = require("./visitImportDefinitions") as typeof import("./visitImportDefinitions");
+  const { parseExcelBufferWithMetadata } = require("./visitImportParsing") as typeof import("./visitImportParsing");
+  const [firstSample] = getVisitorImportTemplateSampleRows();
+  const editedSample = [...firstSample];
+  editedSample[0] = "Martin";
+
+  const parsed = await parseExcelBufferWithMetadata(await buildWorkbookBuffer([
+    getVisitorImportTemplateHeaders(),
+    editedSample
+  ]));
+
+  assert.equal(parsed.ignoredSampleRows, 0);
+  assert.equal(parsed.rows.length, 1);
+  assert.equal(parsed.rows[0]?.firstName, "Martin");
+  assert.equal(parsed.rows[0]?.lastName, "Muster");
+  assert.equal(parsed.rows[0]?.sourceExcelRowNumber, 2);
+});
+
+test("excel import keeps original row numbers after skipping mixed sample rows", async () => {
+  const {
+    getVisitorImportTemplateHeaders,
+    getVisitorImportTemplateSampleRows
+  } = require("./visitImportDefinitions") as typeof import("./visitImportDefinitions");
+  const { parseExcelBufferWithMetadata } = require("./visitImportParsing") as typeof import("./visitImportParsing");
+  const [firstSample, secondSample] = getVisitorImportTemplateSampleRows();
+  const editedSample = [...secondSample];
+  editedSample[2] = "Echte Firma GmbH";
+
+  const parsed = await parseExcelBufferWithMetadata(await buildWorkbookBuffer([
+    getVisitorImportTemplateHeaders(),
+    firstSample,
+    secondSample,
+    editedSample
+  ]));
+
+  assert.equal(parsed.ignoredSampleRows, 2);
+  assert.equal(parsed.rows.length, 1);
+  assert.equal(parsed.rows[0]?.company, "Echte Firma GmbH");
+  assert.equal(parsed.rows[0]?.sourceExcelRowNumber, 4);
+});
+
+test("excel import does not ignore a sample row with additional unknown content", async () => {
+  const {
+    getVisitorImportTemplateHeaders,
+    getVisitorImportTemplateSampleRows
+  } = require("./visitImportDefinitions") as typeof import("./visitImportDefinitions");
+  const { parseExcelBufferWithMetadata } = require("./visitImportParsing") as typeof import("./visitImportParsing");
+  const [firstSample] = getVisitorImportTemplateSampleRows();
+
+  const parsed = await parseExcelBufferWithMetadata(await buildWorkbookBuffer([
+    [...getVisitorImportTemplateHeaders(), "Zusatz"],
+    [...firstSample, "bearbeitet"]
+  ]));
+
+  assert.equal(parsed.ignoredSampleRows, 0);
+  assert.equal(parsed.rows.length, 1);
+  assert.equal(parsed.rows[0]?.firstName, "Max");
+  assert.equal(parsed.rows[0]?.sourceExcelRowNumber, 2);
 });
 
 test("country catalog contains all ISO 3166-1 entries and accepts codes or German names", () => {

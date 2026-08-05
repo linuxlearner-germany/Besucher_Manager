@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { ImportReviewModal } from "../components/ImportReviewModal";
-import { Alert, FormField } from "../components/ui";
+import { Alert, FieldLabel, FormField } from "../components/ui";
 import { CountrySelect } from "../components/CountrySelect";
 import {
   AppLayout,
@@ -25,6 +25,10 @@ type GroupVisitorForm = {
   company: string;
   nationalityCode: string;
   birthDate: string;
+  visitorStreet: string;
+  visitorHouseNumber: string;
+  visitorPostalCode: string;
+  visitorCity: string;
   phone: string;
   email: string;
   licensePlate: string;
@@ -53,6 +57,10 @@ const emptyGroupVisitor = (): GroupVisitorForm => ({
   company: "",
   nationalityCode: "DE",
   birthDate: "",
+  visitorStreet: "",
+  visitorHouseNumber: "",
+  visitorPostalCode: "",
+  visitorCity: "",
   phone: "",
   email: "",
   licensePlate: "",
@@ -227,13 +235,13 @@ export function PublicPreRegistrationPage() {
             {shown("host_name") ? <FormField label="Ansprechpartner" required={required("host_name")} error={fieldErrors.hostName}>
               <input required={required("host_name")} value={form.hostName} onChange={(event) => updateField("hostName", event.target.value)} />
             </FormField> : null}
-            {shown("host_email") ? <FormField label="Ansprechpartner E-Mail" required={required("host_email")}>
+            {shown("host_email") ? <FormField label="Anmelder-E-Mail" required={required("host_email")}>
               <input required={required("host_email")} type="email" value={form.hostEmail} onChange={(event) => updateField("hostEmail", event.target.value)} />
             </FormField> : null}
             {shown("host_phone") ? <FormField label="Ansprechpartner Telefon" required={required("host_phone")} error={fieldErrors.hostPhone}>
               <input required={required("host_phone")} value={form.hostPhone} onChange={(event) => updateField("hostPhone", event.target.value)} />
             </FormField> : null}
-            {shown("host_department") ? <FormField label="Abteilung / Bereich" required={required("host_department")} error={fieldErrors.hostDepartment}>
+            {shown("host_department") ? <FormField label="Geschäftsfeld" required={required("host_department")} error={fieldErrors.hostDepartment}>
               <input required={required("host_department")} value={form.hostDepartment} onChange={(event) => updateField("hostDepartment", event.target.value)} />
             </FormField> : null}
             {shown("visit_purpose") ? <FormField label="Besuchszweck" required={required("visit_purpose")} error={fieldErrors.purpose}>
@@ -270,6 +278,18 @@ export function PublicPreRegistrationPage() {
                   </FormField> : null}
                   {shown("visitor_company") ? <FormField label="Firma / Organisation" required={required("visitor_company")} error={fieldErrors.company}>
                     <input required={required("visitor_company")} value={form.company} onChange={(event) => updateField("company", event.target.value)} />
+                  </FormField> : null}
+                  {shown("visitor_street") ? <FormField label="Straße" required={required("visitor_street")} error={fieldErrors.visitorStreet}>
+                    <input required={required("visitor_street")} value={form.visitorStreet} onChange={(event) => updateField("visitorStreet", event.target.value)} />
+                  </FormField> : null}
+                  {shown("visitor_house_number") ? <FormField label="Hausnummer" required={required("visitor_house_number")} error={fieldErrors.visitorHouseNumber}>
+                    <input required={required("visitor_house_number")} value={form.visitorHouseNumber} onChange={(event) => updateField("visitorHouseNumber", event.target.value)} />
+                  </FormField> : null}
+                  {shown("visitor_postal_code") ? <FormField label="PLZ" required={required("visitor_postal_code")} error={fieldErrors.visitorPostalCode}>
+                    <input required={required("visitor_postal_code")} value={form.visitorPostalCode} onChange={(event) => updateField("visitorPostalCode", event.target.value)} />
+                  </FormField> : null}
+                  {shown("visitor_city") ? <FormField label="Ort" required={required("visitor_city")} error={fieldErrors.visitorCity}>
+                    <input required={required("visitor_city")} value={form.visitorCity} onChange={(event) => updateField("visitorCity", event.target.value)} />
                   </FormField> : null}
                   {shown("visitor_nationality") ? <FormField label="Nationalität" required={required("visitor_nationality")} error={fieldErrors.nationalityCode}>
                     <CountrySelect required={required("visitor_nationality")} value={form.nationalityCode} onChange={(value) => updateField("nationalityCode", value)} />
@@ -335,7 +355,7 @@ export function PublicPreRegistrationPage() {
             </form>
           </section>
 
-          <section className="panel public-form-panel">
+          <section className="panel public-form-panel group-registration-panel">
             <form className="pre-registration-form group-pre-registration-form" onSubmit={handleGroupSubmit}>
               <div className="form-section">
                 <div className="section-header">
@@ -350,36 +370,50 @@ export function PublicPreRegistrationPage() {
                   <table className="data-table group-import-table">
                     <thead>
                       <tr>
-                        <th>Vorname</th>
-                        <th>Nachname</th>
-                        <th>Firma</th>
-                        <th>Nationalität</th>
-                        <th>Ausweisart</th>
-                        <th>Ausweis gültig bis</th>
-                        <th>Ausweisnummer</th>
-                        <th>Kennzeichen</th>
+                        {shown("visitor_first_name") ? <th><FieldLabel label="Vorname" required={required("visitor_first_name")} /></th> : null}
+                        {shown("visitor_last_name") ? <th><FieldLabel label="Nachname" required={required("visitor_last_name")} /></th> : null}
+                        {shown("visitor_company") ? <th><FieldLabel label="Firma" required={required("visitor_company")} /></th> : null}
+                        {shown("visitor_nationality") ? <th><FieldLabel label="Nationalität" required={required("visitor_nationality")} /></th> : null}
+                        {shown("visitor_birth_date") ? <th><FieldLabel label="Geburtsdatum" required={required("visitor_birth_date")} /></th> : null}
+                        {shown("visitor_street") ? <th><FieldLabel label="Straße" required={required("visitor_street")} /></th> : null}
+                        {shown("visitor_house_number") ? <th><FieldLabel label="Hausnummer" required={required("visitor_house_number")} /></th> : null}
+                        {shown("visitor_postal_code") ? <th><FieldLabel label="PLZ" required={required("visitor_postal_code")} /></th> : null}
+                        {shown("visitor_city") ? <th><FieldLabel label="Ort" required={required("visitor_city")} /></th> : null}
+                        {shown("visitor_phone") ? <th><FieldLabel label="Telefon" required={required("visitor_phone")} /></th> : null}
+                        {shown("visitor_email") ? <th><FieldLabel label="E-Mail" required={required("visitor_email")} /></th> : null}
+                        {shown("id_document_type") ? <th><FieldLabel label="Ausweisart" required={required("id_document_type")} /></th> : null}
+                        {shown("id_document_valid_until") ? <th><FieldLabel label="Ausweis gültig bis" required={required("id_document_valid_until")} /></th> : null}
+                        {shown("id_document_number") ? <th className="group-id-document-number-column"><FieldLabel label="Ausweisnummer" required={required("id_document_number")} /></th> : null}
+                        {shown("visitor_license_plate") ? <th className="group-license-plate-column"><FieldLabel label="Kennzeichen" required={required("visitor_license_plate")} /></th> : null}
                         <th>Aktion</th>
                       </tr>
                     </thead>
                     <tbody>
                       {groupVisitors.map((visitor, index) => (
                         <tr key={index}>
-                          <td><input value={visitor.firstName} onChange={(event) => updateGroupVisitor(index, "firstName", event.target.value)} /></td>
-                          <td><input value={visitor.lastName} onChange={(event) => updateGroupVisitor(index, "lastName", event.target.value)} /></td>
-                          <td><input value={visitor.company} onChange={(event) => updateGroupVisitor(index, "company", event.target.value)} /></td>
-                          <td><CountrySelect required value={visitor.nationalityCode} onChange={(value) => updateGroupVisitor(index, "nationalityCode", value)} /></td>
-                          <td>
-                            <select value={visitor.idDocumentType} onChange={(event) => updateGroupVisitor(index, "idDocumentType", event.target.value)}>
+                          {shown("visitor_first_name") ? <td><input required={hasGroupVisitorData(visitor) && required("visitor_first_name")} value={visitor.firstName} onChange={(event) => updateGroupVisitor(index, "firstName", event.target.value)} /></td> : null}
+                          {shown("visitor_last_name") ? <td><input required={hasGroupVisitorData(visitor) && required("visitor_last_name")} value={visitor.lastName} onChange={(event) => updateGroupVisitor(index, "lastName", event.target.value)} /></td> : null}
+                          {shown("visitor_company") ? <td><input required={hasGroupVisitorData(visitor) && required("visitor_company")} value={visitor.company} onChange={(event) => updateGroupVisitor(index, "company", event.target.value)} /></td> : null}
+                          {shown("visitor_nationality") ? <td><CountrySelect required={hasGroupVisitorData(visitor) && required("visitor_nationality")} value={visitor.nationalityCode} onChange={(value) => updateGroupVisitor(index, "nationalityCode", value)} /></td> : null}
+                          {shown("visitor_birth_date") ? <td><input required={hasGroupVisitorData(visitor) && required("visitor_birth_date")} type="date" max={toDateInputValue(new Date())} value={visitor.birthDate} onChange={(event) => updateGroupVisitor(index, "birthDate", event.target.value)} /></td> : null}
+                          {shown("visitor_street") ? <td><input required={hasGroupVisitorData(visitor) && required("visitor_street")} value={visitor.visitorStreet} onChange={(event) => updateGroupVisitor(index, "visitorStreet", event.target.value)} /></td> : null}
+                          {shown("visitor_house_number") ? <td><input required={hasGroupVisitorData(visitor) && required("visitor_house_number")} value={visitor.visitorHouseNumber} onChange={(event) => updateGroupVisitor(index, "visitorHouseNumber", event.target.value)} /></td> : null}
+                          {shown("visitor_postal_code") ? <td><input required={hasGroupVisitorData(visitor) && required("visitor_postal_code")} value={visitor.visitorPostalCode} onChange={(event) => updateGroupVisitor(index, "visitorPostalCode", event.target.value)} /></td> : null}
+                          {shown("visitor_city") ? <td><input required={hasGroupVisitorData(visitor) && required("visitor_city")} value={visitor.visitorCity} onChange={(event) => updateGroupVisitor(index, "visitorCity", event.target.value)} /></td> : null}
+                          {shown("visitor_phone") ? <td><input required={hasGroupVisitorData(visitor) && required("visitor_phone")} value={visitor.phone} onChange={(event) => updateGroupVisitor(index, "phone", event.target.value)} /></td> : null}
+                          {shown("visitor_email") ? <td><input required={hasGroupVisitorData(visitor) && required("visitor_email")} type="email" value={visitor.email} onChange={(event) => updateGroupVisitor(index, "email", event.target.value)} /></td> : null}
+                          {shown("id_document_type") ? <td>
+                            <select required={hasGroupVisitorData(visitor) && required("id_document_type")} value={visitor.idDocumentType} onChange={(event) => updateGroupVisitor(index, "idDocumentType", event.target.value)}>
                               <option value="">-</option>
                               <option value="identity_card">Personalausweis</option>
                               <option value="passport">Reisepass</option>
                               <option value="service_id">Dienstausweis</option>
                               <option value="other">Sonstiges</option>
                             </select>
-                          </td>
-                          <td><input type="date" className={isPastDate(visitor.idDocumentValidUntil) ? "required-missing" : ""} value={visitor.idDocumentValidUntil} onChange={(event) => updateGroupVisitor(index, "idDocumentValidUntil", event.target.value)} /></td>
-                          <td><input value={visitor.idDocumentNumber} onChange={(event) => updateGroupVisitor(index, "idDocumentNumber", event.target.value)} /></td>
-                          <td><input value={visitor.licensePlate} onChange={(event) => updateGroupVisitor(index, "licensePlate", event.target.value)} /></td>
+                          </td> : null}
+                          {shown("id_document_valid_until") ? <td><input required={hasGroupVisitorData(visitor) && required("id_document_valid_until")} type="date" className={isPastDate(visitor.idDocumentValidUntil) ? "required-missing" : ""} title={isPastDate(visitor.idDocumentValidUntil) ? "Ausweisdokument ist abgelaufen." : undefined} value={visitor.idDocumentValidUntil} onChange={(event) => updateGroupVisitor(index, "idDocumentValidUntil", event.target.value)} /></td> : null}
+                          {shown("id_document_number") ? <td className="group-id-document-number-column"><input required={hasGroupVisitorData(visitor) && required("id_document_number")} value={visitor.idDocumentNumber} onChange={(event) => updateGroupVisitor(index, "idDocumentNumber", event.target.value)} /></td> : null}
+                          {shown("visitor_license_plate") ? <td className="group-license-plate-column"><input required={hasGroupVisitorData(visitor) && required("visitor_license_plate")} value={visitor.licensePlate} onChange={(event) => updateGroupVisitor(index, "licensePlate", event.target.value)} /></td> : null}
                           <td>
                             <button type="button" className="secondary-button" onClick={() => setGroupVisitors((current) => current.filter((_, visitorIndex) => visitorIndex !== index))}>
                               Entfernen

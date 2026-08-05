@@ -14,6 +14,7 @@ import { loadSystemSettings, loadWorkflowSettings, upsertSystemSettings, WORKFLO
 import { writeAuditLog } from "../lib/auditLog";
 import { env } from "../config/env";
 import { sendMailRelayPreview, verifyMailRelayConnection, type MailRelayTestKind } from "../lib/mailRelay";
+import { countOldVisits, loadRetentionSettings, runRetentionCleanup } from "../lib/retentionCleanup";
 import { buildUserExportCsv, buildUserImportTemplateCsv, parseUserImportCsv, type UserCsvImportRawRow } from "../lib/userCsvImport";
 import { adminFieldDefinitionsRouter } from "./adminFieldDefinitions";
 import {
@@ -35,6 +36,7 @@ import {
 } from "../lib/badgeTexts";
 import { getUiBackgroundById, listUiBackgrounds } from "../lib/uiBackgrounds";
 import { listSiteMapCatalog, selectSiteMapCatalogEntry } from "../lib/siteMapCatalog";
+import { APP_VERSION } from "../lib/appVersion";
 import {
   countUserReferences,
   getRequestIp,
@@ -117,11 +119,11 @@ const userCreateSchema = z.object({
     });
   }
 
-  if (value.role !== "guard" && !value.email?.trim()) {
+  if (value.role === "sibe" && !value.email?.trim()) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["email"],
-      message: "Fuer diese Rolle ist eine E-Mail-Adresse erforderlich."
+      message: "Fuer SiBe ist eine E-Mail-Adresse erforderlich."
     });
   }
 
@@ -199,6 +201,10 @@ const badgeTextUpdateSchema = z.object({
 const badgeTextCreateSchema = badgeTextUpdateSchema;
 const workflowSettingsUpdateSchema = z.object({
   backgroundMode: z.enum(["image", "subtle", "plain"]),
+  securityNumber: z.string()
+    .trim()
+    .toUpperCase()
+    .regex(/^(?=.*[A-Z])(?=.*\d)[A-Z0-9]{4,32}$/, "Die DATAV-Nummer muss 4 bis 32 Zeichen lang sein und mindestens einen Buchstaben sowie eine Zahl enthalten."),
   emailRelay: z.object({
     enabled: z.boolean(),
     host: z.string().trim().max(255),
@@ -809,12 +815,10 @@ adminRouter.post("/api/admin/users/import-csv", async (request, response) => {
           continue;
         }
 
-        const nextEmail = role === "guard"
-          ? null
-          : (row.email.trim().toLowerCase() || existingUser?.email?.trim().toLowerCase() || null);
+        const nextEmail = row.email.trim().toLowerCase() || existingUser?.email?.trim().toLowerCase() || null;
 
-        if (role !== "guard" && !nextEmail) {
-          issues.push({ lineNumber: row.lineNumber, username, message: "Für diese Rolle ist eine E-Mail-Adresse erforderlich." });
+        if (role === "sibe" && !nextEmail) {
+          issues.push({ lineNumber: row.lineNumber, username, message: "Für SiBe ist eine E-Mail-Adresse erforderlich." });
           continue;
         }
 
@@ -890,9 +894,7 @@ adminRouter.post("/api/admin/users/import-csv", async (request, response) => {
           normalizedMenuAccess
         );
         const displayName = row.displayName.trim() || existingUser?.displayName || username;
-        const email = role === "guard"
-          ? null
-          : (row.email.trim().toLowerCase() || existingUser?.email?.trim().toLowerCase() || null);
+        const email = row.email.trim().toLowerCase() || existingUser?.email?.trim().toLowerCase() || null;
         const groups = row.groups.trim()
           ? splitMultiValueField(row.groups)
           : existingUser
@@ -1012,7 +1014,7 @@ adminRouter.post("/api/admin/users", async (request, response) => {
     const created = await new sql.Request(transaction)
       .input("username", sql.NVarChar(120), data.username)
       .input("displayName", sql.NVarChar(255), data.displayName?.trim() || data.username)
-      .input("email", sql.NVarChar(255), data.role === "guard" ? null : (data.email?.trim().toLowerCase() || null))
+      .input("email", sql.NVarChar(255), data.email?.trim().toLowerCase() || null)
       .input("passwordHash", passwordHash)
       .input("role", data.role)
       .input("gateId", sql.UniqueIdentifier, null)
@@ -1070,7 +1072,7 @@ adminRouter.put("/api/admin/users/:id", async (request, response) => {
         : getDefaultMenuAccessForRole(currentUser.role)
     );
     const nextDisplayName = data.displayName?.trim() || nextUsername;
-    const nextEmail = nextRole === "guard" ? null : (data.email?.trim().toLowerCase() || currentUser.email?.trim().toLowerCase() || null);
+    const nextEmail = data.email?.trim().toLowerCase() || currentUser.email?.trim().toLowerCase() || null;
     const allowedMenuAccess = new Set(getAllowedMenuAccessForRole(nextRole));
     const requestedMenuAccess = (data.menuAccess ?? []).filter((entry) => allowedMenuAccess.has(entry));
     const nextMenuAccess = data.menuAccess
@@ -1088,8 +1090,8 @@ adminRouter.put("/api/admin/users/:id", async (request, response) => {
       return sendError(response, 400, "VALIDATION_ERROR", "Mindestens ein Menuepunkt passt nicht zur ausgewaehlten Rolle.");
     }
 
-    if (nextRole !== "guard" && !nextEmail) {
-      return sendError(response, 400, "VALIDATION_ERROR", "Fuer diese Rolle ist eine E-Mail-Adresse erforderlich.");
+    if (nextRole === "sibe" && !nextEmail) {
+      return sendError(response, 400, "VALIDATION_ERROR", "Fuer SiBe ist eine E-Mail-Adresse erforderlich.");
     }
 
     if (admin.id === request.params.id && (!nextActive || nextRole !== "admin")) {
@@ -1169,7 +1171,56 @@ adminRouter.put("/api/admin/users/:id", async (request, response) => {
     await transaction.commit();
 
     await writeAuditLog({ user: admin.username, action: "ADMIN_USER_UPDATED", objectType: "user", objectId: request.params.id, ipAddress: getRequestIp(request) });
-    response.json({ success: true });
+    const savedResult = await pool.request()
+      .input("id", sql.UniqueIdentifier, request.params.id)
+      .query<{
+        id: string;
+        username: string;
+        displayName: string;
+        email: string | null;
+        role: "admin" | "guard" | "sibe" | "kaskdt" | "custom";
+        gateId: string | null;
+        isActive: boolean;
+        lastLoginAt: string | null;
+        permissionsJson: string | null;
+      }>(`
+        SELECT
+          id,
+          username,
+          display_name AS displayName,
+          user_email AS email,
+          role,
+          gate_id AS gateId,
+          is_active AS isActive,
+          CONVERT(NVARCHAR(30), last_login_at, 127) AS lastLoginAt,
+          permissions_json AS permissionsJson
+        FROM dbo.users
+        WHERE id = @id
+      `);
+    const savedUser = savedResult.recordset[0];
+    if (!savedUser) {
+      return sendError(response, 404, "NOT_FOUND", "Benutzer wurde nach dem Speichern nicht gefunden.");
+    }
+    const {
+      groupsByUserId: savedGroupsByUserId,
+      menuAccessByUserId: savedMenuAccessByUserId
+    } = await loadUserGroupsAndMenuAccess([savedUser.id]);
+    const effectiveMenuAccess = normalizeMenuAccess(
+      savedUser.role,
+      savedMenuAccessByUserId[savedUser.id]?.length
+        ? savedMenuAccessByUserId[savedUser.id]
+        : getDefaultMenuAccessForRole(savedUser.role)
+    );
+
+    response.json({
+      success: true,
+      user: {
+        ...savedUser,
+        groups: savedGroupsByUserId[savedUser.id] ?? [],
+        menuAccess: effectiveMenuAccess,
+        permissions: serializePermissions(savedUser.role, savedUser.permissionsJson, effectiveMenuAccess)
+      }
+    });
   } catch (error) {
     return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der Benutzer konnte nicht aktualisiert werden.");
   }
@@ -1856,7 +1907,7 @@ adminRouter.get("/api/admin/system-status", async (request, response) => {
   if (!user) return;
   try {
     const pool = await getPool();
-    const [activeVisits, configuredGates, openPreRegistrationsToday, signaturesPending, signaturesFollowUp, signaturesExceptions] = await Promise.all([
+    const [activeVisits, configuredGates, openPreRegistrationsToday, signaturesPending, signaturesFollowUp, signaturesExceptions, schemaVersion] = await Promise.all([
       pool.request().query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.visits WHERE status = 'checked_in'"),
       pool.request().query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.gates WHERE is_active = 1"),
       pool.request().query<{ count: number }>(`
@@ -1867,10 +1918,13 @@ adminRouter.get("/api/admin/system-status", async (request, response) => {
       `),
       pool.request().query<{ count: number }>(`SELECT COUNT(*) AS count FROM dbo.visits WHERE ISNULL(host_signature_status, '${HOST_SIGNATURE_STATUS.PENDING}') = '${HOST_SIGNATURE_STATUS.PENDING}'`),
       pool.request().query<{ count: number }>(`SELECT COUNT(*) AS count FROM dbo.visits WHERE host_signature_status = '${HOST_SIGNATURE_STATUS.SIGNED_LATER}'`),
-      pool.request().query<{ count: number }>(`SELECT COUNT(*) AS count FROM dbo.visits WHERE host_signature_status = '${HOST_SIGNATURE_STATUS.MISSING_EXCEPTION}'`)
+      pool.request().query<{ count: number }>(`SELECT COUNT(*) AS count FROM dbo.visits WHERE host_signature_status = '${HOST_SIGNATURE_STATUS.MISSING_EXCEPTION}'`),
+      pool.request().query<{ version: number }>("SELECT ISNULL(MAX(migration_version), 0) AS version FROM dbo.schema_migrations")
     ]);
     response.json({
       app: "ok",
+      appVersion: APP_VERSION,
+      schemaVersion: schemaVersion.recordset[0]?.version ?? 0,
       environment: env.NODE_ENV,
       activeVisits: activeVisits.recordset[0]?.count ?? 0,
       activeGates: configuredGates.recordset[0]?.count ?? 0,
@@ -1893,6 +1947,7 @@ adminRouter.get("/api/admin/system-settings/workflow-email", async (request, res
   try {
     const settings = await loadWorkflowSettings();
     return response.json({
+      securityNumber: settings.securityNumber,
       backgroundMode: settings.backgroundMode,
       backgroundId: settings.backgroundId,
       backgroundImageUrl: settings.backgroundImageUrl,
@@ -1928,7 +1983,8 @@ adminRouter.put("/api/admin/system-settings/workflow-email", async (request, res
   try {
     const currentSettings = await loadWorkflowSettings({ includeSecrets: true });
     const settingsToPersist: Record<string, string> = {
-      [WORKFLOW_SETTING_KEYS.uiBackgroundMode]: parsed.data.backgroundMode
+      [WORKFLOW_SETTING_KEYS.uiBackgroundMode]: parsed.data.backgroundMode,
+      [WORKFLOW_SETTING_KEYS.securityNumber]: parsed.data.securityNumber
     };
 
     if (currentSettings.emailRelay.source !== "yml") {
@@ -2013,6 +2069,49 @@ adminRouter.post("/api/admin/system-settings/workflow-email/test", async (reques
       return sendError(response, 400, "VALIDATION_ERROR", "Bitte mindestens einen Empfaenger oder eine Testadresse hinterlegen.");
     }
     return handleUnexpectedError(response, error, "MAIL_RELAY_TEST_FAILED", "Die Testmail konnte nicht versendet werden.");
+  }
+});
+
+const retentionUpdateSchema = z.object({
+  enabled: z.boolean(),
+  years: z.number().int().min(1).max(100)
+});
+
+adminRouter.get("/api/admin/data-retention", async (request, response) => {
+  const user = await requirePermission(request, response, "admin.system");
+  if (!user) return;
+  try {
+    const settings = await loadRetentionSettings();
+    const oldVisits = await countOldVisits(settings.years);
+    return response.json({ ...settings, oldVisits });
+  } catch (error) {
+    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Datenlöschung konnte nicht geladen werden.");
+  }
+});
+
+adminRouter.put("/api/admin/data-retention", async (request, response) => {
+  const user = await requirePermission(request, response, "admin.system");
+  if (!user) return;
+  const parsed = retentionUpdateSchema.safeParse(request.body ?? {});
+  if (!parsed.success) return sendValidationError(response, parsed.error.flatten());
+  try {
+    await upsertSystemSettings({ visit_retention_enabled: String(parsed.data.enabled), visit_retention_years: String(parsed.data.years) });
+    await writeAuditLog({ user: user.username, userId: user.id, action: "DATA_RETENTION_SETTINGS_UPDATED", objectType: "system_settings", objectId: "visit_retention", ipAddress: getRequestIp(request), userAgent: getRequestUserAgent(request), metadata: parsed.data });
+    return response.json({ ...(await loadRetentionSettings()), oldVisits: await countOldVisits(parsed.data.years) });
+  } catch (error) {
+    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Datenlöschung konnte nicht gespeichert werden.");
+  }
+});
+
+adminRouter.post("/api/admin/data-retention/run", async (request, response) => {
+  const user = await requirePermission(request, response, "admin.system");
+  if (!user) return;
+  try {
+    const result = await runRetentionCleanup(true);
+    await writeAuditLog({ user: user.username, userId: user.id, action: "DATA_RETENTION_MANUAL_RUN", objectType: "visit", objectId: "old", ipAddress: getRequestIp(request), userAgent: getRequestUserAgent(request), metadata: result });
+    return response.json({ ...result, message: `${result.visits} alte Vorgänge wurden gelöscht.` });
+  } catch (error) {
+    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die alten Vorgänge konnten nicht gelöscht werden.");
   }
 });
 

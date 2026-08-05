@@ -1,7 +1,12 @@
-import * as XLSX from "xlsx";
-import type { ImportVisitInput } from "./visitImportDefinitions";
+import ExcelJS from "exceljs";
+import {
+  getVisitorImportTemplateSampleRowsForHeaders,
+  type ImportVisitInput
+} from "./visitImportDefinitions";
 
-const columnAliases: Record<string, keyof ImportVisitInput> = {
+type ImportVisitColumnKey = Exclude<keyof ImportVisitInput, "sourceExcelRowNumber">;
+
+const columnAliases: Record<string, ImportVisitColumnKey> = {
   wache: "gateName",
   eingang: "gateName",
   gate: "gateName",
@@ -20,6 +25,18 @@ const columnAliases: Record<string, keyof ImportVisitInput> = {
   company: "company",
   geburtsdatum: "birthDate",
   birthdate: "birthDate",
+  strasse: "visitorStreet",
+  straße: "visitorStreet",
+  street: "visitorStreet",
+  hausnummer: "visitorHouseNumber",
+  housenumber: "visitorHouseNumber",
+  plz: "visitorPostalCode",
+  postleitzahl: "visitorPostalCode",
+  postalcode: "visitorPostalCode",
+  ort: "visitorCity",
+  wohnort: "visitorCity",
+  stadt: "visitorCity",
+  city: "visitorCity",
   telefon: "phone",
   phone: "phone",
   email: "email",
@@ -85,16 +102,49 @@ function normalizeHeader(value: unknown): string {
     .replace(/ß/g, "ss");
 }
 
-function mapTableRows(rows: unknown[][]): ImportVisitInput[] {
+export type ParsedExcelImport = {
+  rows: ImportVisitInput[];
+  ignoredSampleRows: number;
+};
+
+function isEmptyRow(row: unknown[]): boolean {
+  return !row.some((value) => cleanCellValue(value));
+}
+
+function isUnchangedSampleRow(row: unknown[], sampleRows: string[][]): boolean {
+  return sampleRows.some((sampleRow) => {
+    const cellCount = Math.max(row.length, sampleRow.length);
+    for (let index = 0; index < cellCount; index += 1) {
+      const actual = row[index] === null || row[index] === undefined ? "" : String(row[index]);
+      const expected = sampleRow[index] ?? "";
+      if (actual !== expected) {
+        return false;
+      }
+    }
+    return true;
+  });
+}
+
+function mapTableRows(rows: unknown[][]): ParsedExcelImport {
   const [headerRow, ...dataRows] = rows;
   if (!headerRow || headerRow.length === 0) {
-    return [];
+    return { rows: [], ignoredSampleRows: 0 };
   }
 
   const mappedHeaders = headerRow.map((header) => columnAliases[normalizeHeader(header)]);
+  const sampleRows = getVisitorImportTemplateSampleRowsForHeaders(headerRow);
+  let ignoredSampleRows = 0;
 
-  return dataRows
-    .map((row) => {
+  const mappedRows = dataRows
+    .flatMap((row, index) => {
+      if (isEmptyRow(row)) {
+        return [];
+      }
+      if (isUnchangedSampleRow(row, sampleRows)) {
+        ignoredSampleRows += 1;
+        return [];
+      }
+
       const item: ImportVisitInput = {};
       row.forEach((value, index) => {
         const key = mappedHeaders[index];
@@ -103,21 +153,30 @@ function mapTableRows(rows: unknown[][]): ImportVisitInput[] {
           item[key] = cleaned;
         }
       });
-      return item;
-    })
-    .filter((item) => Object.values(item).some((value) => cleanCellValue(value)));
+      if (!Object.values(item).some((value) => cleanCellValue(value))) {
+        return [];
+      }
+      item.sourceExcelRowNumber = index + 2;
+      return [item];
+    });
+  return { rows: mappedRows, ignoredSampleRows };
 }
 
-export function parseExcelBuffer(buffer: Buffer): ImportVisitInput[] {
-  const workbook = XLSX.read(buffer, { type: "buffer", cellDates: false });
-  const firstSheetName = workbook.SheetNames[0];
-  if (!firstSheetName) {
-    return [];
+export async function parseExcelBuffer(buffer: Buffer): Promise<ImportVisitInput[]> {
+  return (await parseExcelBufferWithMetadata(buffer)).rows;
+}
+
+export async function parseExcelBufferWithMetadata(buffer: Buffer): Promise<ParsedExcelImport> {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer as never);
+  const worksheet = workbook.worksheets[0];
+  if (!worksheet) {
+    return { rows: [], ignoredSampleRows: 0 };
   }
 
-  const rows = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[firstSheetName], {
-    header: 1,
-    defval: ""
+  const rows = Array.from({ length: worksheet.rowCount }, (_, rowIndex) => {
+    const row = worksheet.getRow(rowIndex + 1);
+    return Array.from({ length: worksheet.columnCount }, (_, columnIndex) => row.getCell(columnIndex + 1).text);
   });
 
   return mapTableRows(rows);

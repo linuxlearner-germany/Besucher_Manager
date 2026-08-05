@@ -2,8 +2,10 @@ import type { Request, Response } from "express";
 import multer, { MulterError } from "multer";
 import type { AuthenticatedUser } from "../lib/visitWorkflow";
 import { buildImportTemplateWorkbookBuffer } from "../lib/importTemplateFiles";
-import { createImportedPreRegistrations } from "../lib/visitImport";
-import { parseExcelBuffer } from "../lib/visitImportParsing";
+import { ImportValidationError, createImportedPreRegistrations } from "../lib/visitImport";
+import { parseExcelBufferWithMetadata } from "../lib/visitImportParsing";
+import { listFieldDefinitions } from "../lib/fieldDefinitions";
+import { PUBLIC_FIELD_INPUT_MAP, type PublicFieldKey } from "../lib/publicPreRegistrationSchema";
 import {
   getRequestIp,
   getRequestUserAgent,
@@ -20,9 +22,9 @@ export const visitorImportUpload = multer({
   }
 });
 
-function getExcelExtension(filename: string): "xlsx" | "xls" | null {
+function getExcelExtension(filename: string): "xlsx" | null {
   const extension = filename.toLowerCase().split(".").pop() || "";
-  if (extension === "xlsx" || extension === "xls") {
+  if (extension === "xlsx") {
     return extension;
   }
   return null;
@@ -35,7 +37,8 @@ export function sendVisitorImportTemplate(response: Response, workbookBuffer: Bu
 }
 
 export async function sendVisitorImportTemplateWorkbook(response: Response) {
-  const workbookBuffer = await buildImportTemplateWorkbookBuffer();
+  const definitions = await listFieldDefinitions("public");
+  const workbookBuffer = await buildImportTemplateWorkbookBuffer(definitions);
   return sendVisitorImportTemplate(response, workbookBuffer);
 }
 
@@ -61,32 +64,48 @@ export function handleVisitorImportUpload(
     }
 
     if (!getExcelExtension(file.originalname)) {
-      return sendValidationError(response, { fieldErrors: { file: ["Es werden nur Excel-Dateien im Format XLSX oder XLS unterstuetzt."] } });
+      return sendValidationError(response, { fieldErrors: { file: ["Es werden nur Excel-Dateien im Format XLSX unterstuetzt."] } });
     }
 
     try {
-      const rows = parseExcelBuffer(file.buffer);
+      const { rows, ignoredSampleRows } = await parseExcelBufferWithMetadata(file.buffer);
 
       if (rows.length === 0) {
-        return sendValidationError(response, { fieldErrors: { file: ["Keine importierbaren Zeilen gefunden."] } });
+        const message = ignoredSampleRows > 0
+          ? "Die Datei enthält nur leere oder unveränderte Musterzeilen. Bitte tragen Sie mindestens einen echten Besucher ein."
+          : "Keine importierbaren Zeilen gefunden.";
+        return sendValidationError(response, { fieldErrors: { file: [message] } });
       }
       if (rows.length > 250) {
         return sendError(response, 400, "VALIDATION_ERROR", "Bitte maximal 250 Besucher pro Datei importieren.");
       }
+
+      const definitions = await listFieldDefinitions("public");
+      const supportedKeys = new Set(Object.keys(PUBLIC_FIELD_INPUT_MAP));
+      const requiredPublicFieldKeys = new Set<PublicFieldKey>(
+        definitions
+          .filter((field) => field.requiredPublic && supportedKeys.has(field.fieldKey))
+          .map((field) => field.fieldKey as PublicFieldKey)
+      );
 
       const imported = await createImportedPreRegistrations(rows, {
         source: "file_import",
         createdBy: options.createdBy,
         submittedIpAddress: getRequestIp(request),
         userAgent: getRequestUserAgent(request),
-        fallbackGateId: options.fallbackGateId
+        fallbackGateId: options.fallbackGateId,
+        requiredPublicFieldKeys
       });
 
       return response.status(201).json({
-        message: `${imported.imported} Besucher importiert.`,
-        ...imported
+        message: `${imported.imported} Besucher importiert.${ignoredSampleRows > 0 ? ` ${ignoredSampleRows} unveränderte Musterzeile(n) ignoriert.` : ""}`,
+        ...imported,
+        ignoredSampleRows
       });
     } catch (importError) {
+      if (importError instanceof ImportValidationError) {
+        return sendValidationError(response, { fieldErrors: { file: importError.messages } });
+      }
       if (importError instanceof Error && importError.message === "invalid_import_nationalities") {
         const rows = (importError as Error & { rows?: number[] }).rows ?? [];
         return sendValidationError(response, {

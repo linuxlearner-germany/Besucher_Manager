@@ -1,14 +1,15 @@
 import ExcelJS from "exceljs";
 import {
   getVisitorImportExcelTemplateColumns,
-  getVisitorImportTemplateSampleRows
+  getVisitorImportTemplateSampleRows,
+  type PublicImportFieldDefinition
 } from "./visitImportDefinitions";
 import { COUNTRIES } from "./countries";
 
-export async function buildImportTemplateWorkbookBuffer(): Promise<Buffer> {
-  const columns = getVisitorImportExcelTemplateColumns();
+export async function buildImportTemplateWorkbookBuffer(definitions?: readonly PublicImportFieldDefinition[]): Promise<Buffer> {
+  const columns = getVisitorImportExcelTemplateColumns(definitions);
   const headers = columns.map((column) => column.header);
-  const sampleRows = getVisitorImportTemplateSampleRows();
+  const sampleRows = getVisitorImportTemplateSampleRows(definitions);
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet("Importvorlage", {
     views: [{ state: "frozen", ySplit: 1 }]
@@ -141,13 +142,14 @@ export async function buildImportTemplateWorkbookBuffer(): Promise<Buffer> {
   });
   listSheet.state = "veryHidden";
 
-  const idDocumentTypeColumnIndex = headers.indexOf("Ausweisart [Pflicht]") + 1;
-  const nationalityColumnIndex = headers.indexOf("Nationalität [Pflicht]") + 1;
+  const columnIndexFor = (fieldKey: string) => columns.findIndex((column) => column.fieldKey === fieldKey) + 1;
+  const idDocumentTypeColumnIndex = columnIndexFor("id_document_type");
+  const nationalityColumnIndex = columnIndexFor("visitor_nationality");
   const dateColumnIndexes = [
-    headers.indexOf("Gültig von [Pflicht]") + 1,
-    headers.indexOf("Gültig bis [Pflicht]") + 1,
-    headers.indexOf("Geburtsdatum [Optional]") + 1,
-    headers.indexOf("Ausweis gültig bis [Optional]") + 1
+    columnIndexFor("valid_from"),
+    columnIndexFor("valid_until"),
+    columnIndexFor("visitor_birth_date"),
+    columnIndexFor("id_document_valid_until")
   ].filter((value) => value > 0);
 
   for (let rowNumber = 2; rowNumber < exampleRows + 2; rowNumber += 1) {
@@ -182,7 +184,7 @@ export async function buildImportTemplateWorkbookBuffer(): Promise<Buffer> {
   hintsSheet.getCell("A1").value = "Excel-Importvorlage";
   hintsSheet.getCell("A1").font = { bold: true, size: 14 };
   hintsSheet.getCell("A3").value = "Pflichtfelder";
-  hintsSheet.getCell("B3").value = "Vorname, Nachname, Firma / Organisation, Nationalität, Ausweisart, Ausweisnummer, Ansprechpartner, Ansprechpartner Telefon, Besuchszweck, Gültig von, Gültig bis";
+  hintsSheet.getCell("B3").value = columns.filter((column) => column.required).map((column) => column.header.replace(/\s*\[(Pflicht|Optional)\]$/, "")).join(", ");
   hintsSheet.getCell("A4").value = "Spaltengruppen";
   hintsSheet.getCell("B4").value = "Blau = Besucher, Grün = Ansprechpartner, Gelb = Besuch.";
   hintsSheet.getCell("A5").value = "Dropdowns";

@@ -88,14 +88,21 @@ async function createPreRegistration(input) {
     await transaction.begin();
     try {
         const gateId = cleanOptional(input.gateId);
+        const gate = gateId ? await findActiveGateById(gateId) : null;
         const badgeNumber = await generateUniqueBadgeNumber(transaction);
         const fallbackDate = new Date().toISOString().slice(0, 10);
         const validFrom = input.validFrom || fallbackDate;
         const validUntil = input.validUntil || validFrom;
+        const validFromDate = normalizeDateOnlyStart(validFrom);
+        const validUntilDate = normalizeDateOnlyEnd(validUntil);
         const visitorInsert = await new mssql_1.default.Request(transaction)
             .input("firstName", mssql_1.default.NVarChar(120), input.firstName.trim())
             .input("lastName", mssql_1.default.NVarChar(120), input.lastName.trim())
             .input("company", mssql_1.default.NVarChar(255), input.company.trim())
+            .input("visitorStreet", mssql_1.default.NVarChar(255), cleanOptional(input.visitorStreet))
+            .input("visitorHouseNumber", mssql_1.default.NVarChar(40), cleanOptional(input.visitorHouseNumber))
+            .input("visitorPostalCode", mssql_1.default.NVarChar(20), cleanOptional(input.visitorPostalCode))
+            .input("visitorCity", mssql_1.default.NVarChar(120), cleanOptional(input.visitorCity))
             .input("nationalityCode", mssql_1.default.NChar(2), input.nationalityCode)
             .input("birthDate", mssql_1.default.Date, cleanOptional(input.birthDate))
             .input("phone", mssql_1.default.NVarChar(80), cleanOptional(input.phone))
@@ -108,6 +115,10 @@ async function createPreRegistration(input) {
           first_name,
           last_name,
           company,
+          visitor_street,
+          visitor_house_number,
+          visitor_postal_code,
+          visitor_city,
           nationality_code,
           birth_date,
           phone_optional,
@@ -121,6 +132,10 @@ async function createPreRegistration(input) {
           @firstName,
           @lastName,
           @company,
+          @visitorStreet,
+          @visitorHouseNumber,
+          @visitorPostalCode,
+          @visitorCity,
           @nationalityCode,
           @birthDate,
           @phone,
@@ -138,12 +153,12 @@ async function createPreRegistration(input) {
             .input("visitorId", mssql_1.default.UniqueIdentifier, visitorId)
             .input("gateId", mssql_1.default.UniqueIdentifier, gateId)
             .input("hostName", mssql_1.default.NVarChar(255), input.hostName.trim())
-            .input("hostEmail", mssql_1.default.NVarChar(255), cleanOptional(input.hostEmail))
+            .input("hostEmail", mssql_1.default.NVarChar(255), cleanOptional(input.hostEmail)?.toLowerCase() ?? null)
             .input("hostPhone", mssql_1.default.NVarChar(80), cleanOptional(input.hostPhone))
             .input("hostDepartment", mssql_1.default.NVarChar(255), cleanOptional(input.hostDepartment))
             .input("purpose", mssql_1.default.NVarChar(500), input.purpose.trim())
-            .input("validFrom", mssql_1.default.DateTime2, normalizeDateOnlyStart(validFrom))
-            .input("validUntil", mssql_1.default.DateTime2, normalizeDateOnlyEnd(validUntil))
+            .input("validFrom", mssql_1.default.DateTime2, validFromDate)
+            .input("validUntil", mssql_1.default.DateTime2, validUntilDate)
             .input("licensePlate", mssql_1.default.NVarChar(40), cleanOptional(input.licensePlate))
             .input("badgeNumber", mssql_1.default.NVarChar(64), badgeNumber)
             .input("notes", mssql_1.default.NVarChar(mssql_1.default.MAX), cleanOptional(input.notes))
@@ -202,7 +217,24 @@ async function createPreRegistration(input) {
             }
         }, transaction);
         await transaction.commit();
-        const gate = gateId ? await findActiveGateById(gateId) : null;
+        if (input.hostEmail) {
+            void (0, mailRelay_1.sendPreRegistrationConfirmation)({
+                to: input.hostEmail,
+                visitorName: `${input.firstName.trim()} ${input.lastName.trim()}`.trim(),
+                company: input.company.trim(),
+                hostName: input.hostName.trim(),
+                purpose: input.purpose.trim(),
+                validFrom: validFromDate,
+                validUntil: validUntilDate,
+                gateName: gate?.name ?? null,
+                visitId: visit.id
+            }).then(async (delivered) => {
+                if (delivered) {
+                    const pool = await (0, db_1.getPool)();
+                    await pool.request().input("id", mssql_1.default.UniqueIdentifier, visit.id).query("UPDATE dbo.visits SET confirmation_sent_at = SYSUTCDATETIME(), updated_at = SYSUTCDATETIME() WHERE id = @id");
+                }
+            }).catch(() => undefined);
+        }
         if (input.nationalityCode) {
             void (0, mailRelay_1.notifyNationalitySubscribers)({
                 visitId: visit.id,

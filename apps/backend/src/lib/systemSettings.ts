@@ -15,12 +15,14 @@ export const WORKFLOW_SETTING_KEYS = {
   uiBackgroundId: "ui_background_id",
   uiBackgroundImageUrl: "ui_background_image_url",
   uiBackgroundImageName: "ui_background_image_name",
-  uiBackgroundImageOriginalFileName: "ui_background_image_original_file_name"
+  uiBackgroundImageOriginalFileName: "ui_background_image_original_file_name",
+  securityNumber: "security_number"
 } as const;
 
 export const SITE_MAP_SETTING_KEY = "site_map_file_name";
 
 export type WorkflowSettings = {
+  securityNumber: string;
   backgroundMode: "image" | "subtle" | "plain";
   backgroundId: string | null;
   backgroundImageUrl: string;
@@ -163,6 +165,7 @@ export async function loadWorkflowSettings(options?: {
   if (fileRelayConfig) {
     return {
       ...backgroundState,
+      securityNumber: settingMap.get(WORKFLOW_SETTING_KEYS.securityNumber)?.trim().toUpperCase() || "BM2026",
       emailRelay: {
         source: "yml",
         configPath: fileRelayConfig.configPath,
@@ -181,6 +184,7 @@ export async function loadWorkflowSettings(options?: {
 
   return {
     ...backgroundState,
+    securityNumber: settingMap.get(WORKFLOW_SETTING_KEYS.securityNumber)?.trim().toUpperCase() || "BM2026",
     emailRelay: {
       source: "database",
       configPath: null,

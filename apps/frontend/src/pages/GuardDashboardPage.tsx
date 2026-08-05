@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   AppLayout,
   type ApiError,
@@ -15,7 +15,7 @@ import {
   type GuardCalendarItem,
   type VisitRow
 } from "../app/core";
-import { FormField } from "../components/ui";
+import { Alert, FormField } from "../components/ui";
 import { CountrySelect } from "../components/CountrySelect";
 
 type WalkInAction = "save" | "check_in" | "check_in_and_print";
@@ -164,6 +164,12 @@ function hasSearchCriteria(search: VisitorSearchFormState): boolean {
   return search.query.trim().length >= 2;
 }
 
+function isPastDate(value: string): boolean {
+  if (!value) return false;
+  const date = new Date(`${value}T23:59:59.999Z`);
+  return !Number.isNaN(date.getTime()) && date < new Date();
+}
+
 function applyVisitorToWalkInForm(current: WalkInFormState, visitor: GuardVisitorMatch): WalkInFormState {
   return {
     ...current,
@@ -194,6 +200,7 @@ function applyVisitorToWalkInForm(current: WalkInFormState, visitor: GuardVisito
 }
 
 export function GuardDashboardPage() {
+  const navigate = useNavigate();
   const [visits, setVisits] = useState<VisitRow[]>([]);
   const [calendarItems, setCalendarItems] = useState<GuardCalendarItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -438,6 +445,10 @@ export function GuardDashboardPage() {
       await loadVisits();
     } catch (apiError) {
       const errorPayload = apiError as ApiError;
+      if (errorPayload.error === "VALIDATION_ERROR") {
+        navigate(`/wache/besuche/${visitId}`);
+        return;
+      }
       setActionMessage(errorPayload.message || "Check-in fehlgeschlagen.");
     }
   }
@@ -467,7 +478,7 @@ export function GuardDashboardPage() {
     setWalkInSaving(true);
 
     try {
-      const payload = await fetchJson<{ message: string; badgeNumber: string; visitId: string; status: string }>("/api/guard/visits/walk-in", {
+      const payload = await fetchJson<{ message: string; badgeNumber: string; visitId: string; status: string; warnings: string[] }>("/api/guard/visits/walk-in", {
         method: "POST",
         body: JSON.stringify({
           ...walkInForm,
@@ -487,11 +498,13 @@ export function GuardDashboardPage() {
       });
       if (action === "check_in_and_print") {
         const printWindow = window.open(`/wache/besuche/${payload.visitId}/druck?autoprint=1`, "_blank", "noopener,noreferrer");
+        const warningText = payload.warnings.length ? ` Warnung: ${payload.warnings.join(" ")}` : "";
         setActionMessage(printWindow
-          ? `${payload.message} Besuchsnummer: ${payload.badgeNumber}. Druckansicht wurde geöffnet.`
-          : `${payload.message} Besuchsnummer: ${payload.badgeNumber}. Das Druckfenster konnte nicht automatisch geöffnet werden.`);
+          ? `${payload.message} Besuchsnummer: ${payload.badgeNumber}. Druckansicht wurde geöffnet.${warningText}`
+          : `${payload.message} Besuchsnummer: ${payload.badgeNumber}. Das Druckfenster konnte nicht automatisch geöffnet werden.${warningText}`);
       } else {
-        setActionMessage(`${payload.message} Besuchsnummer: ${payload.badgeNumber}.`);
+        const warningText = payload.warnings.length ? ` Warnung: ${payload.warnings.join(" ")}` : "";
+        setActionMessage(`${payload.message} Besuchsnummer: ${payload.badgeNumber}.${warningText}`);
       }
       await Promise.all([loadVisits(), loadCalendar()]);
     } catch (apiError) {
@@ -705,7 +718,7 @@ export function GuardDashboardPage() {
 
                 {!visits.length ? (
                   <tr>
-                    <td colSpan={10}>Keine Besuche für die aktuelle Auswahl gefunden.</td>
+                    <td colSpan={11}>Keine Besuche für die aktuelle Auswahl gefunden.</td>
                   </tr>
                 ) : null}
               </tbody>
@@ -949,9 +962,12 @@ export function GuardDashboardPage() {
                     <option value="other">Sonstiges</option>
                   </select>
                 </FormField>
-                <FormField label="Ausweis gültig bis" required><input type="date" value={walkInForm.idDocumentValidUntil} onChange={(event) => setWalkInForm((current) => ({ ...current, idDocumentValidUntil: event.target.value }))} /></FormField>
+                <FormField label="Ausweis gültig bis" required><input className={isPastDate(walkInForm.idDocumentValidUntil) ? "required-missing" : ""} type="date" value={walkInForm.idDocumentValidUntil} onChange={(event) => setWalkInForm((current) => ({ ...current, idDocumentValidUntil: event.target.value }))} /></FormField>
                 <FormField label="Ausweisnummer" required><input value={walkInForm.idDocumentNumber} onChange={(event) => setWalkInForm((current) => ({ ...current, idDocumentNumber: event.target.value }))} /></FormField>
               </div>
+              {isPastDate(walkInForm.idDocumentValidUntil) ? (
+                <Alert type="warning">Der Ausweis ist abgelaufen. Die Anmeldung und das Einchecken sind trotzdem möglich.</Alert>
+              ) : null}
               <FormField label="Bemerkung"><textarea rows={3} value={walkInForm.notes} onChange={(event) => setWalkInForm((current) => ({ ...current, notes: event.target.value }))} /></FormField>
               <div className="row-actions">
                 <button type="button" className="secondary-button" onClick={() => void handleWalkInCreate("save")} disabled={walkInSaving}>

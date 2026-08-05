@@ -20,6 +20,15 @@ export function Alert({ type, children }: PropsWithChildren<{ type: "success" | 
   return <div className={`feedback ${type}`}>{children}</div>;
 }
 
+export function FieldLabel({ label, required = false }: { label: string; required?: boolean }) {
+  return (
+    <span className="field-label">
+      {label}
+      {required ? <span className="required-indicator" aria-hidden="true"> *</span> : null}
+    </span>
+  );
+}
+
 export function FormField({
   label,
   required,
@@ -28,7 +37,7 @@ export function FormField({
 }: PropsWithChildren<{ label: string; required?: boolean; error?: string }>) {
   return (
     <label>
-      {label}{required ? " *" : ""}
+      <FieldLabel label={label} required={required} />
       {children}
       {error ? <span className="field-error">{error}</span> : null}
     </label>

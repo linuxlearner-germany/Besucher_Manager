@@ -24,3 +24,10 @@ test("mergeMailRecipients normalizes and deduplicates addresses", () => {
 
   assert.deepEqual(recipients, ["sibe@example.org", "admin@example.org"]);
 });
+
+test("visit validity dates keep the stored all-day interval", () => {
+  const { formatVisitDate } = loadModule();
+
+  assert.equal(formatVisitDate(new Date("2026-07-30T00:00:00.000Z")), "30.07.2026, 00:00");
+  assert.equal(formatVisitDate(new Date("2026-07-30T23:59:59.999Z")), "30.07.2026, 23:59");
+});

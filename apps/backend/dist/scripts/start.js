@@ -9,6 +9,9 @@ const env_1 = require("../config/env");
 const db_1 = require("../lib/db");
 const users_1 = require("../lib/users");
 const migrate_1 = require("./migrate");
+const mailRelay_1 = require("../lib/mailRelay");
+const retentionCleanup_1 = require("../lib/retentionCleanup");
+const appVersion_1 = require("../lib/appVersion");
 async function verifyDatabaseConnection() {
     const pool = await (0, db_1.getPool)();
     await pool.request().query("SELECT 1 AS ok");
@@ -17,6 +20,7 @@ async function verifyDatabaseConnection() {
 async function main() {
     node_fs_1.default.mkdirSync(env_1.env.uploadDir, { recursive: true });
     console.log("Starting Besucher Manager container bootstrap...");
+    console.log(`Application version: ${appVersion_1.APP_VERSION}`);
     await verifyDatabaseConnection();
     const appliedMigrations = await (0, migrate_1.runMigrations)();
     console.log(appliedMigrations.length > 0
@@ -42,6 +46,12 @@ async function main() {
     }
     await (0, db_1.closePool)();
     const app = (0, app_1.createApp)();
+    const runReminderJob = () => { void (0, mailRelay_1.sendDueVisitReminders)().catch((error) => console.error("visit reminder job failed", error)); };
+    runReminderJob();
+    setInterval(runReminderJob, 15 * 60 * 1000).unref();
+    const runRetentionJob = () => { void (0, retentionCleanup_1.runRetentionCleanup)().catch((error) => console.error("retention cleanup failed", error)); };
+    runRetentionJob();
+    setInterval(runRetentionJob, 24 * 60 * 60 * 1000).unref();
     app.listen(env_1.env.APP_PORT, env_1.env.APP_HOST, () => {
         console.log(`besucher-manager listening on http://${env_1.env.APP_HOST}:${env_1.env.APP_PORT}`);
     });

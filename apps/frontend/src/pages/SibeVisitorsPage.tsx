@@ -215,7 +215,6 @@ export function SibeVisitorsPage() {
                 <th>Besuchername</th>
                 <th>Firma</th>
                 <th>Nationalität</th>
-                <th>Nationalität</th>
                 <th>Kennzeichen</th>
                 <th>Besuchsnummer</th>
                 <th>Status</th>
@@ -252,6 +251,7 @@ export function SibeVisitorsPage() {
                   </td>
                 </tr>
               ))}
+              {visits.length === 0 ? <tr><td colSpan={14}>Keine Besuchsvorgänge für die aktuelle Auswahl gefunden.</td></tr> : null}
             </tbody>
           </DataTable>
         </Card>
@@ -264,6 +264,7 @@ export function SibeVisitorsPage() {
                 <th>Name</th>
                 <th>Geburtsdatum</th>
                 <th>Firma</th>
+                <th>Nationalität</th>
                 <th>Telefon</th>
                 <th>E-Mail</th>
                 <th>Besuche</th>
@@ -285,6 +286,7 @@ export function SibeVisitorsPage() {
                   <td>{formatDateTime(visitor.archivedAt)}</td>
                 </tr>
               ))}
+              {visitors.length === 0 ? <tr><td colSpan={9}>Keine Besucher für die aktuelle Auswahl gefunden.</td></tr> : null}
             </tbody>
           </DataTable>
         </Card>

@@ -1,6 +1,6 @@
 {
   "name": "besucher-manager",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Interne Besucherverwaltung als Node.js/TypeScript-Monorepo",
   "scripts": {
     "build": "npm run build --workspace @besucher-manager/backend && npm run build --workspace @besucher-manager/frontend",

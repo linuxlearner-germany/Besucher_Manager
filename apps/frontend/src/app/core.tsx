@@ -5,6 +5,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState
 } from "react";
 import { Navigate, NavLink, useLocation, useNavigate } from "react-router-dom";
@@ -113,7 +114,10 @@ export type AdminUser = {
   menuAccess: AppMenuKey[];
   permissions: UserPermissions;
 };
-export type EditableAdminUser = AdminUser & { password?: string };
+export type EditableAdminUser = AdminUser & {
+  password?: string;
+  groupsText: string;
+};
 
 export type AdminBadgeText = {
   id: string;
@@ -235,6 +239,9 @@ export type VisitRow = {
   visitorHouseNumber: string | null;
   visitorPostalCode: string | null;
   visitorCity: string | null;
+  rejectionNote?: string | null;
+  rejectedAt?: string | null;
+  rejectedBy?: string | null;
   visitorAddress: string | null;
   idDocumentType: string | null;
   idDocumentValidUntil: string | null;
@@ -285,6 +292,10 @@ export type FormState = {
   firstName: string;
   lastName: string;
   company: string;
+  visitorStreet: string;
+  visitorHouseNumber: string;
+  visitorPostalCode: string;
+  visitorCity: string;
   nationalityCode: string;
   birthDate: string;
   hostName: string;
@@ -557,6 +568,7 @@ export type SibeVisitRow = {
 };
 
 export type AdminWorkflowSettings = {
+  securityNumber: string;
   backgroundMode: "image" | "subtle" | "plain";
   backgroundId: string | null;
   backgroundImageUrl: string;
@@ -634,6 +646,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 const ThemeContext = createContext<{
   mode: "light" | "dark";
   toggle: () => void;
+  securityNumber: string;
   backgroundMode: "image" | "subtle" | "plain";
   setBackgroundMode: (mode: "image" | "subtle" | "plain") => void;
   setBackgroundImageUrl: (url: string) => void;
@@ -681,6 +694,8 @@ export function formatStatus(status: string): string {
       return "Ausgecheckt";
     case "cancelled":
       return "Storniert";
+    case "rejected":
+      return "Abgelehnt";
     default:
       return status;
   }
@@ -931,6 +946,10 @@ export function buildInitialFormState(): FormState {
     firstName: "",
     lastName: "",
     company: "",
+    visitorStreet: "",
+    visitorHouseNumber: "",
+    visitorPostalCode: "",
+    visitorCity: "",
     nationalityCode: "DE",
     birthDate: "",
     hostName: "",
@@ -1105,26 +1124,40 @@ export function AuthProvider({ children }: PropsWithChildren) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-export function ThemeProvider({ children }: PropsWithChildren) {
-  const [mode, setMode] = useState<"light" | "dark">(() => {
-    if (typeof window !== "undefined") {
-      const saved = window.localStorage.getItem("bm-theme");
+type ThemeMode = "light" | "dark";
 
-      if (saved === "light" || saved === "dark") {
-        return saved;
-      }
-    }
-
+function getInitialThemeMode(): ThemeMode {
+  if (typeof window === "undefined") {
     return "light";
+  }
+
+  const saved = window.localStorage.getItem("bm-theme");
+  return saved === "light" || saved === "dark" ? saved : "light";
+}
+
+function applyThemeMode(mode: ThemeMode) {
+  if (typeof document === "undefined" || typeof window === "undefined") {
+    return;
+  }
+
+  document.documentElement.dataset.theme = mode;
+  window.localStorage.setItem("bm-theme", mode);
+}
+
+export function ThemeProvider({ children }: PropsWithChildren) {
+  const [mode, setMode] = useState<ThemeMode>(() => {
+    const initialMode = getInitialThemeMode();
+    applyThemeMode(initialMode);
+    return initialMode;
   });
   const [backgroundMode, setBackgroundMode] = useState<"image" | "subtle" | "plain">(() => {
     return "plain";
   });
   const [backgroundImageUrl, setBackgroundImageUrl] = useState<string>(BRANDING.background);
+  const [securityNumber, setSecurityNumber] = useState("BM2026");
 
   useEffect(() => {
-    document.documentElement.setAttribute("data-theme", mode);
-    window.localStorage.setItem("bm-theme", mode);
+    applyThemeMode(mode);
   }, [mode]);
 
   useEffect(() => {
@@ -1141,13 +1174,14 @@ export function ThemeProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     let active = true;
 
-    void fetchJson<{ backgroundMode: "image" | "subtle" | "plain"; backgroundImageUrl: string }>("/api/ui-settings", {
+    void fetchJson<{ backgroundMode: "image" | "subtle" | "plain"; backgroundImageUrl: string; securityNumber: string }>("/api/ui-settings", {
       method: "GET",
       headers: {}
     }).then((payload) => {
       if (!active) return;
       setBackgroundMode(payload.backgroundMode);
       setBackgroundImageUrl(payload.backgroundImageUrl || "");
+      setSecurityNumber(payload.securityNumber || "BM2026");
     }).catch(() => {
     });
 
@@ -1157,10 +1191,14 @@ export function ThemeProvider({ children }: PropsWithChildren) {
   }, []);
 
   const toggle = useCallback(() => {
-    setMode((current) => (current === "light" ? "dark" : "light"));
+    setMode((current) => {
+      const nextMode = current === "light" ? "dark" : "light";
+      applyThemeMode(nextMode);
+      return nextMode;
+    });
   }, []);
 
-  return <ThemeContext.Provider value={{ mode, toggle, backgroundMode, setBackgroundMode, setBackgroundImageUrl }}>{children}</ThemeContext.Provider>;
+  return <ThemeContext.Provider value={{ mode, toggle, securityNumber, backgroundMode, setBackgroundMode, setBackgroundImageUrl }}>{children}</ThemeContext.Provider>;
 }
 
 export function LoadingScreen() {
@@ -1182,19 +1220,55 @@ export function LoadingScreen() {
 
 export function AppLayout({ children }: PropsWithChildren) {
   const { user, logout } = useAuth();
-  const { mode, toggle } = useThemeMode();
+  const { mode, toggle, securityNumber } = useThemeMode();
   const navigate = useNavigate();
+  const location = useLocation();
+  const navigationRef = useRef<HTMLDivElement>(null);
+  const [openRoleMenu, setOpenRoleMenu] = useState<"wache" | "sibe" | "kaskdt" | null>(null);
   const menuItems: Array<{ to: string; label: string; visible: boolean }> = [
     { to: "/", label: "Voranmeldung", visible: !user || Boolean(user && hasMenuAccess(user, "voranmeldung")) },
     { to: "/wache", label: "Wache", visible: Boolean(user && hasMenuAccess(user, "wache") && hasPermission(user, "visits.read")) },
     { to: "/import", label: "Import", visible: Boolean(!user || (user && hasMenuAccess(user, "import") && hasPermission(user, "imports.execute"))) },
     { to: "/admin", label: "Admin", visible: Boolean(user && hasMenuAccess(user, "admin") && (hasPermission(user, "admin.users") || hasPermission(user, "admin.guards") || hasPermission(user, "admin.fields") || hasPermission(user, "admin.map") || hasPermission(user, "admin.system") || hasPermission(user, "logs.audit") || hasPermission(user, "logs.errors"))) },
     { to: "/sibe", label: "SiBe", visible: Boolean(user && hasMenuAccess(user, "sibe") && hasPermission(user, "dashboards.sibe")) },
+    { to: "/sibe/ablehnungen", label: "Ablehnungen", visible: Boolean(user && hasMenuAccess(user, "sibe") && hasPermission(user, "visits.read")) },
     { to: "/sibe/benachrichtigungen", label: "Länderbenachrichtigungen", visible: Boolean(user && hasMenuAccess(user, "laenderbenachrichtigungen") && hasPermission(user, "dashboards.sibe")) },
     { to: "/kaskdt", label: "KasKdt", visible: Boolean(user && hasMenuAccess(user, "kaskdt") && hasPermission(user, "dashboards.commander")) },
     { to: "/texte", label: "Texte", visible: Boolean(user && hasMenuAccess(user, "texte") && hasPermission(user, "texts.manage")) },
     { to: "/login", label: "Login", visible: !user }
   ];
+  const visibleMenuItems = menuItems.filter((item) => item.visible);
+  const adminRoleMenus: Array<{ key: "wache" | "sibe" | "kaskdt"; label: string; paths: string[] }> = [
+    { key: "wache", label: "Wache", paths: ["/wache", "/import"] },
+    { key: "sibe", label: "SiBe", paths: ["/sibe", "/sibe/ablehnungen", "/sibe/benachrichtigungen"] },
+    { key: "kaskdt", label: "KasKdt", paths: ["/kaskdt", "/texte"] }
+  ];
+  const isAdminNavigation = user?.role === "admin";
+
+  useEffect(() => {
+    setOpenRoleMenu(null);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    function closeOnOutsideClick(event: MouseEvent) {
+      if (navigationRef.current && !navigationRef.current.contains(event.target as Node)) {
+        setOpenRoleMenu(null);
+      }
+    }
+
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpenRoleMenu(null);
+      }
+    }
+
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeOnOutsideClick);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, []);
 
   async function handleLogout() {
     await logout();
@@ -1203,6 +1277,10 @@ export function AppLayout({ children }: PropsWithChildren) {
 
   return (
     <div className="shell app-shell">
+      <aside className="security-number-display" aria-label={`DATAV-Nummer ${securityNumber}`}>
+        <span>DATAV-Nummer</span>
+        <strong>{securityNumber}</strong>
+      </aside>
       <div className="content-container">
         <header className="topbar app-header">
           <div className="topbar-branding">
@@ -1216,20 +1294,76 @@ export function AppLayout({ children }: PropsWithChildren) {
           </div>
 
           <div className="topbar-actions">
-            <nav className="nav-links">
-              {menuItems.filter((item) => item.visible).map((item) => (
+            <nav ref={navigationRef} className="nav-links" aria-label="Hauptnavigation">
+              {isAdminNavigation ? (
+                <>
+                  {visibleMenuItems.filter((item) => ["/", "/admin"].includes(item.to)).map((item) => (
+                    <NavLink key={item.to} to={item.to} className={({ isActive }) => (isActive ? "active-link" : "")}>
+                      {item.label}
+                    </NavLink>
+                  ))}
+                  {adminRoleMenus.map((roleMenu) => {
+                    const entries = visibleMenuItems.filter((item) => roleMenu.paths.includes(item.to));
+                    const isActive = entries.some((item) => item.to === "/sibe"
+                      ? location.pathname === "/sibe" || location.pathname.startsWith("/sibe/")
+                      : location.pathname === item.to || location.pathname.startsWith(`${item.to}/`));
+
+                    if (entries.length === 0) return null;
+
+                    return (
+                      <div key={roleMenu.key} className="role-menu-dropdown">
+                        <button
+                          type="button"
+                          className={`secondary-button menu-dropdown-trigger${isActive ? " active-link" : ""}`}
+                          aria-expanded={openRoleMenu === roleMenu.key}
+                          aria-controls={`role-menu-${roleMenu.key}`}
+                          onClick={() => setOpenRoleMenu((current) => current === roleMenu.key ? null : roleMenu.key)}
+                        >
+                          {roleMenu.label}<span aria-hidden="true">▾</span>
+                        </button>
+                        {openRoleMenu === roleMenu.key ? (
+                          <div id={`role-menu-${roleMenu.key}`} className="role-menu-popover">
+                            {entries.map((item) => (
+                              <NavLink key={item.to} to={item.to} className={({ isActive: itemIsActive }) => (itemIsActive ? "active-link" : "")}>
+                                {item.label}
+                              </NavLink>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </>
+              ) : visibleMenuItems.map((item) => (
                 <NavLink key={item.to} to={item.to} className={({ isActive }) => (isActive ? "active-link" : "")}>
                   {item.label}
                 </NavLink>
               ))}
             </nav>
-            <button className="secondary-button" type="button" onClick={toggle}>
-              {mode === "dark" ? "Hell" : "Dunkel"}
-            </button>
             {user ? (
               <button className="secondary-button" type="button" onClick={handleLogout}>
                 Abmelden
               </button>
+            ) : null}
+            <label className="theme-switch">
+              <span className="theme-switch-icon" aria-hidden="true">
+                <img className="theme-switch-moon" src="/branding/theme-moon.svg" alt="" />
+                <img className="theme-switch-sun" src="/branding/theme-sun.svg" alt="" />
+              </span>
+              <input
+                type="checkbox"
+                checked={mode === "dark"}
+                onChange={toggle}
+                role="switch"
+                aria-label="Dunkelmodus aktivieren"
+              />
+              <span className="theme-switch-track" aria-hidden="true"><span /></span>
+            </label>
+            {user ? (
+              <NavLink className={({ isActive }) => `secondary-button settings-button${isActive ? " active-link" : ""}`} to="/einstellungen" aria-label="Einstellungen" title="Einstellungen">
+                <img className="settings-icon-light" src="/branding/settings-black.svg" alt="" aria-hidden="true" />
+                <img className="settings-icon-dark" src="/branding/settings-white.svg" alt="" aria-hidden="true" />
+              </NavLink>
             ) : null}
           </div>
         </header>

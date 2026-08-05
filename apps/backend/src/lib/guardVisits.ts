@@ -1364,7 +1364,7 @@ export async function createWalkInVisit(
   input: GuardWalkInVisitInput,
   ipAddress?: string | null,
   userAgent?: string | null
-): Promise<{ visitId: string; visitorId: string; badgeNumber: string; status: string; alreadyExisted?: boolean }> {
+): Promise<{ visitId: string; visitorId: string; badgeNumber: string; status: string; warnings: string[]; alreadyExisted?: boolean }> {
   if (!user.gateId) {
     throw new Error("visit_gate_required_for_checkin");
   }
@@ -1374,6 +1374,10 @@ export async function createWalkInVisit(
   await transaction.begin();
 
   try {
+    const documentExpiry = new Date(`${input.idDocumentValidUntil}T23:59:59.999Z`);
+    const warnings = !Number.isNaN(documentExpiry.getTime()) && documentExpiry < new Date()
+      ? ["Ausweisdokument ist abgelaufen."]
+      : [];
     const action = input.action === "save" || input.action === "check_in_and_print"
       ? input.action
       : "check_in";
@@ -1401,6 +1405,7 @@ export async function createWalkInVisit(
           visitorId: existingVisit.visitorId,
           badgeNumber: existingVisit.badgeNumber,
           status: existingVisit.status,
+          warnings,
           alreadyExisted: true
         };
       }
@@ -1652,7 +1657,8 @@ export async function createWalkInVisit(
           gateId: user.gateId,
           visitorId,
           reusedVisitor: visitorWasReused,
-          status: visit.status
+          status: visit.status,
+          warnings
         }
       },
       transaction
@@ -1692,7 +1698,8 @@ export async function createWalkInVisit(
       visitId: visit.id,
       visitorId: visitorId as string,
       badgeNumber,
-      status: visit.status
+      status: visit.status,
+      warnings
     };
   } catch (error) {
     await transaction.rollback();

@@ -33,7 +33,7 @@ function createApp() {
     app.use("/uploads", express_1.default.static(env_1.env.uploadDir));
     if (node_fs_1.default.existsSync(frontendDist)) {
         app.use(express_1.default.static(frontendDist));
-        app.get("*", (request, response, next) => {
+        app.get("/{*splat}", (request, response, next) => {
             if (request.path.startsWith("/api") || request.path === "/health" || request.path.startsWith("/uploads")) {
                 return next();
             }

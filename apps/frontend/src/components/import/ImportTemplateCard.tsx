@@ -64,12 +64,12 @@ export function ImportTemplateCard({
         <input
           className="visually-hidden"
           type="file"
-          accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+          accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
           onChange={handleFileInput}
         />
         <div className="dropzone-copy">
           <strong>Excel-Datei auswählen</strong>
-          <span>XLSX oder XLS</span>
+          <span>XLSX</span>
         </div>
         {importFile ? (
           <div className="dropzone-selected">

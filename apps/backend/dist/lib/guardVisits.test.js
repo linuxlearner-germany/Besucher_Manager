@@ -81,6 +81,14 @@ function createBaseVisit() {
     strict_1.default.equal(completeness.warnings.some((issue) => issue.field === "gate_id"), false);
     strict_1.default.equal(completeness.infos.some((issue) => issue.field === "id_document"), false);
 });
+(0, node_test_1.default)("completeness warns about an expired document without blocking check-in", () => {
+    const { getVisitCompleteness } = require("./guardVisits");
+    const visit = createBaseVisit();
+    visit.idDocumentValidUntil = "2020-01-01";
+    const completeness = getVisitCompleteness(visit);
+    strict_1.default.equal(completeness.canCheckIn, true);
+    strict_1.default.equal(completeness.warnings.some((issue) => issue.field === "id_document_valid_until"), true);
+});
 (0, node_test_1.default)("completeness accepts visitor_address free text as address alternative", () => {
     const { getVisitCompleteness } = require("./guardVisits");
     const visit = createBaseVisit();

@@ -7,9 +7,16 @@ import { notifyNationalitySubscribers } from "./mailRelay";
 import { findActiveGateById, listActiveGates } from "./publicPreRegistrations";
 import { getVisitCompleteness } from "./guardVisits";
 import type { ImportVisitInput, ImportVisitResult, ImportVisitsResult } from "./visitImportDefinitions";
+import { validateImportedPreRegistrationRows, type PublicFieldKey } from "./publicPreRegistrationSchema";
 import { VISIT_STATUS, type AuthenticatedUser } from "./visitWorkflow";
 
 export const MISSING_IMPORT_VALUE = "[fehlt]";
+
+export class ImportValidationError extends Error {
+  constructor(public readonly messages: string[]) {
+    super("invalid_import_data");
+  }
+}
 
 function cleanOptional(value: string | null | undefined): string | null {
   if (typeof value !== "string") {
@@ -140,10 +147,18 @@ export async function createImportedPreRegistrations(
     userAgent?: string | null;
     createdBy?: AuthenticatedUser | null;
     fallbackGateId?: string | null;
+    requiredPublicFieldKeys?: ReadonlySet<PublicFieldKey>;
   }
 ): Promise<ImportVisitsResult> {
+  if (options.requiredPublicFieldKeys) {
+    const validationMessages = validateImportedPreRegistrationRows(rows, options.requiredPublicFieldKeys);
+    if (validationMessages.length > 0) {
+      throw new ImportValidationError(validationMessages);
+    }
+  }
+
   const invalidNationalityRows = rows.flatMap((row, index) =>
-    findCountryCode(row.nationalityCode) ? [] : [index + 2]
+    findCountryCode(row.nationalityCode) ? [] : [row.sourceExcelRowNumber ?? index + 2]
   );
   if (invalidNationalityRows.length > 0) {
     const error = new Error("invalid_import_nationalities") as Error & { rows: number[] };
@@ -183,6 +198,10 @@ export async function createImportedPreRegistrations(
         .input("company", sql.NVarChar(255), requiredOrPlaceholder(row.company))
         .input("nationalityCode", sql.NChar(2), nationalityCode)
         .input("birthDate", sql.Date, birthDate)
+        .input("visitorStreet", sql.NVarChar(255), cleanOptional(row.visitorStreet))
+        .input("visitorHouseNumber", sql.NVarChar(40), cleanOptional(row.visitorHouseNumber))
+        .input("visitorPostalCode", sql.NVarChar(20), cleanOptional(row.visitorPostalCode))
+        .input("visitorCity", sql.NVarChar(120), cleanOptional(row.visitorCity))
         .input("phone", sql.NVarChar(80), cleanOptional(row.phone))
         .input("email", sql.NVarChar(255), cleanOptional(row.email))
         .input("idDocumentType", sql.NVarChar(40), idDocumentType)
@@ -195,6 +214,10 @@ export async function createImportedPreRegistrations(
             company,
             nationality_code,
             birth_date,
+            visitor_street,
+            visitor_house_number,
+            visitor_postal_code,
+            visitor_city,
             phone_optional,
             email_optional,
             id_document_type,
@@ -208,6 +231,10 @@ export async function createImportedPreRegistrations(
             @company,
             @nationalityCode,
             @birthDate,
+            @visitorStreet,
+            @visitorHouseNumber,
+            @visitorPostalCode,
+            @visitorCity,
             @phone,
             @email,
             @idDocumentType,
@@ -299,6 +326,11 @@ export async function createImportedPreRegistrations(
         visitorPhone: cleanOptional(row.phone),
         visitorEmail: cleanOptional(row.email),
         licensePlate: cleanOptional(row.licensePlate),
+        visitorStreet: cleanOptional(row.visitorStreet),
+        visitorHouseNumber: cleanOptional(row.visitorHouseNumber),
+        visitorPostalCode: cleanOptional(row.visitorPostalCode),
+        visitorCity: cleanOptional(row.visitorCity),
+        visitorAddress: null,
         idDocumentType,
         idDocumentValidUntil,
         idDocumentNumber: cleanOptional(row.idDocumentNumber),
@@ -306,7 +338,7 @@ export async function createImportedPreRegistrations(
       });
 
       importedRows.push({
-        rowNumber: index + 1,
+        rowNumber: row.sourceExcelRowNumber ?? index + 1,
         visitId: visit.id,
         visitorId,
         badgeNumber,

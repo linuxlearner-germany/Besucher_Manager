@@ -4,6 +4,9 @@ import { env } from "../config/env";
 import { closePool, getPool } from "../lib/db";
 import { createOrUpdateAdmin, findUserForLogin } from "../lib/users";
 import { runMigrations } from "./migrate";
+import { sendDueVisitReminders } from "../lib/mailRelay";
+import { runRetentionCleanup } from "../lib/retentionCleanup";
+import { APP_VERSION } from "../lib/appVersion";
 
 async function verifyDatabaseConnection() {
   const pool = await getPool();
@@ -15,6 +18,7 @@ async function main() {
   fs.mkdirSync(env.uploadDir, { recursive: true });
 
   console.log("Starting Besucher Manager container bootstrap...");
+  console.log(`Application version: ${APP_VERSION}`);
   await verifyDatabaseConnection();
   const appliedMigrations = await runMigrations();
   console.log(
@@ -47,6 +51,12 @@ async function main() {
   await closePool();
 
   const app = createApp();
+  const runReminderJob = () => { void sendDueVisitReminders().catch((error) => console.error("visit reminder job failed", error)); };
+  runReminderJob();
+  setInterval(runReminderJob, 15 * 60 * 1000).unref();
+  const runRetentionJob = () => { void runRetentionCleanup().catch((error) => console.error("retention cleanup failed", error)); };
+  runRetentionJob();
+  setInterval(runRetentionJob, 24 * 60 * 60 * 1000).unref();
   app.listen(env.APP_PORT, env.APP_HOST, () => {
     console.log(`besucher-manager listening on http://${env.APP_HOST}:${env.APP_PORT}`);
   });

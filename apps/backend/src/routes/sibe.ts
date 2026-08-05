@@ -16,6 +16,9 @@ const importRoles = ["admin", "guard", "sibe"] as const;
 const sibeVisitNotesSchema = z.object({
   notes: z.string().trim().max(4000, "Die Anmerkung darf maximal 4000 Zeichen enthalten.").optional().or(z.literal(""))
 });
+const rejectionSchema = z.object({
+  note: z.string().trim().max(1000).optional().or(z.literal(""))
+});
 const nationalitySubscriptionsSchema = z.object({
   countryCodes: z.array(z.string()).max(COUNTRIES.length).transform((values, context) => {
     const normalized = values.map(normalizeCountryCode);
@@ -600,7 +603,10 @@ sibeRouter.get("/api/sibe/visits/:id", async (request, response) => {
           CONVERT(NVARCHAR(30), vt.device_returned_at, 127) AS deviceReturnedAt,
           returner.username AS deviceReturnedBy,
           vt.notes,
-          vt.badge_number AS badgeNumber
+          vt.badge_number AS badgeNumber,
+          vt.rejection_note AS rejectionNote,
+          CONVERT(NVARCHAR(30), vt.rejected_at, 127) AS rejectedAt,
+          rejecter.username AS rejectedBy
         FROM dbo.visits vt
         INNER JOIN dbo.visitors vis ON vis.id = vt.visitor_id
         LEFT JOIN dbo.gates g ON g.id = vt.gate_id
@@ -608,6 +614,7 @@ sibeRouter.get("/api/sibe/visits/:id", async (request, response) => {
         LEFT JOIN dbo.users confirmerIn ON confirmerIn.id = vt.check_in_by
         LEFT JOIN dbo.users confirmerOut ON confirmerOut.id = vt.check_out_by
         LEFT JOIN dbo.users returner ON returner.id = vt.device_returned_by
+        LEFT JOIN dbo.users rejecter ON rejecter.id = vt.rejected_by
         WHERE vt.id = @id
       `);
 
@@ -624,6 +631,48 @@ sibeRouter.get("/api/sibe/visits/:id", async (request, response) => {
     });
   } catch (error) {
     return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Besuchsdetails konnten nicht geladen werden.");
+  }
+});
+
+sibeRouter.post("/api/sibe/visits/:id/reject", async (request, response) => {
+  const user = await requireRole(request, response, [...sibeWriteRoles]);
+  if (!user) return;
+  const parsed = rejectionSchema.safeParse(request.body ?? {});
+  if (!parsed.success) return sendValidationError(response, parsed.error.flatten());
+
+  try {
+    const pool = await getPool();
+    const rejected = await pool.request()
+      .input("id", sql.UniqueIdentifier, request.params.id)
+      .input("userId", sql.UniqueIdentifier, user.id)
+      .input("note", sql.NVarChar(1000), parsed.data.note?.trim() || null)
+      .query<{ id: string }>(`
+        UPDATE dbo.visits
+        SET
+          status = '${VISIT_STATUS.REJECTED}',
+          rejected_at = SYSUTCDATETIME(),
+          rejected_by = @userId,
+          rejection_note = @note,
+          updated_at = SYSUTCDATETIME()
+        OUTPUT inserted.id
+        WHERE id = @id
+          AND status = '${VISIT_STATUS.PRE_REGISTERED}'
+      `);
+
+    if (!rejected.recordset[0]) {
+      const existing = await pool.request()
+        .input("id", sql.UniqueIdentifier, request.params.id)
+        .query<{ id: string }>("SELECT id FROM dbo.visits WHERE id = @id");
+      if (!existing.recordset[0]) {
+        return sendError(response, 404, "NOT_FOUND", "Der Besuch wurde nicht gefunden.");
+      }
+      return sendError(response, 409, "VISIT_REJECT_FORBIDDEN", "Nur Voranmeldungen können abgelehnt werden.");
+    }
+
+    await writeAuditLog({ user: user.username, userId: user.id, action: "SIBE_VISIT_REJECTED", objectType: "visit", objectId: request.params.id, ipAddress: getRequestIp(request), userAgent: getRequestUserAgent(request), metadata: { note: parsed.data.note?.trim() || null } });
+    return response.json({ message: "Besuch wurde abgelehnt.", status: VISIT_STATUS.REJECTED });
+  } catch (error) {
+    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der Besuch konnte nicht abgelehnt werden.");
   }
 });
 

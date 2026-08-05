@@ -19,7 +19,7 @@ export function ImportUploadCard({
       <div className="toolbar filter-bar import-export-bar">
         <input
           type="file"
-          accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+          accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
           onChange={(event) => onFileChange(event.target.files?.[0] ?? null)}
         />
         <button type="button" onClick={onImport} disabled={importing || !importFile}>

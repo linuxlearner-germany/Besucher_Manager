@@ -21,6 +21,8 @@ export function SibeVisitDetailPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [notesDraft, setNotesDraft] = useState("");
   const [savingNotes, setSavingNotes] = useState(false);
+  const [rejectionNote, setRejectionNote] = useState("");
+  const [rejecting, setRejecting] = useState(false);
   const documentExpired = isExpiredDocument(visit?.idDocumentValidUntil ?? null);
 
   async function loadVisit() {
@@ -28,9 +30,25 @@ export function SibeVisitDetailPage() {
       const payload = await fetchJson<{ visit: SibeVisitDetail }>(`/api/sibe/visits/${id}`, { method: "GET", headers: {} });
       setVisit(payload.visit);
       setNotesDraft(payload.visit.notes || "");
+      setRejectionNote(payload.visit.rejectionNote || "");
     } catch (apiError) {
       const errorPayload = apiError as ApiError;
       setError(errorPayload.message || "Besuch konnte nicht geladen werden.");
+    }
+  }
+
+  async function handleReject() {
+    if (!id || !window.confirm("Diesen Besuch wirklich ablehnen?")) return;
+    setRejecting(true);
+    setError(null);
+    try {
+      const payload = await fetchJson<{ message: string }>(`/api/sibe/visits/${id}/reject`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ note: rejectionNote }) });
+      setMessage(payload.message);
+      await loadVisit();
+    } catch (apiError) {
+      setError((apiError as ApiError).message || "Besuch konnte nicht abgelehnt werden.");
+    } finally {
+      setRejecting(false);
     }
   }
 
@@ -106,6 +124,11 @@ export function SibeVisitDetailPage() {
                   </div>
                 </section>
                 {documentExpired ? <Alert type="warning">Warnung: Das Ausweisdokument ist zum Besuchstermin abgelaufen.</Alert> : null}
+                {visit.status === "pre_registered" ? <section className="form-section">
+                  <h3>Besuch ablehnen</h3>
+                  <textarea value={rejectionNote} onChange={(event) => setRejectionNote(event.target.value)} placeholder="Begründung (optional)" />
+                  <button type="button" className="danger-button" onClick={() => void handleReject()} disabled={rejecting}>{rejecting ? "Lehnt ab..." : "Besuch ablehnen"}</button>
+                </section> : null}
               </>
             ) : null}
             <dl className="details-list">
@@ -128,7 +151,8 @@ export function SibeVisitDetailPage() {
               <div><dt>Ansprechpartner</dt><dd>{visit.hostName}</dd></div>
               <div><dt>Ansprechpartner E-Mail</dt><dd>{visit.hostEmail || "-"}</dd></div>
               <div><dt>Ansprechpartner Telefon</dt><dd>{visit.hostPhone || "-"}</dd></div>
-              <div><dt>Abteilung / Bereich</dt><dd>{visit.hostDepartment}</dd></div>
+              <div><dt>Geschäftsfeld</dt><dd>{visit.hostDepartment}</dd></div>
+              {visit.status === "rejected" ? <div><dt>Ablehnungsgrund</dt><dd>{visit.rejectionNote || "-"}</dd></div> : null}
               <div><dt>Dienststelle / Einheit</dt><dd>{visit.hostUnit || "-"}</dd></div>
               <div><dt>Gebäude</dt><dd>{visit.hostBuilding || "-"}</dd></div>
               <div><dt>Zimmer</dt><dd>{visit.hostRoom || "-"}</dd></div>

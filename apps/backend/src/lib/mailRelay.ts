@@ -62,6 +62,121 @@ async function sendMail(request: MailRequest): Promise<boolean> {
   return true;
 }
 
+export function formatVisitDate(value: Date | string): string {
+  return new Intl.DateTimeFormat("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+    timeZone: "UTC"
+  }).format(new Date(value));
+}
+
+async function sendVisitMail(payload: {
+  to: string;
+  subject: string;
+  visitorName: string;
+  company: string;
+  hostName: string;
+  purpose: string;
+  validFrom: Date | string;
+  validUntil: Date | string;
+  gateName: string | null;
+  visitId: string;
+  reminder: boolean;
+}): Promise<boolean> {
+  return sendMail({
+    to: [payload.to],
+    subject: payload.subject,
+    text: [
+      payload.reminder ? "Erinnerung an einen bevorstehenden Besuch." : "Ihre Voranmeldung wurde gespeichert.",
+      "",
+      `Besucher: ${payload.visitorName}`,
+      `Firma: ${payload.company || "-"}`,
+      `Ansprechpartner: ${payload.hostName || "-"}`,
+      `Besuchszweck: ${payload.purpose || "-"}`,
+      `Wache: ${payload.gateName || "-"}`,
+      `Gültig von: ${formatVisitDate(payload.validFrom)}`,
+      `Gültig bis: ${formatVisitDate(payload.validUntil)}`,
+      `Besuchs-ID: ${payload.visitId}`,
+      "",
+      "Diese E-Mail wurde automatisch vom Besucher Manager versendet."
+    ].join("\n")
+  });
+}
+
+export async function sendPreRegistrationConfirmation(payload: Omit<Parameters<typeof sendVisitMail>[0], "subject" | "reminder">): Promise<boolean> {
+  return sendVisitMail({ ...payload, subject: "Besucher Manager: Voranmeldung bestätigt", reminder: false });
+}
+
+export async function sendVisitReminder(payload: Omit<Parameters<typeof sendVisitMail>[0], "subject" | "reminder">): Promise<boolean> {
+  return sendVisitMail({ ...payload, subject: "Besucher Manager: Erinnerung an Ihren Besuch", reminder: true });
+}
+
+export async function sendGroupPreRegistrationConfirmation(payload: {
+  to: string;
+  visitorCount: number;
+  validFrom: string;
+  validUntil: string;
+  purpose: string;
+}): Promise<boolean> {
+  return sendMail({
+    to: [payload.to],
+    subject: "Besucher Manager: Gruppenanmeldung bestätigt",
+    text: [
+      "Ihre Gruppenanmeldung wurde gespeichert.",
+      "",
+      `Anzahl Besucher: ${payload.visitorCount}`,
+      `Besuchszweck: ${payload.purpose || "-"}`,
+      `Gültig von: ${payload.validFrom}`,
+      `Gültig bis: ${payload.validUntil}`
+    ].join("\n")
+  });
+}
+
+export async function sendDueVisitReminders(): Promise<number> {
+  const pool = await getPool();
+  const result = await pool.request().query<{
+    id: string;
+    hostEmail: string;
+    visitorName: string;
+    company: string;
+    hostName: string;
+    purpose: string;
+    validFrom: Date;
+    validUntil: Date;
+    gateName: string | null;
+  }>(`
+    SELECT v.id, v.host_email AS hostEmail,
+      CONCAT(vis.first_name, ' ', vis.last_name) AS visitorName,
+      vis.company, v.host_name AS hostName, v.purpose,
+      v.valid_from AS validFrom, v.valid_until AS validUntil, g.name AS gateName
+    FROM dbo.visits v
+    INNER JOIN dbo.visitors vis ON vis.id = v.visitor_id
+    LEFT JOIN dbo.gates g ON g.id = v.gate_id
+    WHERE v.status = 'pre_registered'
+      AND v.host_email IS NOT NULL
+      AND v.reminder_sent_at IS NULL
+      AND v.valid_from <= DATEADD(HOUR, 24, SYSUTCDATETIME())
+      AND v.valid_from > SYSUTCDATETIME()
+  `);
+
+  let sent = 0;
+  for (const visit of result.recordset) {
+    try {
+      const delivered = await sendVisitReminder({ ...visit, to: visit.hostEmail, visitId: visit.id });
+      if (!delivered) continue;
+      await pool.request().input("id", sql.UniqueIdentifier, visit.id).query("UPDATE dbo.visits SET reminder_sent_at = SYSUTCDATETIME(), updated_at = SYSUTCDATETIME() WHERE id = @id AND reminder_sent_at IS NULL");
+      sent += 1;
+    } catch (error) {
+      await writeErrorLog({ errorCode: "VISIT_REMINDER_SEND_FAILED", message: error instanceof Error ? error.message : "unknown", requestPath: "scheduler" }).catch(() => undefined);
+    }
+  }
+  return sent;
+}
+
 export async function verifyMailRelayConnection(testRecipient?: string): Promise<void> {
   const settings = await loadWorkflowSettings({ includeSecrets: true });
   const relay = settings.emailRelay;

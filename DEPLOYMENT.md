@@ -452,21 +452,22 @@ npm run verify:mvp
 ```bash
 cd /opt/besucher-manager
 git status --short
-npm run ops:update -- --pull
+npm run ops:update -- --git-pull
 ```
 
 Der Wrapper:
 
 1. führt optional `git pull --ff-only` aus,
-2. erstellt standardmäßig ein SQL-Backup,
-3. baut das App-Image,
-4. startet beziehungsweise ersetzt den App-Container,
-5. wartet auf einen erfolgreichen Docker-Healthcheck.
+2. sichert die vorhandene `.env` und stellt sicher, dass sie unverändert bleibt,
+3. erstellt standardmäßig ein SQL-Backup,
+4. führt `docker compose pull` aus,
+5. baut das App-Image mit aktuellen Basisimages neu,
+6. ersetzt den App-Container und wartet auf einen erfolgreichen Docker-Healthcheck.
 
 Nur wenn ein anderweitig geprüftes Backup vorliegt:
 
 ```bash
-npm run ops:update -- --pull --skip-backup
+npm run ops:update -- --git-pull --skip-backup
 ```
 
 > [!CAUTION]
@@ -481,15 +482,16 @@ Das mitgelieferte Backupskript erwartet den Compose-Service `sqlserver`. Bei ein
 3. anschließend bewusst mit `--skip-backup` aktualisieren.
 
 ```bash
-npm run ops:update -- --pull --skip-backup
+npm run ops:update -- --git-pull --skip-backup
 ```
 
 ### Update ohne Wrapper
 
 ```bash
 git pull --ff-only
-docker compose build app
-docker compose up -d app
+docker compose pull
+docker compose build --pull app
+docker compose up -d --force-recreate app
 docker compose ps
 docker compose logs --tail=200 app
 ```
@@ -547,8 +549,8 @@ Wenn nur Anwendungscode geändert wurde:
 
 ```bash
 git checkout <vorheriger-tag-oder-commit>
-docker compose build app
-docker compose up -d app
+docker compose build --pull app
+docker compose up -d --force-recreate app
 ```
 
 ### Mit vorwärtsgerichteter Migration

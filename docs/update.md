@@ -35,9 +35,11 @@ npm run ops:update
 Das Script `npm run ops:update` fuehrt standardmaessig diese Schritte aus:
 
 - optionales Git-Update, falls zusaetzlich genutzt
+- bestehende `.env` sichern und unverändert beibehalten
 - SQL-Backup erstellen
-- App neu bauen
-- Container neu starten
+- `docker compose pull` ausführen
+- App mit aktuellen Basisimages neu bauen
+- Container neu starten und den Healthcheck abwarten
 
 ## Manueller Update-Ablauf
 
@@ -47,7 +49,8 @@ Wenn du den Ablauf selbst einzeln steuern willst:
 cd /opt/Besucher_Manager
 git pull origin master
 npm run ops:backup
-docker build -t besucher_manager-app:latest .
+docker compose pull
+docker compose build --pull app
 docker compose up -d --force-recreate app
 docker compose ps
 ```
@@ -60,7 +63,8 @@ Wenn die Anwendung zusammen mit dem lokalen MSSQL-Container betrieben wird:
 cd /opt/Besucher_Manager
 git pull origin master
 npm run ops:backup
-docker compose --profile local-db up -d --build
+docker compose --profile local-db pull
+docker compose --profile local-db up -d --build --force-recreate
 docker compose --profile local-db ps
 ```
 
@@ -185,7 +189,7 @@ Beispiel:
 cd /opt/Besucher_Manager
 git log --oneline -5
 git checkout <alter-commit>
-docker build -t besucher_manager-app:latest .
+docker compose build --pull app
 docker compose up -d --force-recreate app
 ```
 

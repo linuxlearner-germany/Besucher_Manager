@@ -993,6 +993,10 @@ async function createWalkInVisit(user, input, ipAddress, userAgent) {
     const transaction = new mssql_1.default.Transaction(pool);
     await transaction.begin();
     try {
+        const documentExpiry = new Date(`${input.idDocumentValidUntil}T23:59:59.999Z`);
+        const warnings = !Number.isNaN(documentExpiry.getTime()) && documentExpiry < new Date()
+            ? ["Ausweisdokument ist abgelaufen."]
+            : [];
         const action = input.action === "save" || input.action === "check_in_and_print"
             ? input.action
             : "check_in";
@@ -1018,6 +1022,7 @@ async function createWalkInVisit(user, input, ipAddress, userAgent) {
                     visitorId: existingVisit.visitorId,
                     badgeNumber: existingVisit.badgeNumber,
                     status: existingVisit.status,
+                    warnings,
                     alreadyExisted: true
                 };
             }
@@ -1252,7 +1257,8 @@ async function createWalkInVisit(user, input, ipAddress, userAgent) {
                 gateId: user.gateId,
                 visitorId,
                 reusedVisitor: visitorWasReused,
-                status: visit.status
+                status: visit.status,
+                warnings
             }
         }, transaction);
         if (action !== "save") {
@@ -1285,7 +1291,8 @@ async function createWalkInVisit(user, input, ipAddress, userAgent) {
             visitId: visit.id,
             visitorId: visitorId,
             badgeNumber,
-            status: visit.status
+            status: visit.status,
+            warnings
         };
     }
     catch (error) {

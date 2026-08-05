@@ -83,6 +83,16 @@ test("completeness allows check-in when required fields are present", () => {
   assert.equal(completeness.infos.some((issue: { field: string }) => issue.field === "id_document"), false);
 });
 
+test("completeness warns about an expired document without blocking check-in", () => {
+  const { getVisitCompleteness } = require("./guardVisits");
+  const visit = createBaseVisit();
+  visit.idDocumentValidUntil = "2020-01-01";
+  const completeness = getVisitCompleteness(visit);
+
+  assert.equal(completeness.canCheckIn, true);
+  assert.equal(completeness.warnings.some((issue: { field: string }) => issue.field === "id_document_valid_until"), true);
+});
+
 test("completeness accepts visitor_address free text as address alternative", () => {
   const { getVisitCompleteness } = require("./guardVisits");
   const visit = createBaseVisit();

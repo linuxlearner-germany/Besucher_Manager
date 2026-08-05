@@ -370,6 +370,7 @@ guardRouter.post("/api/guard/visits/walk-in", async (request, response) => {
       visitorId: created.visitorId,
       badgeNumber: created.badgeNumber,
       status: created.status,
+      warnings: created.warnings,
       alreadyExisted: Boolean(created.alreadyExisted)
     });
   } catch (error) {

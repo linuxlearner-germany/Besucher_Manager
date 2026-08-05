@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Alert, Card } from "../components/ui";
+import { Alert, Card, FormField } from "../components/ui";
 import { AppLayout, type ApiError, fetchJson, getDefaultRouteForUser, useAuth, type Gate, type User } from "../app/core";
 
 type LoginResponse =
@@ -107,16 +107,15 @@ export function LoginPage() {
 
             {pendingLogin ? (
               <form className="pre-registration-form login-form" onSubmit={handleGateSelection}>
-                <label>
-                  Aktive Wache
-                  <select value={selectedGateId} onChange={(event) => setSelectedGateId(event.target.value)}>
+                <FormField label="Aktive Wache" required>
+                  <select required value={selectedGateId} onChange={(event) => setSelectedGateId(event.target.value)}>
                     {availableGates.map((gate) => (
                       <option key={gate.id} value={gate.id}>
                         {gate.name}{gate.location ? ` - ${gate.location}` : ""}
                       </option>
                     ))}
                   </select>
-                </label>
+                </FormField>
                 <div className="form-actions">
                   <button type="submit" disabled={submitting || !selectedGateId}>
                     {submitting ? "Setzt..." : "Weiter"}
@@ -138,14 +137,12 @@ export function LoginPage() {
               </form>
             ) : (
               <form className="pre-registration-form login-form" onSubmit={handleSubmit}>
-                <label>
-                  Benutzername
-                  <input value={username} onChange={(event) => setUsername(event.target.value)} />
-                </label>
-                <label>
-                  Passwort
-                  <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
-                </label>
+                <FormField label="Benutzername" required>
+                  <input required value={username} onChange={(event) => setUsername(event.target.value)} />
+                </FormField>
+                <FormField label="Passwort" required>
+                  <input required type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
+                </FormField>
                 <div className="form-actions">
                   <button type="submit" disabled={submitting}>
                     {submitting ? "Prüft..." : "Anmelden"}

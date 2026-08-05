@@ -34,7 +34,7 @@ export function createApp() {
 
   if (fs.existsSync(frontendDist)) {
     app.use(express.static(frontendDist));
-    app.get("*", (request, response, next) => {
+    app.get("/{*splat}", (request, response, next) => {
       if (request.path.startsWith("/api") || request.path === "/health" || request.path.startsWith("/uploads")) {
         return next();
       }

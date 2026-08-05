@@ -2,7 +2,8 @@ export const VISIT_STATUS = {
   PRE_REGISTERED: "pre_registered",
   CHECKED_IN: "checked_in",
   CHECKED_OUT: "checked_out",
-  CANCELLED: "cancelled"
+  CANCELLED: "cancelled",
+  REJECTED: "rejected"
 } as const;
 
 export const HOST_SIGNATURE_STATUS = {
