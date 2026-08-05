@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { normalizeCountryCode } from "./countries";
+import { findCountryCode, normalizeCountryCode } from "./countries";
 import { bundeswehrEmailSchema } from "./emailPolicy";
 import type { ImportVisitInput } from "./visitImportDefinitions";
 
@@ -208,7 +208,7 @@ export function validateImportedPreRegistrationRows(
       visitorHouseNumber: row.visitorHouseNumber ?? "",
       visitorPostalCode: row.visitorPostalCode ?? "",
       visitorCity: row.visitorCity ?? "",
-      nationalityCode: row.nationalityCode ?? "",
+      nationalityCode: findCountryCode(row.nationalityCode) ?? row.nationalityCode ?? "",
       birthDate: normalizeImportDateForValidation(row.birthDate),
       phone: row.phone ?? "",
       email: row.email ?? "",

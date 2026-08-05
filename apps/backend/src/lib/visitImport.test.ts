@@ -79,6 +79,18 @@ test("excel rows use the same required and format validation as the public form"
   assert.equal(errors.some((message: string) => message.includes("Gültig bis darf nicht vor Gültig von liegen.")), true);
 });
 
+test("excel validation accepts German country names from the import template", () => {
+  const { validateImportedPreRegistrationRows } = require("./publicPreRegistrationSchema") as typeof import("./publicPreRegistrationSchema");
+  const errors = validateImportedPreRegistrationRows([{
+    sourceExcelRowNumber: 2,
+    firstName: "Max",
+    lastName: "Muster",
+    nationalityCode: "Deutschland"
+  }], new Set(["visitor_first_name", "visitor_last_name", "visitor_nationality"]));
+
+  assert.deepEqual(errors, []);
+});
+
 async function buildWorkbookBuffer(rows: unknown[][]): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet("Importvorlage");
