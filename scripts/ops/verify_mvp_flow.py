@@ -210,42 +210,40 @@ def build_import_workbook(gate_name: str, suffix: str) -> bytes:
             "Nachname [Pflicht]",
             "Firma / Organisation [Pflicht]",
             "Nationalität [Pflicht]",
+            "Straße [Pflicht]",
+            "Hausnummer [Pflicht]",
+            "PLZ [Pflicht]",
+            "Ort [Pflicht]",
             "Ansprechpartner [Pflicht]",
+            "Ansprechpartner E-Mail [Pflicht]",
+            "Ansprechpartner Telefon [Pflicht]",
             "Besuchszweck [Pflicht]",
             "Gültig von [Pflicht]",
             "Gültig bis [Pflicht]",
             "Wache [Optional]",
-            "Ansprechpartner Telefon [Optional]",
-            "Ausweisart [Optional]",
-            "Ausweisnummer [Optional]",
+            "Ausweisart [Pflicht]",
+            "Ausweis gültig bis [Pflicht]",
+            "Ausweisnummer [Pflicht]",
         ],
         [
             "Import",
             f"Voll-{suffix}",
             "Test Import GmbH",
             "Deutschland",
+            "Musterstraße",
+            "12",
+            "10115",
+            "Berlin",
             "Import Ansprechpartner",
+            "import.ansprechpartner@bundeswehr.org",
+            "0401234567",
             "Importtest vollständig",
             today,
             today,
             gate_name,
-            "0401234567",
             "Personalausweis",
+            "31.12.2030",
             f"IMP{suffix[-6:]}A",
-        ],
-        [
-            "Import",
-            f"Offen-{suffix}",
-            "Test Import GmbH",
-            "Deutschland",
-            "Import Ansprechpartner",
-            "Importtest unvollständig",
-            today,
-            today,
-            gate_name,
-            "",
-            "",
-            "",
         ],
     ]
     sheet_rows: list[str] = []
@@ -372,7 +370,7 @@ def main() -> int:
     if gate is None:
         gate = gates[0]
 
-    print("2/11 Pruefe oeffentlichen Excel-Import mit Nachbearbeitung...")
+    print("2/11 Pruefe vollstaendigen oeffentlichen Excel-Import...")
     import_result = public_client.upload_file(
         "/api/public/visits/import",
         field_name="file",
@@ -380,14 +378,14 @@ def main() -> int:
         content=build_import_workbook(gate["name"], suffix),
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
-    if int(import_result.get("imported", 0)) != 2:
-        raise RuntimeError("Oeffentlicher Import hat nicht zwei Eintraege verarbeitet.")
-    if int(import_result.get("needsReview", 0)) < 1:
-        raise RuntimeError("Oeffentlicher Import hat keinen Nachbearbeitungsfall erzeugt.")
-    imported_review_row = next((row for row in import_result.get("rows", []) if row.get("needsReview")), None)
-    if not imported_review_row:
-        raise RuntimeError("Import-Ergebnis enthaelt keinen markierten Nachbearbeitungsfall.")
-    imported_visit_id = imported_review_row["visitId"]
+    if int(import_result.get("imported", 0)) != 1:
+        raise RuntimeError("Oeffentlicher Import hat nicht genau einen vollstaendigen Eintrag verarbeitet.")
+    if int(import_result.get("needsReview", 0)) != 0:
+        raise RuntimeError("Vollstaendiger Import wurde unerwartet zur Nachbearbeitung markiert.")
+    imported_rows = import_result.get("rows", [])
+    if not imported_rows:
+        raise RuntimeError("Import-Ergebnis enthaelt keinen Besuch.")
+    imported_visit_id = imported_rows[0]["visitId"]
 
     print("3/11 Lege oeffentliche Voranmeldung an...")
     pre_registration = public_client.request(
@@ -417,7 +415,7 @@ def main() -> int:
     login(sibe_client, args.sibe_user, args.sibe_password)
     sibe_client.request("GET", f"/api/sibe/visits/{visit_id}")
 
-    print("7/11 Import markiert Nachbearbeitung und SiBe sieht den Datensatz...")
+    print("7/11 SiBe sieht den vollstaendig importierten Datensatz...")
     imported_sibe_visit = require_visit(
         sibe_client.request("GET", "/api/sibe/visits?status=all")["visits"],
         imported_visit_id,
