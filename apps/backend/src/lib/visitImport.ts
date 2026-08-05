@@ -36,21 +36,23 @@ function requiredOrPlaceholder(value: string | null | undefined): string {
   return cleanOptional(value) ?? MISSING_IMPORT_VALUE;
 }
 
-function normalizeDateOnly(value: string | null | undefined): string | null {
+export function normalizeImportDateOnly(value: string | null | undefined): string | null {
   const cleaned = cleanOptional(value);
   if (!cleaned) {
     return null;
   }
 
-  const direct = new Date(cleaned);
-  if (!Number.isNaN(direct.getTime())) {
-    return direct.toISOString().slice(0, 10);
-  }
-
   const germanDate = cleaned.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
   if (germanDate) {
     const [, day, month, year] = germanDate;
-    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+    const normalized = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+    const parsed = new Date(`${normalized}T00:00:00.000Z`);
+    return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === normalized ? normalized : null;
+  }
+
+  const direct = new Date(cleaned);
+  if (!Number.isNaN(direct.getTime())) {
+    return direct.toISOString().slice(0, 10);
   }
 
   return null;
@@ -184,11 +186,11 @@ export async function createImportedPreRegistrations(
 
     for (const [index, row] of rows.entries()) {
       const badgeNumber = await generateUniqueBadgeNumber(transaction);
-      const validFrom = normalizeDateOnly(row.validFrom) ?? todayDateOnly();
-      const validUntil = normalizeDateOnly(row.validUntil) ?? validFrom;
-      const idDocumentValidUntil = normalizeDateOnly(row.idDocumentValidUntil);
+      const validFrom = normalizeImportDateOnly(row.validFrom) ?? todayDateOnly();
+      const validUntil = normalizeImportDateOnly(row.validUntil) ?? validFrom;
+      const idDocumentValidUntil = normalizeImportDateOnly(row.idDocumentValidUntil);
       const idDocumentType = normalizeIdDocumentType(row.idDocumentType);
-      const birthDate = normalizeDateOnly(row.birthDate);
+      const birthDate = normalizeImportDateOnly(row.birthDate);
       const gateId = await resolveGateId(row, options.fallbackGateId);
       const nationalityCode = findCountryCode(row.nationalityCode)!;
 

@@ -11,6 +11,14 @@ function loadVisitImportModule() {
   return require("./visitImport") as typeof import("./visitImport");
 }
 
+test("excel import preserves German dates as day-month-year", () => {
+  const { normalizeImportDateOnly } = loadVisitImportModule();
+
+  assert.equal(normalizeImportDateOnly("05.08.2026"), "2026-08-05");
+  assert.equal(normalizeImportDateOnly("31.12.2030"), "2030-12-31");
+  assert.equal(normalizeImportDateOnly("31.02.2026"), null);
+});
+
 test("visitor import template marks required and optional fields in headers", () => {
   const { getVisitorImportTemplateHeaders } = require("./visitImportDefinitions") as typeof import("./visitImportDefinitions");
   const headers = getVisitorImportTemplateHeaders();
