@@ -43,12 +43,31 @@ test("public pre-registration accepts valid input", () => {
     purpose: "Besprechung",
     validFrom: "2026-05-21T08:00:00.000Z",
     validUntil: "2026-05-21T10:00:00.000Z",
+    expectedArrivalTime: "08:30",
     birthDate: "1990-01-15",
     email: "max@example.com",
     ...idDocumentFields
   });
 
   assert.equal(result.success, true);
+});
+
+test("public pre-registration rejects an invalid expected arrival time", () => {
+  const result = publicPreRegistrationSchema.safeParse({
+    firstName: "Max",
+    lastName: "Mustermann",
+    company: "Test GmbH",
+    hostName: "Sabine Keller",
+    hostEmail: "sabine.keller@bundeswehr.org",
+    hostPhone: "0123",
+    purpose: "Besprechung",
+    validFrom: "2026-05-21T08:00:00.000Z",
+    validUntil: "2026-05-21T10:00:00.000Z",
+    expectedArrivalTime: "25:00",
+    ...idDocumentFields
+  });
+
+  assert.equal(result.success, false);
 });
 
 test("public pre-registration accepts optional gate id", () => {

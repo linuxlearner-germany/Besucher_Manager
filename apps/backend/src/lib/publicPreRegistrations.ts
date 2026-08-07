@@ -74,6 +74,10 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
     const validUntil = input.validUntil || validFrom;
     const validFromDate = dateOnlyStart(validFrom);
     const validUntilDate = dateOnlyEnd(validUntil);
+    const expectedArrivalTime = cleanOptional(input.expectedArrivalTime);
+    const expectedArrivalTimeValue = expectedArrivalTime
+      ? new Date(`1970-01-01T${expectedArrivalTime}:00.000Z`)
+      : null;
 
     const visitorInsert = await new sql.Request(transaction)
       .input("firstName", sql.NVarChar(120), input.firstName.trim())
@@ -142,7 +146,7 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
       .input("purpose", sql.NVarChar(500), input.purpose.trim())
       .input("validFrom", sql.DateTime2, validFromDate)
       .input("validUntil", sql.DateTime2, validUntilDate)
-      .input("expectedArrivalTime", sql.Time, cleanOptional(input.expectedArrivalTime))
+      .input("expectedArrivalTime", sql.Time, expectedArrivalTimeValue)
       .input("licensePlate", sql.NVarChar(40), cleanOptional(input.licensePlate))
       .input("badgeNumber", sql.NVarChar(64), badgeNumber)
       .input("notes", sql.NVarChar(sql.MAX), cleanOptional(input.notes))
