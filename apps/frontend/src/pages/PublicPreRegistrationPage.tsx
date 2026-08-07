@@ -102,10 +102,6 @@ export function PublicPreRegistrationPage() {
         setCsrfToken(payload.csrfToken);
         setGates(payload.gates as Gate[]);
         setPublicFields(fieldsPayload.definitions);
-        setForm((current) => ({
-          ...current,
-          gateId: current.gateId || payload.gates[0]?.id || ""
-        }));
       } catch {
         setCsrfToken("");
         setGates([]);
@@ -205,6 +201,7 @@ export function PublicPreRegistrationPage() {
       setGroupSubmitState({ kind: "success", message: payload.message, visitId: "-", visitorId: "-", status: "pre_registered" });
     } catch (error) {
       const apiError = error as ApiError;
+      setFieldErrors(extractFieldErrors(apiError) as FieldErrorState);
       setGroupSubmitState({ kind: "error", message: apiError.message || "Der Gruppenimport konnte nicht gespeichert werden." });
     } finally {
       setIsSubmittingGroup(false);
@@ -232,6 +229,12 @@ export function PublicPreRegistrationPage() {
             </div>
           </div>
           <div className="form-grid two-columns">
+            <FormField label="Wache" required error={fieldErrors.gateId}>
+              <select required value={form.gateId} onChange={(event) => updateField("gateId", event.target.value)} disabled={gates.length === 0}>
+                <option value="">Wache auswählen</option>
+                {gates.map((gate) => <option key={gate.id} value={gate.id}>{gate.name}</option>)}
+              </select>
+            </FormField>
             {shown("host_name") ? <FormField label="Ansprechpartner" required={required("host_name")} error={fieldErrors.hostName}>
               <input required={required("host_name")} value={form.hostName} onChange={(event) => updateField("hostName", event.target.value)} />
             </FormField> : null}

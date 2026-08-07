@@ -12,6 +12,7 @@ import {
   formatStatus,
   statusClassName,
   toDateInputValue,
+  useAuth,
   type CheckoutFormState,
   type GuardCalendarItem,
   type VisitRow
@@ -202,12 +203,14 @@ function applyVisitorToWalkInForm(current: WalkInFormState, visitor: GuardVisito
 
 export function GuardDashboardPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [visits, setVisits] = useState<VisitRow[]>([]);
   const [calendarItems, setCalendarItems] = useState<GuardCalendarItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [calendarLoading, setCalendarLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState("all");
+  const [visitScope, setVisitScope] = useState<"own" | "all">("own");
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [activeView, setActiveView] = useState<"list" | "calendar">("list");
@@ -285,6 +288,7 @@ export function GuardDashboardPage() {
 
   const todayKey = toDayKey(new Date());
   const selectedDayKey = toDayKey(selectedDay);
+  const isGuardUser = user?.role === "guard";
 
   const stats = useMemo(() => {
     const preRegistered = visits.filter((visit) => visit.status === "pre_registered").length;
@@ -300,6 +304,7 @@ export function GuardDashboardPage() {
     try {
       const params = new URLSearchParams();
       params.set("status", statusFilter);
+      params.set("scope", isGuardUser ? visitScope : "all");
 
       if (search) {
         params.set("search", search);
@@ -316,7 +321,7 @@ export function GuardDashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [search, statusFilter]);
+  }, [isGuardUser, search, statusFilter, visitScope]);
 
   const loadCalendar = useCallback(async () => {
     setCalendarLoading(true);
@@ -326,6 +331,7 @@ export function GuardDashboardPage() {
       params.set("from", toDateInputValue(range.from));
       params.set("to", toDateInputValue(range.to));
       params.set("status", statusFilter);
+      params.set("scope", isGuardUser ? visitScope : "all");
       if (search) {
         params.set("search", search);
       }
@@ -340,7 +346,7 @@ export function GuardDashboardPage() {
     } finally {
       setCalendarLoading(false);
     }
-  }, [calendarMonth, search, statusFilter]);
+  }, [calendarMonth, isGuardUser, search, statusFilter, visitScope]);
 
   useEffect(() => {
     void loadVisits();
@@ -553,7 +559,7 @@ export function GuardDashboardPage() {
     }));
   }
 
-  const hasActiveFilters = statusFilter !== "all" || search.trim().length > 0 || searchInput.trim().length > 0;
+  const hasActiveFilters = statusFilter !== "all" || visitScope !== "own" || search.trim().length > 0 || searchInput.trim().length > 0;
 
   return (
     <AppLayout>
@@ -601,6 +607,7 @@ export function GuardDashboardPage() {
                   setSearchInput("");
                   setSearch("");
                   setStatusFilter("all");
+                  setVisitScope("own");
                 }}
               >
                 Zurücksetzen
@@ -622,6 +629,14 @@ export function GuardDashboardPage() {
               Ausgecheckt
             </button>
           </div>
+          {isGuardUser ? <div className="guard-filter-group" aria-label="Wachenfilter">
+            <button type="button" className={visitScope === "own" ? "tab-button tab-active" : "tab-button"} onClick={() => setVisitScope("own")}>
+              Eigene Wache
+            </button>
+            <button type="button" className={visitScope === "all" ? "tab-button tab-active" : "tab-button"} onClick={() => setVisitScope("all")}>
+              Alle Besucher
+            </button>
+          </div> : null}
         </div>
 
         {activeView === "list" ? (

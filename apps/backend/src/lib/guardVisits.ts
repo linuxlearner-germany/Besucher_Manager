@@ -292,9 +292,11 @@ function buildTodayQuery(status?: string, search?: string, signatureStatus?: str
   return predicates.join(" AND ");
 }
 
-function createScopeClause(user: AuthenticatedUser): string {
-  if (user.role === "admin" || user.role === "guard") {
-    return "1 = 1";
+export type GuardVisitScope = "own" | "all";
+
+function createScopeClause(user: AuthenticatedUser, scope: GuardVisitScope): string {
+  if (scope === "own" && user.role === "guard") {
+    return user.gateId ? "v.gate_id = @gateId" : "1 = 0";
   }
 
   return "1 = 1";
@@ -571,13 +573,14 @@ async function getConfiguredVisitCompleteness(visit: CompletenessSourceVisit): P
 
 export async function getTodayVisitsForUser(
   user: AuthenticatedUser,
-  options: { search?: string; status?: string; signatureStatus?: string }
+  options: { search?: string; status?: string; signatureStatus?: string; scope?: GuardVisitScope }
 ): Promise<GuardVisitListItem[]> {
   const pool = await getPool();
   const request = pool.request();
   const search = options.search?.trim();
 
-  if (user.role !== "admin" && user.role !== "guard") {
+  const scope = options.scope ?? (user.role === "guard" ? "own" : "all");
+  if (scope === "own" && user.role === "guard" && user.gateId) {
     request.input("gateId", sql.UniqueIdentifier, user.gateId);
   }
 
@@ -593,7 +596,7 @@ export async function getTodayVisitsForUser(
     request.input("signatureStatus", sql.NVarChar(40), options.signatureStatus);
   }
 
-  const whereClause = `${createScopeClause(user)} AND ${buildTodayQuery(options.status, search, options.signatureStatus)}`;
+  const whereClause = `${createScopeClause(user, scope)} AND ${buildTodayQuery(options.status, search, options.signatureStatus)}`;
 
   const result = await request.query<GuardVisitListItem>(`
     SELECT
@@ -683,13 +686,14 @@ export async function getTodayVisitsForUser(
 
 export async function getCalendarVisitsForUser(
   user: AuthenticatedUser,
-  options: { from: string; to: string; status?: string; search?: string }
+  options: { from: string; to: string; status?: string; search?: string; scope?: GuardVisitScope }
 ): Promise<GuardCalendarVisitItem[]> {
   const pool = await getPool();
   const request = pool.request();
-  const conditions = [createScopeClause(user)];
+  const scope = options.scope ?? (user.role === "guard" ? "own" : "all");
+  const conditions = [createScopeClause(user, scope)];
 
-  if (user.role !== "admin" && user.role !== "guard") {
+  if (scope === "own" && user.role === "guard" && user.gateId) {
     request.input("gateId", sql.UniqueIdentifier, user.gateId);
   }
 

@@ -62,7 +62,7 @@ const passwordChangeSchema = z.object({
   }
 });
 const publicGroupPreRegistrationSchema = z.object({
-  gateId: z.string().uuid().optional().or(z.literal("")),
+  gateId: z.string().uuid("Bitte eine Wache auswählen."),
   hostName: z.string().trim().optional().or(z.literal("")),
   hostEmail: bundeswehrEmailSchema,
   hostPhone: z.string().trim().optional().or(z.literal("")),
@@ -279,6 +279,16 @@ apiRouter.post("/api/public/pre-registrations/group", async (request, response) 
   }
 
   try {
+    const gateId = parsed.data.gateId?.trim();
+    if (!gateId) {
+      return sendValidationError(response, { fieldErrors: { gateId: ["Bitte eine Wache auswählen."] } });
+    }
+
+    const gate = await findActiveGateById(gateId);
+    if (!gate) {
+      return sendValidationError(response, { fieldErrors: { gateId: ["Die ausgewählte Wache ist nicht verfügbar."] } });
+    }
+
     const definitions = await listFieldDefinitions("public");
     const requiredDefinitions = definitions.filter((field) => field.requiredPublic);
     const supportedKeys = new Set(Object.keys(PUBLIC_FIELD_INPUT_MAP));
@@ -326,7 +336,7 @@ apiRouter.post("/api/public/pre-registrations/group", async (request, response) 
         source: "public_group_form",
         submittedIpAddress: request.ip || request.socket.remoteAddress || null,
         userAgent: typeof request.headers["user-agent"] === "string" ? request.headers["user-agent"] : null,
-        fallbackGateId: parsed.data.gateId || null,
+        fallbackGateId: parsed.data.gateId,
         requiredPublicFieldKeys
       }
     );
@@ -471,8 +481,19 @@ apiRouter.post("/api/public/pre-registrations", async (request, response) => {
       return sendValidationError(response, parsed.error.flatten());
     }
 
+    const gateId = parsed.data.gateId?.trim();
+    if (!gateId) {
+      return sendValidationError(response, { fieldErrors: { gateId: ["Bitte eine Wache auswählen."] } });
+    }
+
+    const gate = await findActiveGateById(gateId);
+    if (!gate) {
+      return sendValidationError(response, { fieldErrors: { gateId: ["Die ausgewählte Wache ist nicht verfügbar."] } });
+    }
+
     const created = await createPreRegistration({
       ...parsed.data,
+      gateId,
       submittedIpAddress: request.ip || request.socket.remoteAddress || null,
       userAgent: typeof request.headers["user-agent"] === "string" ? request.headers["user-agent"] : null
     });
