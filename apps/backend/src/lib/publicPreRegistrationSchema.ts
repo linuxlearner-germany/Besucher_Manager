@@ -35,19 +35,12 @@ const defaultRequiredFieldKeys = new Set<PublicFieldKey>([
   "visitor_first_name",
   "visitor_last_name",
   "visitor_company",
-  "visitor_street",
-  "visitor_house_number",
-  "visitor_postal_code",
-  "visitor_city",
   "visitor_nationality",
   "host_name",
   "host_phone",
   "visit_purpose",
   "valid_from",
   "valid_until",
-  "id_document_type",
-  "id_document_valid_until",
-  "id_document_number"
 ]);
 
 export function createPublicPreRegistrationSchema(requiredFieldKeys: ReadonlySet<PublicFieldKey> = defaultRequiredFieldKeys) {

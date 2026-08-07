@@ -193,21 +193,20 @@ test("public pre-registration only requires fields selected by field configurati
   assert.equal(result.success, true);
 });
 
-test("public pre-registration requires the complete address by default", () => {
+test("public pre-registration allows address and document data to be omitted by default", () => {
   const result = publicPreRegistrationSchema.safeParse({
     firstName: "Max",
     lastName: "Mustermann",
     company: "Test GmbH",
+    nationalityCode: "DE",
     hostName: "Sabine Keller",
     hostPhone: "0123",
     purpose: "Besprechung",
     validFrom: "2026-05-21",
-    validUntil: "2026-05-21",
-    ...idDocumentFields,
-    visitorStreet: ""
+    validUntil: "2026-05-21"
   });
 
-  assert.equal(result.success, false);
+  assert.equal(result.success, true);
 });
 
 test("public pre-registration validates the complete structured address when configured", () => {

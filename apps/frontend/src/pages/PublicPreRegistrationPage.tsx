@@ -211,8 +211,7 @@ export function PublicPreRegistrationPage() {
   const documentExpired = isPastDate(form.idDocumentValidUntil);
   const defaultRequiredFields = new Set([
     "visitor_first_name", "visitor_last_name", "visitor_company", "visitor_nationality",
-    "host_name", "host_phone", "visit_purpose", "valid_from", "valid_until",
-    "id_document_type", "id_document_valid_until", "id_document_number"
+    "host_name", "host_phone", "visit_purpose", "valid_from", "valid_until"
   ]);
   const shown = (fieldKey: string) => publicFields === null || publicFields.some((field) => field.fieldKey === fieldKey);
   const required = (fieldKey: string) => publicFields === null
