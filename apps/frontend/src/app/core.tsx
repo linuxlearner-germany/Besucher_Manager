@@ -209,6 +209,7 @@ export type VisitRow = {
   status: string;
   validFrom: string;
   validUntil: string;
+  expectedArrivalTime: string;
   checkInAt: string | null;
   checkOutAt: string | null;
   firstName: string;
@@ -305,6 +306,7 @@ export type FormState = {
   purpose: string;
   validFrom: string;
   validUntil: string;
+  expectedArrivalTime: string;
   phone: string;
   email: string;
   licensePlate: string;
@@ -960,6 +962,7 @@ export function buildInitialFormState(): FormState {
     purpose: "",
     validFrom: toDateInputValue(today),
     validUntil: toDateInputValue(today),
+    expectedArrivalTime: "",
     phone: "",
     email: "",
     licensePlate: "",

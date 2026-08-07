@@ -129,6 +129,7 @@ export type GuardVisitListItem = {
   status: string;
   validFrom: string;
   validUntil: string;
+  expectedArrivalTime: string | null;
   checkInAt: string | null;
   checkOutAt: string | null;
   firstName: string;
@@ -600,6 +601,7 @@ export async function getTodayVisitsForUser(
       ${normalizedStatusSql} AS status,
       CONVERT(NVARCHAR(30), v.valid_from, 127) AS validFrom,
       CONVERT(NVARCHAR(30), v.valid_until, 127) AS validUntil,
+      CONVERT(CHAR(5), v.expected_arrival_time, 108) AS expectedArrivalTime,
       CONVERT(NVARCHAR(30), v.check_in_at, 127) AS checkInAt,
       CONVERT(NVARCHAR(30), v.check_out_at, 127) AS checkOutAt,
       vis.first_name AS firstName,

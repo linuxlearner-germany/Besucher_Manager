@@ -77,6 +77,7 @@ export function createPublicPreRegistrationSchema(requiredFieldKeys: ReadonlySet
     purpose: z.string().trim().max(500).optional().default(""),
     validFrom: z.string().trim().optional().default(""),
     validUntil: z.string().trim().optional().default(""),
+    expectedArrivalTime: z.string().trim().regex(/^$|^([01]\d|2[0-3]):[0-5]\d$/, "Bitte eine gültige Ankunftszeit angeben.").optional().default(""),
     birthDate: z.string().trim().optional().or(z.literal("")),
     phone: z.string().trim().optional(),
     email: z.string().trim().email("Ungültige E-Mail-Adresse.").optional().or(z.literal("")),

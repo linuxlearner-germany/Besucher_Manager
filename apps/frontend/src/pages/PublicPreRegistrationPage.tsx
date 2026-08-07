@@ -270,6 +270,9 @@ export function PublicPreRegistrationPage() {
             <form className="pre-registration-form" onSubmit={handleSubmit}>
               <div className="form-section">
                 <div className="form-grid two-columns">
+                  <FormField label="Voraussichtliche Ankunftszeit" error={fieldErrors.expectedArrivalTime}>
+                    <input type="time" value={form.expectedArrivalTime} onChange={(event) => updateField("expectedArrivalTime", event.target.value)} />
+                  </FormField>
                   {shown("visitor_first_name") ? <FormField label="Vorname" required={required("visitor_first_name")} error={fieldErrors.firstName}>
                     <input required={required("visitor_first_name")} value={form.firstName} onChange={(event) => updateField("firstName", event.target.value)} />
                   </FormField> : null}

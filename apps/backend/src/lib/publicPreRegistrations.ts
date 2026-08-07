@@ -142,6 +142,7 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
       .input("purpose", sql.NVarChar(500), input.purpose.trim())
       .input("validFrom", sql.DateTime2, validFromDate)
       .input("validUntil", sql.DateTime2, validUntilDate)
+      .input("expectedArrivalTime", sql.Time, cleanOptional(input.expectedArrivalTime))
       .input("licensePlate", sql.NVarChar(40), cleanOptional(input.licensePlate))
       .input("badgeNumber", sql.NVarChar(64), badgeNumber)
       .input("notes", sql.NVarChar(sql.MAX), cleanOptional(input.notes))
@@ -157,6 +158,7 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
           purpose,
           valid_from,
           valid_until,
+          expected_arrival_time,
           license_plate,
           badge_number,
           status,
@@ -175,6 +177,7 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
           @purpose,
           @validFrom,
           @validUntil,
+          @expectedArrivalTime,
           @licensePlate,
           @badgeNumber,
           '${VISIT_STATUS.PRE_REGISTERED}',

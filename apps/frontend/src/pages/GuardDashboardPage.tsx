@@ -632,7 +632,7 @@ export function GuardDashboardPage() {
               <thead>
                 <tr>
                   <th className="cell-nowrap">Status</th>
-                  <th className="cell-nowrap">Uhrzeit</th>
+                  <th className="cell-nowrap">Ankunft</th>
                   <th className="cell-nowrap">Besucher</th>
                   <th>Firma</th>
                   <th>Nationalität</th>
@@ -655,7 +655,7 @@ export function GuardDashboardPage() {
                       <td>
                         <span className={statusClassName(visit.status)}>{formatStatus(visit.status)}</span>
                       </td>
-                      <td className="cell-nowrap">{formatDateTime(visitTime)}</td>
+                      <td className="cell-nowrap">{visit.status === "pre_registered" && visit.expectedArrivalTime ? `${visit.expectedArrivalTime} Uhr` : formatDateTime(visitTime)}</td>
                       <td className="cell-nowrap">{visit.firstName} {visit.lastName}</td>
                       <td>{visit.company}</td>
                       <td>{visit.nationalityName || visit.nationalityCode || "-"}</td>
