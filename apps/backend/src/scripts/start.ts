@@ -8,10 +8,28 @@ import { sendDueVisitReminders } from "../lib/mailRelay";
 import { runRetentionCleanup } from "../lib/retentionCleanup";
 import { APP_VERSION } from "../lib/appVersion";
 
+const DATABASE_RETRY_DELAY_MS = 10_000;
+
 async function verifyDatabaseConnection() {
   const pool = await getPool();
   await pool.request().query("SELECT 1 AS ok");
   console.log(`Connected to MSSQL ${env.MSSQL_HOST}:${env.MSSQL_PORT}/${env.MSSQL_DATABASE}`);
+}
+
+async function waitForDatabaseConnection(): Promise<void> {
+  for (;;) {
+    try {
+      await verifyDatabaseConnection();
+      return;
+    } catch (error) {
+      await closePool().catch(() => undefined);
+      console.error(
+        `Database is unavailable at ${env.MSSQL_HOST}:${env.MSSQL_PORT}; retrying in ${DATABASE_RETRY_DELAY_MS / 1000}s.`,
+        error instanceof Error ? error.message : error
+      );
+      await new Promise((resolve) => setTimeout(resolve, DATABASE_RETRY_DELAY_MS));
+    }
+  }
 }
 
 async function main() {
@@ -19,7 +37,7 @@ async function main() {
 
   console.log("Starting Besucher Manager container bootstrap...");
   console.log(`Application version: ${APP_VERSION}`);
-  await verifyDatabaseConnection();
+  await waitForDatabaseConnection();
   const appliedMigrations = await runMigrations();
   console.log(
     appliedMigrations.length > 0

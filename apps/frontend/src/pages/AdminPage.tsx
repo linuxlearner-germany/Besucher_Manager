@@ -118,7 +118,7 @@ export function AdminPage() {
   const [uiBackgroundSaving, setUiBackgroundSaving] = useState(false);
   const [workflowPassword, setWorkflowPassword] = useState("");
   const [workflowTestRecipient, setWorkflowTestRecipient] = useState("");
-  const [workflowTestKind, setWorkflowTestKind] = useState<"relay" | "nationality">("relay");
+  const [workflowTestKind, setWorkflowTestKind] = useState<"relay" | "nationality" | "pre_registration" | "reminder">("relay");
   const [userImportFile, setUserImportFile] = useState<File | null>(null);
   const [userImporting, setUserImporting] = useState(false);
   const [userImportIssues, setUserImportIssues] = useState<Array<{ lineNumber: number; username: string | null; message: string }>>([]);
@@ -853,12 +853,13 @@ export function AdminPage() {
       const payload = await fetchJson<{ success: true; emailRelaySource: "database" | "yml" }>("/api/admin/system-settings/workflow-email", {
         method: "PUT",
         body: JSON.stringify({
+          mailFormat: workflowSettings.mailFormat,
           backgroundMode: workflowSettings.backgroundMode,
           securityNumber: workflowSettings.securityNumber,
           emailRelay: {
             enabled: workflowSettings.emailRelay.enabled,
             host: workflowSettings.emailRelay.host,
-            port: workflowSettings.emailRelay.port,
+            port: Number(workflowSettings.emailRelay.port),
             secure: workflowSettings.emailRelay.secure,
             username: workflowSettings.emailRelay.username,
             password: workflowPassword,
@@ -878,6 +879,23 @@ export function AdminPage() {
     } catch (apiError) {
       const payload = apiError as ApiError;
       setError(payload.message || "Die Workflow-Einstellungen konnten nicht gespeichert werden.");
+    }
+  }
+
+  async function saveSecurityNumber() {
+    if (!workflowSettings) return;
+
+    try {
+      const payload = await fetchJson<{ success: true; securityNumber: string }>("/api/admin/system-settings/security-number", {
+        method: "PUT",
+        body: JSON.stringify({ securityNumber: workflowSettings.securityNumber })
+      });
+      setWorkflowSettings((current) => current ? { ...current, securityNumber: payload.securityNumber } : current);
+      setMessage("DATEV-Nummer gespeichert.");
+      setError(null);
+    } catch (apiError) {
+      const payload = apiError as ApiError;
+      setError(payload.message || "Die DATEV-Nummer konnte nicht gespeichert werden.");
     }
   }
 
@@ -1098,6 +1116,7 @@ export function AdminPage() {
             workflowTestKind={workflowTestKind}
             setWorkflowTestKind={setWorkflowTestKind}
             saveWorkflowSettings={saveWorkflowSettings}
+            saveSecurityNumber={saveSecurityNumber}
             sendWorkflowTestMail={sendWorkflowTestMail}
           />
         ) : null}

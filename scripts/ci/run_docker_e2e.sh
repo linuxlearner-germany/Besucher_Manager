@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ENV_FILE="${ROOT_DIR}/.env.ci"
+export BESUCHER_MANAGER_ENV_FILE="${ENV_FILE}"
 DEFAULT_ENV_FILE="${ROOT_DIR}/.env"
 BASE_URL="${BASE_URL:-http://127.0.0.1:3030}"
 CREATED_DEFAULT_ENV=0

@@ -199,12 +199,19 @@ const badgeTextUpdateSchema = z.object({
   }
 });
 const badgeTextCreateSchema = badgeTextUpdateSchema;
+function isValidSmtpFromAddress(value: string): boolean {
+  if (!value || /[\r\n]/.test(value)) return value === "";
+  const address = value.match(/^(?:[^<>\r\n]+\s+)?<\s*([^<>\s]+)\s*>$/)?.[1] ?? value;
+  return z.string().email().safeParse(address).success;
+}
+
 const workflowSettingsUpdateSchema = z.object({
+  mailFormat: z.enum(["text", "html"]).optional(),
   backgroundMode: z.enum(["image", "subtle", "plain"]),
   securityNumber: z.string()
     .trim()
-    .toUpperCase()
-    .regex(/^(?=.*[A-Z])(?=.*\d)[A-Z0-9]{4,32}$/, "Die DATAV-Nummer muss 4 bis 32 Zeichen lang sein und mindestens einen Buchstaben sowie eine Zahl enthalten."),
+    .min(1, "Bitte geben Sie eine DATEV-Nummer ein.")
+    .max(255, "Die DATEV-Nummer darf maximal 255 Zeichen lang sein."),
   emailRelay: z.object({
     enabled: z.boolean(),
     host: z.string().trim().max(255),
@@ -212,8 +219,14 @@ const workflowSettingsUpdateSchema = z.object({
     secure: z.boolean(),
     username: z.string().trim().max(255).optional().or(z.literal("")),
     password: z.string().max(500).optional().or(z.literal("")),
-    fromAddress: z.string().trim().email("Ungueltige Absenderadresse.").optional().or(z.literal(""))
+    fromAddress: z.string().trim().max(500).refine(isValidSmtpFromAddress, "Ungueltige Absenderadresse.").optional().or(z.literal(""))
   })
+});
+const securityNumberUpdateSchema = z.object({
+  securityNumber: z.string()
+    .trim()
+    .min(1, "Bitte geben Sie eine DATEV-Nummer ein.")
+    .max(255, "Die DATEV-Nummer darf maximal 255 Zeichen lang sein.")
 });
 const uiBackgroundSelectionSchema = z.object({
   backgroundId: z.string().trim().regex(/^[a-z0-9][a-z0-9-]{0,79}$/, "Ungültige Hintergrund-ID."),
@@ -221,7 +234,7 @@ const uiBackgroundSelectionSchema = z.object({
 });
 const mailRelayTestSchema = z.object({
   recipient: z.string().trim().email("Ungueltige Testadresse.").optional().or(z.literal("")),
-  kind: z.enum(["relay", "nationality"]).optional()
+  kind: z.enum(["relay", "nationality", "pre_registration", "reminder"]).optional()
 });
 
 export const apiRouter = Router();
@@ -1947,6 +1960,7 @@ adminRouter.get("/api/admin/system-settings/workflow-email", async (request, res
   try {
     const settings = await loadWorkflowSettings();
     return response.json({
+      mailFormat: settings.mailFormat,
       securityNumber: settings.securityNumber,
       backgroundMode: settings.backgroundMode,
       backgroundId: settings.backgroundId,
@@ -1983,6 +1997,7 @@ adminRouter.put("/api/admin/system-settings/workflow-email", async (request, res
   try {
     const currentSettings = await loadWorkflowSettings({ includeSecrets: true });
     const settingsToPersist: Record<string, string> = {
+      [WORKFLOW_SETTING_KEYS.mailFormat]: parsed.data.mailFormat ?? currentSettings.mailFormat,
       [WORKFLOW_SETTING_KEYS.uiBackgroundMode]: parsed.data.backgroundMode,
       [WORKFLOW_SETTING_KEYS.securityNumber]: parsed.data.securityNumber
     };
@@ -2021,6 +2036,30 @@ adminRouter.put("/api/admin/system-settings/workflow-email", async (request, res
     });
   } catch (error) {
     return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Workflow-Einstellungen konnten nicht gespeichert werden.");
+  }
+});
+
+adminRouter.put("/api/admin/system-settings/security-number", async (request, response) => {
+  const user = await requirePermission(request, response, "admin.system");
+  if (!user) return;
+
+  const parsed = securityNumberUpdateSchema.safeParse(request.body ?? {});
+  if (!parsed.success) return sendValidationError(response, parsed.error.flatten());
+
+  try {
+    await upsertSystemSettings({ [WORKFLOW_SETTING_KEYS.securityNumber]: parsed.data.securityNumber });
+    await writeAuditLog({
+      user: user.username,
+      userId: user.id,
+      action: "SYSTEM_SECURITY_NUMBER_UPDATED",
+      objectType: "system_setting",
+      objectId: "security_number",
+      ipAddress: getRequestIp(request),
+      userAgent: getRequestUserAgent(request)
+    });
+    return response.json({ success: true, securityNumber: parsed.data.securityNumber });
+  } catch (error) {
+    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die DATEV-Nummer konnte nicht gespeichert werden.");
   }
 });
 

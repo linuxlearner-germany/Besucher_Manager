@@ -195,7 +195,7 @@ function validateImportedPreRegistrationRows(rows, requiredFieldKeys) {
             visitorHouseNumber: row.visitorHouseNumber ?? "",
             visitorPostalCode: row.visitorPostalCode ?? "",
             visitorCity: row.visitorCity ?? "",
-            nationalityCode: row.nationalityCode ?? "",
+            nationalityCode: (0, countries_1.findCountryCode)(row.nationalityCode) ?? row.nationalityCode ?? "",
             birthDate: normalizeImportDateForValidation(row.birthDate),
             phone: row.phone ?? "",
             email: row.email ?? "",

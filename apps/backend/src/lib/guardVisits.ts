@@ -1,9 +1,11 @@
 import sql from "mssql";
 import { getPool } from "./db";
 import { getCountryName } from "./countries";
+import { dateOnlyEnd, dateOnlyStart, isIsoDateOnly } from "./dateOnly";
 import { notifyNationalitySubscribers } from "./mailRelay";
 import { writeAuditLog } from "./auditLog";
-import { generateBadgeNumberCandidate } from "./badgeNumber";
+import { generateUniqueBadgeNumber } from "./badgeAllocation";
+import { cleanOptional, isBlankOrPlaceholder } from "./textValues";
 import { loadCompletenessFieldConfig, type CompletenessFieldConfig } from "./fieldDefinitions";
 import { listSiteMapCatalog, selectSiteMapCatalogEntry } from "./siteMapCatalog";
 import { SITE_MAP_SETTING_KEY } from "./systemSettings";
@@ -298,16 +300,7 @@ function createScopeClause(user: AuthenticatedUser): string {
 }
 
 function isBlank(value: string | null | undefined): boolean {
-  const normalized = value?.trim();
-  return !normalized || normalized.toLowerCase() === MISSING_IMPORT_VALUE;
-}
-
-function cleanOptional(value: string | null | undefined): string | null {
-  if (typeof value !== "string") {
-    return null;
-  }
-  const normalized = value.trim();
-  return normalized.length > 0 ? normalized : null;
+  return isBlankOrPlaceholder(value, MISSING_IMPORT_VALUE);
 }
 
 function sanitizeSearchText(value: string | null | undefined): string {
@@ -337,48 +330,6 @@ export function hasGuardVisitorSearchCriteria(input: GuardVisitorSearchQuery): b
   }
 
   return sanitizeSearchText(input.birthDate).length === 10;
-}
-
-function normalizeDateOnlyStart(value: string): Date {
-  const parsed = new Date(value);
-  const utcYear = parsed.getUTCFullYear();
-  const utcMonth = parsed.getUTCMonth();
-  const utcDay = parsed.getUTCDate();
-  return new Date(Date.UTC(utcYear, utcMonth, utcDay, 0, 0, 0, 0));
-}
-
-function normalizeDateOnlyEnd(value: string): Date {
-  const parsed = new Date(value);
-  const utcYear = parsed.getUTCFullYear();
-  const utcMonth = parsed.getUTCMonth();
-  const utcDay = parsed.getUTCDate();
-  return new Date(Date.UTC(utcYear, utcMonth, utcDay, 23, 59, 59, 999));
-}
-
-function isDateOnlyValue(value: string | null | undefined): boolean {
-  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.trim());
-}
-
-async function generateUniqueBadgeNumber(transaction: sql.Transaction): Promise<string> {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    const candidate = generateBadgeNumberCandidate();
-    const existing = await new sql.Request(transaction)
-      .input("badgeNumber", sql.NVarChar(64), candidate)
-      .query<{ id: string }>(`
-        SELECT TOP 1 v.id
-        FROM dbo.visits v
-        INNER JOIN dbo.visitors vis ON vis.id = v.visitor_id
-        WHERE v.badge_number = @badgeNumber
-          AND vis.is_deleted = 0
-          AND v.status <> '${VISIT_STATUS.CANCELLED}'
-      `);
-
-    if (existing.recordset.length === 0) {
-      return candidate;
-    }
-  }
-
-  throw new Error("badge_number_generation_failed");
 }
 
 type CompletenessSourceVisit = {
@@ -556,8 +507,8 @@ export function getVisitCompleteness(visit: CompletenessSourceVisit, config?: Co
   }
 
   const validFromDate = new Date(visit.validFrom);
-  const validUntilDate = isDateOnlyValue(visit.validUntil)
-    ? normalizeDateOnlyEnd(visit.validUntil)
+  const validUntilDate = isIsoDateOnly(visit.validUntil)
+    ? dateOnlyEnd(visit.validUntil)
     : new Date(visit.validUntil);
   if (!Number.isNaN(validFromDate.getTime()) && !Number.isNaN(validUntilDate.getTime()) && validUntilDate <= validFromDate) {
     errors.push({ field: "valid_until", message: "Gültig bis liegt vor oder auf Gültig von.", severity: "error" });
@@ -1566,8 +1517,8 @@ export async function createWalkInVisit(
       .input("hostPhone", sql.NVarChar(80), input.hostPhone.trim())
       .input("hostDepartment", sql.NVarChar(255), cleanOptional(input.hostDepartment))
       .input("purpose", sql.NVarChar(500), input.purpose.trim())
-      .input("validFrom", sql.DateTime2, normalizeDateOnlyStart(input.validFrom))
-      .input("validUntil", sql.DateTime2, normalizeDateOnlyEnd(input.validUntil))
+      .input("validFrom", sql.DateTime2, dateOnlyStart(input.validFrom))
+      .input("validUntil", sql.DateTime2, dateOnlyEnd(input.validUntil))
       .input("licensePlate", sql.NVarChar(40), cleanOptional(input.licensePlate))
       .input("badgeNumber", sql.NVarChar(64), badgeNumber)
       .input("notes", sql.NVarChar(sql.MAX), cleanOptional(input.notes))
@@ -2015,8 +1966,8 @@ export async function updateVisitForGuard(
       .input("hostDepartment", sql.NVarChar(255), input.hostDepartment?.trim() || null)
       .input("purpose", sql.NVarChar(500), input.purpose.trim())
       .input("gateId", sql.UniqueIdentifier, nextGateId)
-      .input("validFrom", sql.DateTime2, normalizeDateOnlyStart(input.validFrom))
-      .input("validUntil", sql.DateTime2, normalizeDateOnlyEnd(input.validUntil))
+      .input("validFrom", sql.DateTime2, dateOnlyStart(input.validFrom))
+      .input("validUntil", sql.DateTime2, dateOnlyEnd(input.validUntil))
       .input("notes", sql.NVarChar(sql.MAX), input.notes?.trim() || null)
       .input("visitorStreet", sql.NVarChar(255), input.visitorStreet?.trim() || null)
       .input("visitorHouseNumber", sql.NVarChar(40), input.visitorHouseNumber?.trim() || null)

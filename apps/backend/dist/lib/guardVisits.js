@@ -19,9 +19,11 @@ exports.updateVisitForGuard = updateVisitForGuard;
 const mssql_1 = __importDefault(require("mssql"));
 const db_1 = require("./db");
 const countries_1 = require("./countries");
+const dateOnly_1 = require("./dateOnly");
 const mailRelay_1 = require("./mailRelay");
 const auditLog_1 = require("./auditLog");
-const badgeNumber_1 = require("./badgeNumber");
+const badgeAllocation_1 = require("./badgeAllocation");
+const textValues_1 = require("./textValues");
 const fieldDefinitions_1 = require("./fieldDefinitions");
 const siteMapCatalog_1 = require("./siteMapCatalog");
 const systemSettings_1 = require("./systemSettings");
@@ -79,15 +81,7 @@ function createScopeClause(user) {
     return "1 = 1";
 }
 function isBlank(value) {
-    const normalized = value?.trim();
-    return !normalized || normalized.toLowerCase() === MISSING_IMPORT_VALUE;
-}
-function cleanOptional(value) {
-    if (typeof value !== "string") {
-        return null;
-    }
-    const normalized = value.trim();
-    return normalized.length > 0 ? normalized : null;
+    return (0, textValues_1.isBlankOrPlaceholder)(value, MISSING_IMPORT_VALUE);
 }
 function sanitizeSearchText(value) {
     return typeof value === "string" ? value.trim() : "";
@@ -112,42 +106,6 @@ function hasGuardVisitorSearchCriteria(input) {
         return true;
     }
     return sanitizeSearchText(input.birthDate).length === 10;
-}
-function normalizeDateOnlyStart(value) {
-    const parsed = new Date(value);
-    const utcYear = parsed.getUTCFullYear();
-    const utcMonth = parsed.getUTCMonth();
-    const utcDay = parsed.getUTCDate();
-    return new Date(Date.UTC(utcYear, utcMonth, utcDay, 0, 0, 0, 0));
-}
-function normalizeDateOnlyEnd(value) {
-    const parsed = new Date(value);
-    const utcYear = parsed.getUTCFullYear();
-    const utcMonth = parsed.getUTCMonth();
-    const utcDay = parsed.getUTCDate();
-    return new Date(Date.UTC(utcYear, utcMonth, utcDay, 23, 59, 59, 999));
-}
-function isDateOnlyValue(value) {
-    return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.trim());
-}
-async function generateUniqueBadgeNumber(transaction) {
-    for (let attempt = 0; attempt < 20; attempt += 1) {
-        const candidate = (0, badgeNumber_1.generateBadgeNumberCandidate)();
-        const existing = await new mssql_1.default.Request(transaction)
-            .input("badgeNumber", mssql_1.default.NVarChar(64), candidate)
-            .query(`
-        SELECT TOP 1 v.id
-        FROM dbo.visits v
-        INNER JOIN dbo.visitors vis ON vis.id = v.visitor_id
-        WHERE v.badge_number = @badgeNumber
-          AND vis.is_deleted = 0
-          AND v.status <> '${visitWorkflow_1.VISIT_STATUS.CANCELLED}'
-      `);
-        if (existing.recordset.length === 0) {
-            return candidate;
-        }
-    }
-    throw new Error("badge_number_generation_failed");
 }
 function getSystemFieldValue(visit, fieldKey) {
     const mapping = {
@@ -284,8 +242,8 @@ function getVisitCompleteness(visit, config) {
         errors.push({ field, message: `${field} fehlt.`, severity: "error" });
     }
     const validFromDate = new Date(visit.validFrom);
-    const validUntilDate = isDateOnlyValue(visit.validUntil)
-        ? normalizeDateOnlyEnd(visit.validUntil)
+    const validUntilDate = (0, dateOnly_1.isIsoDateOnly)(visit.validUntil)
+        ? (0, dateOnly_1.dateOnlyEnd)(visit.validUntil)
         : new Date(visit.validUntil);
     if (!Number.isNaN(validFromDate.getTime()) && !Number.isNaN(validUntilDate.getTime()) && validUntilDate <= validFromDate) {
         errors.push({ field: "valid_until", message: "Gültig bis liegt vor oder auf Gültig von.", severity: "error" });
@@ -1000,7 +958,7 @@ async function createWalkInVisit(user, input, ipAddress, userAgent) {
         const action = input.action === "save" || input.action === "check_in_and_print"
             ? input.action
             : "check_in";
-        const clientRequestId = cleanOptional(input.clientRequestId);
+        const clientRequestId = (0, textValues_1.cleanOptional)(input.clientRequestId);
         if (clientRequestId) {
             const existingRequest = await new mssql_1.default.Request(transaction)
                 .input("clientRequestId", mssql_1.default.NVarChar(64), clientRequestId)
@@ -1027,7 +985,7 @@ async function createWalkInVisit(user, input, ipAddress, userAgent) {
                 };
             }
         }
-        let visitorId = cleanOptional(input.existingVisitorId);
+        let visitorId = (0, textValues_1.cleanOptional)(input.existingVisitorId);
         let visitorWasReused = false;
         if (visitorId) {
             const visitorExists = await new mssql_1.default.Request(transaction)
@@ -1047,16 +1005,16 @@ async function createWalkInVisit(user, input, ipAddress, userAgent) {
                 .input("lastName", mssql_1.default.NVarChar(120), input.lastName.trim())
                 .input("company", mssql_1.default.NVarChar(255), input.company.trim())
                 .input("nationalityCode", mssql_1.default.NChar(2), input.nationalityCode)
-                .input("birthDate", mssql_1.default.Date, cleanOptional(input.birthDate))
-                .input("phone", mssql_1.default.NVarChar(80), cleanOptional(input.phone))
-                .input("email", mssql_1.default.NVarChar(255), cleanOptional(input.email))
-                .input("visitorStreet", mssql_1.default.NVarChar(255), cleanOptional(input.visitorStreet))
-                .input("visitorHouseNumber", mssql_1.default.NVarChar(40), cleanOptional(input.visitorHouseNumber))
-                .input("visitorPostalCode", mssql_1.default.NVarChar(20), cleanOptional(input.visitorPostalCode))
-                .input("visitorCity", mssql_1.default.NVarChar(120), cleanOptional(input.visitorCity))
-                .input("idDocumentType", mssql_1.default.NVarChar(40), cleanOptional(input.idDocumentType))
-                .input("idDocumentValidUntil", mssql_1.default.Date, cleanOptional(input.idDocumentValidUntil))
-                .input("idDocumentNumber", mssql_1.default.NVarChar(120), cleanOptional(input.idDocumentNumber))
+                .input("birthDate", mssql_1.default.Date, (0, textValues_1.cleanOptional)(input.birthDate))
+                .input("phone", mssql_1.default.NVarChar(80), (0, textValues_1.cleanOptional)(input.phone))
+                .input("email", mssql_1.default.NVarChar(255), (0, textValues_1.cleanOptional)(input.email))
+                .input("visitorStreet", mssql_1.default.NVarChar(255), (0, textValues_1.cleanOptional)(input.visitorStreet))
+                .input("visitorHouseNumber", mssql_1.default.NVarChar(40), (0, textValues_1.cleanOptional)(input.visitorHouseNumber))
+                .input("visitorPostalCode", mssql_1.default.NVarChar(20), (0, textValues_1.cleanOptional)(input.visitorPostalCode))
+                .input("visitorCity", mssql_1.default.NVarChar(120), (0, textValues_1.cleanOptional)(input.visitorCity))
+                .input("idDocumentType", mssql_1.default.NVarChar(40), (0, textValues_1.cleanOptional)(input.idDocumentType))
+                .input("idDocumentValidUntil", mssql_1.default.Date, (0, textValues_1.cleanOptional)(input.idDocumentValidUntil))
+                .input("idDocumentNumber", mssql_1.default.NVarChar(120), (0, textValues_1.cleanOptional)(input.idDocumentNumber))
                 .query(`
           UPDATE dbo.visitors
           SET
@@ -1096,9 +1054,9 @@ async function createWalkInVisit(user, input, ipAddress, userAgent) {
                 .input("lastName", mssql_1.default.NVarChar(120), input.lastName.trim())
                 .input("company", mssql_1.default.NVarChar(255), input.company.trim())
                 .input("nationalityCode", mssql_1.default.NChar(2), input.nationalityCode)
-                .input("birthDate", mssql_1.default.Date, cleanOptional(input.birthDate))
-                .input("phone", mssql_1.default.NVarChar(80), cleanOptional(input.phone))
-                .input("email", mssql_1.default.NVarChar(255), cleanOptional(input.email))
+                .input("birthDate", mssql_1.default.Date, (0, textValues_1.cleanOptional)(input.birthDate))
+                .input("phone", mssql_1.default.NVarChar(80), (0, textValues_1.cleanOptional)(input.phone))
+                .input("email", mssql_1.default.NVarChar(255), (0, textValues_1.cleanOptional)(input.email))
                 .input("visitorStreet", mssql_1.default.NVarChar(255), input.visitorStreet.trim())
                 .input("visitorHouseNumber", mssql_1.default.NVarChar(40), input.visitorHouseNumber.trim())
                 .input("visitorPostalCode", mssql_1.default.NVarChar(20), input.visitorPostalCode.trim())
@@ -1158,30 +1116,30 @@ async function createWalkInVisit(user, input, ipAddress, userAgent) {
                 }
             }, transaction);
         }
-        const badgeNumber = await generateUniqueBadgeNumber(transaction);
+        const badgeNumber = await (0, badgeAllocation_1.generateUniqueBadgeNumber)(transaction);
         const visitStatus = action === "save" ? visitWorkflow_1.VISIT_STATUS.PRE_REGISTERED : visitWorkflow_1.VISIT_STATUS.CHECKED_IN;
         const visitInsert = await new mssql_1.default.Request(transaction)
             .input("clientRequestId", mssql_1.default.NVarChar(64), clientRequestId)
             .input("visitorId", mssql_1.default.UniqueIdentifier, visitorId)
             .input("gateId", mssql_1.default.UniqueIdentifier, user.gateId)
             .input("hostName", mssql_1.default.NVarChar(255), input.hostName.trim())
-            .input("hostEmail", mssql_1.default.NVarChar(255), cleanOptional(input.hostEmail))
+            .input("hostEmail", mssql_1.default.NVarChar(255), (0, textValues_1.cleanOptional)(input.hostEmail))
             .input("hostPhone", mssql_1.default.NVarChar(80), input.hostPhone.trim())
-            .input("hostDepartment", mssql_1.default.NVarChar(255), cleanOptional(input.hostDepartment))
+            .input("hostDepartment", mssql_1.default.NVarChar(255), (0, textValues_1.cleanOptional)(input.hostDepartment))
             .input("purpose", mssql_1.default.NVarChar(500), input.purpose.trim())
-            .input("validFrom", mssql_1.default.DateTime2, normalizeDateOnlyStart(input.validFrom))
-            .input("validUntil", mssql_1.default.DateTime2, normalizeDateOnlyEnd(input.validUntil))
-            .input("licensePlate", mssql_1.default.NVarChar(40), cleanOptional(input.licensePlate))
+            .input("validFrom", mssql_1.default.DateTime2, (0, dateOnly_1.dateOnlyStart)(input.validFrom))
+            .input("validUntil", mssql_1.default.DateTime2, (0, dateOnly_1.dateOnlyEnd)(input.validUntil))
+            .input("licensePlate", mssql_1.default.NVarChar(40), (0, textValues_1.cleanOptional)(input.licensePlate))
             .input("badgeNumber", mssql_1.default.NVarChar(64), badgeNumber)
-            .input("notes", mssql_1.default.NVarChar(mssql_1.default.MAX), cleanOptional(input.notes))
+            .input("notes", mssql_1.default.NVarChar(mssql_1.default.MAX), (0, textValues_1.cleanOptional)(input.notes))
             .input("checkInBy", mssql_1.default.UniqueIdentifier, user.id)
             .input("devicePhotoApp", mssql_1.default.Bit, input.devicePhotoApp ?? null)
             .input("deviceFilmApp", mssql_1.default.Bit, input.deviceFilmApp ?? null)
             .input("deviceVideoCamera", mssql_1.default.Bit, input.deviceVideoCamera ?? null)
-            .input("deviceManufacturer", mssql_1.default.NVarChar(255), cleanOptional(input.deviceManufacturer))
-            .input("deviceSerialNumber", mssql_1.default.NVarChar(120), cleanOptional(input.deviceSerialNumber))
-            .input("deviceAccessories", mssql_1.default.NVarChar(500), cleanOptional(input.deviceAccessories))
-            .input("deviceDepositNote", mssql_1.default.NVarChar(500), cleanOptional(input.deviceDepositNote))
+            .input("deviceManufacturer", mssql_1.default.NVarChar(255), (0, textValues_1.cleanOptional)(input.deviceManufacturer))
+            .input("deviceSerialNumber", mssql_1.default.NVarChar(120), (0, textValues_1.cleanOptional)(input.deviceSerialNumber))
+            .input("deviceAccessories", mssql_1.default.NVarChar(500), (0, textValues_1.cleanOptional)(input.deviceAccessories))
+            .input("deviceDepositNote", mssql_1.default.NVarChar(500), (0, textValues_1.cleanOptional)(input.deviceDepositNote))
             .query(`
         INSERT INTO dbo.visits (
           client_request_id,
@@ -1501,8 +1459,8 @@ async function updateVisitForGuard(user, visitId, input, ipAddress, userAgent) {
             .input("hostDepartment", mssql_1.default.NVarChar(255), input.hostDepartment?.trim() || null)
             .input("purpose", mssql_1.default.NVarChar(500), input.purpose.trim())
             .input("gateId", mssql_1.default.UniqueIdentifier, nextGateId)
-            .input("validFrom", mssql_1.default.DateTime2, normalizeDateOnlyStart(input.validFrom))
-            .input("validUntil", mssql_1.default.DateTime2, normalizeDateOnlyEnd(input.validUntil))
+            .input("validFrom", mssql_1.default.DateTime2, (0, dateOnly_1.dateOnlyStart)(input.validFrom))
+            .input("validUntil", mssql_1.default.DateTime2, (0, dateOnly_1.dateOnlyEnd)(input.validUntil))
             .input("notes", mssql_1.default.NVarChar(mssql_1.default.MAX), input.notes?.trim() || null)
             .input("visitorStreet", mssql_1.default.NVarChar(255), input.visitorStreet?.trim() || null)
             .input("visitorHouseNumber", mssql_1.default.NVarChar(40), input.visitorHouseNumber?.trim() || null)

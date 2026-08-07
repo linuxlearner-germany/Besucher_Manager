@@ -30,7 +30,7 @@ services:
       sqlserver:
         condition: service_healthy
     env_file:
-      - .env
+      - ${BESUCHER_MANAGER_ENV_FILE:-.env}
     entrypoint:
       - /bin/bash
       - -lc
@@ -58,7 +58,7 @@ services:
         condition: service_completed_successfully
         required: false
     env_file:
-      - .env
+      - ${BESUCHER_MANAGER_ENV_FILE:-.env}
     environment:
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3030}
       APP_SECURE_COOKIES: ${APP_SECURE_COOKIES:-}

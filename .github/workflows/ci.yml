@@ -29,8 +29,14 @@ jobs:
           chmod +x ./node_modules/.bin/esbuild || true
           chmod +x ./node_modules/vite/bin/vite.js || true
 
+      - name: Typecheck
+        run: npm run typecheck
+
       - name: Backend tests
         run: npm run test:backend
+
+      - name: Frontend tests
+        run: npm run test:frontend
 
       - name: Build
         run: npm run build

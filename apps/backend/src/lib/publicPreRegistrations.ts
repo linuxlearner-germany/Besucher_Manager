@@ -2,8 +2,10 @@ import sql from "mssql";
 import { notifyNationalitySubscribers, sendPreRegistrationConfirmation } from "./mailRelay";
 import { writeAuditLog } from "./auditLog";
 import { getPool } from "./db";
-import { generateBadgeNumberCandidate } from "./badgeNumber";
+import { generateUniqueBadgeNumber } from "./badgeAllocation";
+import { dateOnlyEnd, dateOnlyStart } from "./dateOnly";
 import type { PublicPreRegistrationInput } from "./publicPreRegistrationSchema";
+import { cleanOptional } from "./textValues";
 import { VISIT_STATUS } from "./visitWorkflow";
 
 export type GateSummary = {
@@ -23,53 +25,6 @@ export type CreatedPreRegistration = {
   visitorId: string;
   status: string;
 };
-
-async function generateUniqueBadgeNumber(transaction: sql.Transaction): Promise<string> {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    const candidate = generateBadgeNumberCandidate();
-    const existing = await new sql.Request(transaction)
-      .input("badgeNumber", sql.NVarChar(64), candidate)
-      .query<{ id: string }>(`
-        SELECT TOP 1 v.id
-        FROM dbo.visits v
-        INNER JOIN dbo.visitors vis ON vis.id = v.visitor_id
-        WHERE v.badge_number = @badgeNumber
-          AND vis.is_deleted = 0
-          AND v.status <> '${VISIT_STATUS.CANCELLED}'
-      `);
-
-    if (existing.recordset.length === 0) {
-      return candidate;
-    }
-  }
-
-  throw new Error("badge_number_generation_failed");
-}
-
-function cleanOptional(value: string | undefined): string | null {
-  if (typeof value !== "string") {
-    return null;
-  }
-
-  const normalized = value.trim();
-  return normalized.length > 0 ? normalized : null;
-}
-
-function normalizeDateOnlyStart(value: string): Date {
-  const parsed = new Date(value);
-  const utcYear = parsed.getUTCFullYear();
-  const utcMonth = parsed.getUTCMonth();
-  const utcDay = parsed.getUTCDate();
-  return new Date(Date.UTC(utcYear, utcMonth, utcDay, 0, 0, 0, 0));
-}
-
-function normalizeDateOnlyEnd(value: string): Date {
-  const parsed = new Date(value);
-  const utcYear = parsed.getUTCFullYear();
-  const utcMonth = parsed.getUTCMonth();
-  const utcDay = parsed.getUTCDate();
-  return new Date(Date.UTC(utcYear, utcMonth, utcDay, 23, 59, 59, 999));
-}
 
 export async function listActiveGates(): Promise<GateSummary[]> {
   const pool = await getPool();
@@ -117,8 +72,8 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
     const fallbackDate = new Date().toISOString().slice(0, 10);
     const validFrom = input.validFrom || fallbackDate;
     const validUntil = input.validUntil || validFrom;
-    const validFromDate = normalizeDateOnlyStart(validFrom);
-    const validUntilDate = normalizeDateOnlyEnd(validUntil);
+    const validFromDate = dateOnlyStart(validFrom);
+    const validUntilDate = dateOnlyEnd(validUntil);
 
     const visitorInsert = await new sql.Request(transaction)
       .input("firstName", sql.NVarChar(120), input.firstName.trim())

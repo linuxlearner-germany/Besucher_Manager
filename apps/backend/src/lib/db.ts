@@ -24,7 +24,12 @@ export function getSqlConfig(): sql.config {
 
 export async function getPool(): Promise<sql.ConnectionPool> {
   if (!poolPromise) {
-    poolPromise = new sql.ConnectionPool(getSqlConfig()).connect();
+    poolPromise = new sql.ConnectionPool(getSqlConfig()).connect().catch((error) => {
+      // A failed initial connection must not poison all later attempts. This is
+      // essential while SQL Server is starting or reconnecting after an outage.
+      poolPromise = null;
+      throw error;
+    });
   }
 
   return poolPromise;

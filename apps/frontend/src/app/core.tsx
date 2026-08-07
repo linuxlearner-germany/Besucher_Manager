@@ -568,6 +568,7 @@ export type SibeVisitRow = {
 };
 
 export type AdminWorkflowSettings = {
+  mailFormat: "text" | "html";
   securityNumber: string;
   backgroundMode: "image" | "subtle" | "plain";
   backgroundId: string | null;
@@ -580,7 +581,7 @@ export type AdminWorkflowSettings = {
     isReadOnly: boolean;
     enabled: boolean;
     host: string;
-    port: number;
+    port: number | "";
     secure: boolean;
     username: string;
     fromAddress: string;
@@ -1277,10 +1278,6 @@ export function AppLayout({ children }: PropsWithChildren) {
 
   return (
     <div className="shell app-shell">
-      <aside className="security-number-display" aria-label={`DATAV-Nummer ${securityNumber}`}>
-        <span>DATAV-Nummer</span>
-        <strong>{securityNumber}</strong>
-      </aside>
       <div className="content-container">
         <header className="topbar app-header">
           <div className="topbar-branding">
@@ -1290,6 +1287,10 @@ export function AppLayout({ children }: PropsWithChildren) {
 
             <div className="title-wrap">
               <h1>Besucher Manager</h1>
+              <div className="datev-number" aria-label={`DATEV-Nummer ${securityNumber}`}>
+                <span>DATEV-Nummer:</span>
+                <strong>{securityNumber}</strong>
+              </div>
             </div>
           </div>
 

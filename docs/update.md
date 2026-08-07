@@ -2,6 +2,21 @@
 
 Diese Anleitung beschreibt den sicheren Update-Ablauf fuer den produktiven `Besucher_Manager` auf Docker-Basis.
 
+## Schnellanleitung
+
+Diese Befehle im Installationsverzeichnis ausführen. Sie sichern die Datenbank, laden neue Images, bauen die App neu und prüfen anschließend den Status:
+
+```bash
+cd /opt/Besucher_Manager
+git status
+git pull origin master
+npm run ops:update
+docker compose ps
+curl -fsS http://127.0.0.1:3030/api/health
+```
+
+Erwartet wird beim Health-Check ein JSON mit `"status":"ok"`. Nicht `docker compose down -v` verwenden: Das würde das SQL-Volume löschen.
+
 ## Ziel
 
 - Anwendung auf den neuesten Git-Stand bringen

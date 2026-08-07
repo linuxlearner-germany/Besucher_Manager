@@ -1,7 +1,9 @@
 import sql from "mssql";
 import { writeAuditLog } from "./auditLog";
-import { generateBadgeNumberCandidate } from "./badgeNumber";
+import { generateUniqueBadgeNumber } from "./badgeAllocation";
 import { getPool } from "./db";
+import { dateOnlyEnd, dateOnlyStart } from "./dateOnly";
+import { cleanOptional, cleanRequired, isBlankOrPlaceholder } from "./textValues";
 import { findCountryCode } from "./countries";
 import { notifyNationalitySubscribers } from "./mailRelay";
 import { findActiveGateById, listActiveGates } from "./publicPreRegistrations";
@@ -18,22 +20,12 @@ export class ImportValidationError extends Error {
   }
 }
 
-function cleanOptional(value: string | null | undefined): string | null {
-  if (typeof value !== "string") {
-    return null;
-  }
-
-  const normalized = value.trim();
-  return normalized.length > 0 ? normalized : null;
-}
-
 export function isMissingImportValue(value: string | null | undefined): boolean {
-  const normalized = cleanOptional(value)?.toLowerCase();
-  return !normalized || normalized === MISSING_IMPORT_VALUE || normalized === MISSING_IMPORT_VALUE.toLowerCase();
+  return isBlankOrPlaceholder(value, MISSING_IMPORT_VALUE);
 }
 
 function requiredOrPlaceholder(value: string | null | undefined): string {
-  return cleanOptional(value) ?? MISSING_IMPORT_VALUE;
+  return cleanRequired(value, MISSING_IMPORT_VALUE);
 }
 
 export function normalizeImportDateOnly(value: string | null | undefined): string | null {
@@ -81,46 +73,8 @@ function normalizeIdDocumentType(value: string | null | undefined): string | nul
   return cleaned;
 }
 
-function normalizeDateOnlyStart(value: string): Date {
-  const parsed = new Date(value);
-  const utcYear = parsed.getUTCFullYear();
-  const utcMonth = parsed.getUTCMonth();
-  const utcDay = parsed.getUTCDate();
-  return new Date(Date.UTC(utcYear, utcMonth, utcDay, 0, 0, 0, 0));
-}
-
-function normalizeDateOnlyEnd(value: string): Date {
-  const parsed = new Date(value);
-  const utcYear = parsed.getUTCFullYear();
-  const utcMonth = parsed.getUTCMonth();
-  const utcDay = parsed.getUTCDate();
-  return new Date(Date.UTC(utcYear, utcMonth, utcDay, 23, 59, 59, 999));
-}
-
 function todayDateOnly(): string {
   return new Date().toISOString().slice(0, 10);
-}
-
-async function generateUniqueBadgeNumber(transaction: sql.Transaction): Promise<string> {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    const candidate = generateBadgeNumberCandidate();
-    const existing = await new sql.Request(transaction)
-      .input("badgeNumber", sql.NVarChar(64), candidate)
-      .query<{ id: string }>(`
-        SELECT TOP 1 v.id
-        FROM dbo.visits v
-        INNER JOIN dbo.visitors vis ON vis.id = v.visitor_id
-        WHERE v.badge_number = @badgeNumber
-          AND vis.is_deleted = 0
-          AND v.status <> '${VISIT_STATUS.CANCELLED}'
-      `);
-
-    if (existing.recordset.length === 0) {
-      return candidate;
-    }
-  }
-
-  throw new Error("badge_number_generation_failed");
 }
 
 async function resolveGateId(row: ImportVisitInput, fallbackGateId?: string | null): Promise<string | null> {
@@ -258,8 +212,8 @@ export async function createImportedPreRegistrations(
         .input("hostPhone", sql.NVarChar(80), cleanOptional(row.hostPhone))
         .input("hostDepartment", sql.NVarChar(255), cleanOptional(row.hostDepartment))
         .input("purpose", sql.NVarChar(500), requiredOrPlaceholder(row.purpose))
-        .input("validFrom", sql.DateTime2, normalizeDateOnlyStart(validFrom))
-        .input("validUntil", sql.DateTime2, normalizeDateOnlyEnd(validUntil))
+        .input("validFrom", sql.DateTime2, dateOnlyStart(validFrom))
+        .input("validUntil", sql.DateTime2, dateOnlyEnd(validUntil))
         .input("licensePlate", sql.NVarChar(40), cleanOptional(row.licensePlate))
         .input("badgeNumber", sql.NVarChar(64), badgeNumber)
         .input("notes", sql.NVarChar(sql.MAX), cleanOptional(row.notes))

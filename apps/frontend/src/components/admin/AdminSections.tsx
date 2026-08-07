@@ -799,6 +799,7 @@ export function AdminSystemSection({
   workflowTestKind,
   setWorkflowTestKind,
   saveWorkflowSettings,
+  saveSecurityNumber,
   sendWorkflowTestMail
 }: {
   systemStatus: {
@@ -820,9 +821,10 @@ export function AdminSystemSection({
   setWorkflowPassword: Dispatch<SetStateAction<string>>;
   workflowTestRecipient: string;
   setWorkflowTestRecipient: Dispatch<SetStateAction<string>>;
-  workflowTestKind: "relay" | "nationality";
-  setWorkflowTestKind: Dispatch<SetStateAction<"relay" | "nationality">>;
+  workflowTestKind: "relay" | "nationality" | "pre_registration" | "reminder";
+  setWorkflowTestKind: Dispatch<SetStateAction<"relay" | "nationality" | "pre_registration" | "reminder">>;
   saveWorkflowSettings: () => Promise<void>;
+  saveSecurityNumber: () => Promise<void>;
   sendWorkflowTestMail: () => Promise<void>;
 }) {
   return (
@@ -844,29 +846,43 @@ export function AdminSystemSection({
         </div>
 
         <div className="panel">
-          <h3>DATAV-Nummer</h3>
+          <h3>DATEV-Nummer</h3>
           <div className="form-grid two-columns">
-            <FormField label="Nummer (Buchstaben und Zahlen)">
+            <FormField label="Freitext">
               <input
                 value={workflowSettings?.securityNumber ?? ""}
                 onChange={(event) => setWorkflowSettings((current) => current ? {
                   ...current,
-                  securityNumber: event.target.value.toUpperCase()
+                  securityNumber: event.target.value
                 } : current)}
-                minLength={4}
-                maxLength={32}
-                pattern="(?=.*[A-Za-z])(?=.*[0-9])[A-Za-z0-9]{4,32}"
-                placeholder="z. B. BM2026"
+                maxLength={255}
+                placeholder="z. B. DATEV-1234 oder interne Kennzeichnung"
                 autoComplete="off"
               />
             </FormField>
-            <div className="feedback info">Wird dauerhaft oben rechts angezeigt und auf jeden Besucherschein gedruckt.</div>
+            <div className="feedback info">Wird dauerhaft unter „Besucher Manager“ angezeigt und auf jeden Besucherschein gedruckt.</div>
+          </div>
+          <div className="row-actions action-bar">
+            <button type="button" onClick={() => void saveSecurityNumber()}>DATEV-Nummer speichern</button>
           </div>
         </div>
 
         <div className="panel">
-          <h3>E-Mail-Relay für Nationalitätsmeldungen</h3>
+          <h3>E-Mail-Relay und Versandformat</h3>
         <div className="form-grid two-columns">
+          <FormField label="E-Mail-Format">
+            <select
+              value={workflowSettings?.mailFormat ?? "text"}
+              onChange={(event) => setWorkflowSettings((current) => current ? {
+                ...current,
+                mailFormat: event.target.value as "text" | "html"
+              } : current)}
+            >
+              <option value="text">Text-E-Mail</option>
+              <option value="html">HTML-E-Mail</option>
+            </select>
+          </FormField>
+          <div className="feedback info">Gilt für alle versendeten E-Mails. HTML-E-Mails enthalten zusätzlich eine Textversion als Fallback.</div>
           {workflowSettings?.emailRelay.source === "yml" ? (
             <div className="detail-span-2">
               <div className="feedback info">
@@ -908,12 +924,12 @@ export function AdminSystemSection({
             <input
               type="number"
               disabled={workflowSettings?.emailRelay.isReadOnly ?? false}
-              value={workflowSettings?.emailRelay.port ?? 587}
+              value={workflowSettings?.emailRelay.port ?? ""}
               onChange={(event) => setWorkflowSettings((current) => current ? {
                 ...current,
                 emailRelay: {
                   ...current.emailRelay,
-                  port: Number(event.target.value) || 587
+                  port: event.target.value === "" ? "" : Number(event.target.value)
                 }
               } : current)}
             />
@@ -957,7 +973,7 @@ export function AdminSystemSection({
           </FormField>
           <FormField label="Absenderadresse">
             <input
-              type="email"
+              type="text"
               disabled={workflowSettings?.emailRelay.isReadOnly ?? false}
               value={workflowSettings?.emailRelay.fromAddress ?? ""}
               onChange={(event) => setWorkflowSettings((current) => current ? {
@@ -967,8 +983,10 @@ export function AdminSystemSection({
                   fromAddress: event.target.value
                 }
               } : current)}
+              placeholder="noreply@bundeswehr.org oder Besucher Manager <noreply@bundeswehr.org>"
             />
           </FormField>
+          <div className="feedback info">Erlaubt sind <code>noreply@bundeswehr.org</code> oder <code>Besucher Manager &lt;noreply@bundeswehr.org&gt;</code>.</div>
         </div>
 
         <div className="row-actions action-bar">
@@ -977,9 +995,11 @@ export function AdminSystemSection({
 
         <div className="form-grid two-columns">
           <FormField label="Testmail-Typ">
-            <select value={workflowTestKind} onChange={(event) => setWorkflowTestKind(event.target.value as "relay" | "nationality")}>
+            <select value={workflowTestKind} onChange={(event) => setWorkflowTestKind(event.target.value as "relay" | "nationality" | "pre_registration" | "reminder")}>
               <option value="relay">Relay-Test</option>
               <option value="nationality">Nationalitätsmeldung</option>
+              <option value="pre_registration">Voranmeldungsbestätigung</option>
+              <option value="reminder">Besuchserinnerung</option>
             </select>
           </FormField>
           <FormField label="Testadresse">

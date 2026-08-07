@@ -175,7 +175,7 @@ export function PrintViewPage() {
                 <div className="badge-header-right">
                   <img className="badge-print-logo" src={BRANDING.logo} alt="WIWeB" />
                   <div className="badge-security-number">
-                    DATAV-Nummer
+                    DATEV-Nummer
                     <strong>{securityNumber}</strong>
                   </div>
                   <div className="badge-number">

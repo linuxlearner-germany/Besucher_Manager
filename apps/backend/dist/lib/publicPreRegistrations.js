@@ -10,48 +10,10 @@ const mssql_1 = __importDefault(require("mssql"));
 const mailRelay_1 = require("./mailRelay");
 const auditLog_1 = require("./auditLog");
 const db_1 = require("./db");
-const badgeNumber_1 = require("./badgeNumber");
+const badgeAllocation_1 = require("./badgeAllocation");
+const dateOnly_1 = require("./dateOnly");
+const textValues_1 = require("./textValues");
 const visitWorkflow_1 = require("./visitWorkflow");
-async function generateUniqueBadgeNumber(transaction) {
-    for (let attempt = 0; attempt < 20; attempt += 1) {
-        const candidate = (0, badgeNumber_1.generateBadgeNumberCandidate)();
-        const existing = await new mssql_1.default.Request(transaction)
-            .input("badgeNumber", mssql_1.default.NVarChar(64), candidate)
-            .query(`
-        SELECT TOP 1 v.id
-        FROM dbo.visits v
-        INNER JOIN dbo.visitors vis ON vis.id = v.visitor_id
-        WHERE v.badge_number = @badgeNumber
-          AND vis.is_deleted = 0
-          AND v.status <> '${visitWorkflow_1.VISIT_STATUS.CANCELLED}'
-      `);
-        if (existing.recordset.length === 0) {
-            return candidate;
-        }
-    }
-    throw new Error("badge_number_generation_failed");
-}
-function cleanOptional(value) {
-    if (typeof value !== "string") {
-        return null;
-    }
-    const normalized = value.trim();
-    return normalized.length > 0 ? normalized : null;
-}
-function normalizeDateOnlyStart(value) {
-    const parsed = new Date(value);
-    const utcYear = parsed.getUTCFullYear();
-    const utcMonth = parsed.getUTCMonth();
-    const utcDay = parsed.getUTCDate();
-    return new Date(Date.UTC(utcYear, utcMonth, utcDay, 0, 0, 0, 0));
-}
-function normalizeDateOnlyEnd(value) {
-    const parsed = new Date(value);
-    const utcYear = parsed.getUTCFullYear();
-    const utcMonth = parsed.getUTCMonth();
-    const utcDay = parsed.getUTCDate();
-    return new Date(Date.UTC(utcYear, utcMonth, utcDay, 23, 59, 59, 999));
-}
 async function listActiveGates() {
     const pool = await (0, db_1.getPool)();
     const result = await pool.request().query(`
@@ -87,29 +49,29 @@ async function createPreRegistration(input) {
     const transaction = new mssql_1.default.Transaction(pool);
     await transaction.begin();
     try {
-        const gateId = cleanOptional(input.gateId);
+        const gateId = (0, textValues_1.cleanOptional)(input.gateId);
         const gate = gateId ? await findActiveGateById(gateId) : null;
-        const badgeNumber = await generateUniqueBadgeNumber(transaction);
+        const badgeNumber = await (0, badgeAllocation_1.generateUniqueBadgeNumber)(transaction);
         const fallbackDate = new Date().toISOString().slice(0, 10);
         const validFrom = input.validFrom || fallbackDate;
         const validUntil = input.validUntil || validFrom;
-        const validFromDate = normalizeDateOnlyStart(validFrom);
-        const validUntilDate = normalizeDateOnlyEnd(validUntil);
+        const validFromDate = (0, dateOnly_1.dateOnlyStart)(validFrom);
+        const validUntilDate = (0, dateOnly_1.dateOnlyEnd)(validUntil);
         const visitorInsert = await new mssql_1.default.Request(transaction)
             .input("firstName", mssql_1.default.NVarChar(120), input.firstName.trim())
             .input("lastName", mssql_1.default.NVarChar(120), input.lastName.trim())
             .input("company", mssql_1.default.NVarChar(255), input.company.trim())
-            .input("visitorStreet", mssql_1.default.NVarChar(255), cleanOptional(input.visitorStreet))
-            .input("visitorHouseNumber", mssql_1.default.NVarChar(40), cleanOptional(input.visitorHouseNumber))
-            .input("visitorPostalCode", mssql_1.default.NVarChar(20), cleanOptional(input.visitorPostalCode))
-            .input("visitorCity", mssql_1.default.NVarChar(120), cleanOptional(input.visitorCity))
+            .input("visitorStreet", mssql_1.default.NVarChar(255), (0, textValues_1.cleanOptional)(input.visitorStreet))
+            .input("visitorHouseNumber", mssql_1.default.NVarChar(40), (0, textValues_1.cleanOptional)(input.visitorHouseNumber))
+            .input("visitorPostalCode", mssql_1.default.NVarChar(20), (0, textValues_1.cleanOptional)(input.visitorPostalCode))
+            .input("visitorCity", mssql_1.default.NVarChar(120), (0, textValues_1.cleanOptional)(input.visitorCity))
             .input("nationalityCode", mssql_1.default.NChar(2), input.nationalityCode)
-            .input("birthDate", mssql_1.default.Date, cleanOptional(input.birthDate))
-            .input("phone", mssql_1.default.NVarChar(80), cleanOptional(input.phone))
-            .input("email", mssql_1.default.NVarChar(255), cleanOptional(input.email))
-            .input("idDocumentType", mssql_1.default.NVarChar(40), cleanOptional(input.idDocumentType))
-            .input("idDocumentValidUntil", mssql_1.default.Date, cleanOptional(input.idDocumentValidUntil))
-            .input("idDocumentNumber", mssql_1.default.NVarChar(120), cleanOptional(input.idDocumentNumber))
+            .input("birthDate", mssql_1.default.Date, (0, textValues_1.cleanOptional)(input.birthDate))
+            .input("phone", mssql_1.default.NVarChar(80), (0, textValues_1.cleanOptional)(input.phone))
+            .input("email", mssql_1.default.NVarChar(255), (0, textValues_1.cleanOptional)(input.email))
+            .input("idDocumentType", mssql_1.default.NVarChar(40), (0, textValues_1.cleanOptional)(input.idDocumentType))
+            .input("idDocumentValidUntil", mssql_1.default.Date, (0, textValues_1.cleanOptional)(input.idDocumentValidUntil))
+            .input("idDocumentNumber", mssql_1.default.NVarChar(120), (0, textValues_1.cleanOptional)(input.idDocumentNumber))
             .query(`
         INSERT INTO dbo.visitors (
           first_name,
@@ -153,16 +115,16 @@ async function createPreRegistration(input) {
             .input("visitorId", mssql_1.default.UniqueIdentifier, visitorId)
             .input("gateId", mssql_1.default.UniqueIdentifier, gateId)
             .input("hostName", mssql_1.default.NVarChar(255), input.hostName.trim())
-            .input("hostEmail", mssql_1.default.NVarChar(255), cleanOptional(input.hostEmail)?.toLowerCase() ?? null)
-            .input("hostPhone", mssql_1.default.NVarChar(80), cleanOptional(input.hostPhone))
-            .input("hostDepartment", mssql_1.default.NVarChar(255), cleanOptional(input.hostDepartment))
+            .input("hostEmail", mssql_1.default.NVarChar(255), (0, textValues_1.cleanOptional)(input.hostEmail)?.toLowerCase() ?? null)
+            .input("hostPhone", mssql_1.default.NVarChar(80), (0, textValues_1.cleanOptional)(input.hostPhone))
+            .input("hostDepartment", mssql_1.default.NVarChar(255), (0, textValues_1.cleanOptional)(input.hostDepartment))
             .input("purpose", mssql_1.default.NVarChar(500), input.purpose.trim())
             .input("validFrom", mssql_1.default.DateTime2, validFromDate)
             .input("validUntil", mssql_1.default.DateTime2, validUntilDate)
-            .input("licensePlate", mssql_1.default.NVarChar(40), cleanOptional(input.licensePlate))
+            .input("licensePlate", mssql_1.default.NVarChar(40), (0, textValues_1.cleanOptional)(input.licensePlate))
             .input("badgeNumber", mssql_1.default.NVarChar(64), badgeNumber)
-            .input("notes", mssql_1.default.NVarChar(mssql_1.default.MAX), cleanOptional(input.notes))
-            .input("submittedIpAddress", mssql_1.default.NVarChar(64), cleanOptional(input.submittedIpAddress ?? undefined))
+            .input("notes", mssql_1.default.NVarChar(mssql_1.default.MAX), (0, textValues_1.cleanOptional)(input.notes))
+            .input("submittedIpAddress", mssql_1.default.NVarChar(64), (0, textValues_1.cleanOptional)(input.submittedIpAddress ?? undefined))
             .query(`
         INSERT INTO dbo.visits (
           visitor_id,
@@ -205,12 +167,12 @@ async function createPreRegistration(input) {
             throw new Error("visit_insert_failed");
         }
         await (0, auditLog_1.writeAuditLog)({
-            user: `public:${cleanOptional(input.submittedIpAddress ?? undefined) ?? "unknown"}`,
+            user: `public:${(0, textValues_1.cleanOptional)(input.submittedIpAddress ?? undefined) ?? "unknown"}`,
             action: "PUBLIC_PRE_REGISTRATION_CREATED",
             objectType: "visit",
             objectId: visit.id,
-            ipAddress: cleanOptional(input.submittedIpAddress ?? undefined),
-            userAgent: cleanOptional(input.userAgent ?? undefined),
+            ipAddress: (0, textValues_1.cleanOptional)(input.submittedIpAddress ?? undefined),
+            userAgent: (0, textValues_1.cleanOptional)(input.userAgent ?? undefined),
             metadata: {
                 source: "public_pre_registration",
                 created_via_public_form: true

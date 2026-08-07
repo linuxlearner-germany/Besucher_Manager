@@ -256,6 +256,21 @@ a {
   min-width: 0;
 }
 
+.datev-number {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.datev-number strong {
+  color: var(--text);
+  font-weight: 650;
+}
+
 .topbar-subtitle {
   color: var(--muted);
   font-size: 13px;
@@ -1345,6 +1360,7 @@ button:disabled {
   gap: 6px;
   font-size: 14px;
   color: var(--text);
+  min-width: 0;
 }
 
 .form-grid input,
@@ -3260,6 +3276,17 @@ input[type="checkbox"] {
   gap: 10px 16px;
 }
 
+.detail-grid > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.detail-grid strong {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .detail-grid .detail-span-2 {
   grid-column: span 2;
 }
@@ -3859,7 +3886,26 @@ input[type="checkbox"] {
   }
 
   :root {
+    color-scheme: light !important;
+    --text: #15202b;
+    --muted: #415164;
+    --panel-bg: #ffffff;
+    --panel-border: #b9c7d6;
+    --surface-subtle: #f6f9fc;
+    --text-primary: #15202b;
+    --text-secondary: #415164;
     background: #ffffff;
+  }
+
+  :root[data-theme="dark"] {
+    color-scheme: light !important;
+    --text: #15202b;
+    --muted: #415164;
+    --panel-bg: #ffffff;
+    --panel-border: #b9c7d6;
+    --surface-subtle: #f6f9fc;
+    --text-primary: #15202b;
+    --text-secondary: #415164;
   }
 
   .security-number-display {
@@ -3884,8 +3930,15 @@ input[type="checkbox"] {
   body {
     background: #ffffff;
     background-image: none !important;
+    color: #15202b !important;
     font-size: 8pt;
     line-height: 1.12;
+  }
+
+  .print-layout,
+  .print-layout * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 
   .topbar,
@@ -4050,7 +4103,9 @@ input[type="checkbox"] {
   }
 
   .signature-line {
-    min-height: 4mm;
+    min-height: 6mm;
+    border-bottom: 2px solid #15202b !important;
+    opacity: 1 !important;
   }
 
   .signature-section p {

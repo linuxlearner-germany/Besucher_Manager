@@ -11,6 +11,7 @@ export const WORKFLOW_SETTING_KEYS = {
   relayUsername: "mail_relay_username",
   relayPassword: "mail_relay_password",
   relayFrom: "mail_relay_from",
+  mailFormat: "mail_format",
   uiBackgroundMode: "ui_background_mode",
   uiBackgroundId: "ui_background_id",
   uiBackgroundImageUrl: "ui_background_image_url",
@@ -22,6 +23,7 @@ export const WORKFLOW_SETTING_KEYS = {
 export const SITE_MAP_SETTING_KEY = "site_map_file_name";
 
 export type WorkflowSettings = {
+  mailFormat: "text" | "html";
   securityNumber: string;
   backgroundMode: "image" | "subtle" | "plain";
   backgroundId: string | null;
@@ -77,6 +79,11 @@ function toBackgroundMode(value: string | null | undefined, fallback: "image" | 
     return normalized;
   }
   return fallback;
+}
+
+/** Keeps installations created before the setting existed on plain text mail. */
+export function toMailFormat(value: string | null | undefined): "text" | "html" {
+  return value?.trim().toLowerCase() === "html" ? "html" : "text";
 }
 
 async function loadBackgroundState(settingMap: Map<string, string>): Promise<Pick<WorkflowSettings, "backgroundMode" | "backgroundId" | "backgroundImageUrl" | "backgroundImageName" | "backgroundImageOriginalFileName">> {
@@ -165,7 +172,8 @@ export async function loadWorkflowSettings(options?: {
   if (fileRelayConfig) {
     return {
       ...backgroundState,
-      securityNumber: settingMap.get(WORKFLOW_SETTING_KEYS.securityNumber)?.trim().toUpperCase() || "BM2026",
+      mailFormat: toMailFormat(settingMap.get(WORKFLOW_SETTING_KEYS.mailFormat)),
+      securityNumber: settingMap.get(WORKFLOW_SETTING_KEYS.securityNumber)?.trim() || "BM2026",
       emailRelay: {
         source: "yml",
         configPath: fileRelayConfig.configPath,
@@ -184,7 +192,8 @@ export async function loadWorkflowSettings(options?: {
 
   return {
     ...backgroundState,
-    securityNumber: settingMap.get(WORKFLOW_SETTING_KEYS.securityNumber)?.trim().toUpperCase() || "BM2026",
+    mailFormat: toMailFormat(settingMap.get(WORKFLOW_SETTING_KEYS.mailFormat)),
+    securityNumber: settingMap.get(WORKFLOW_SETTING_KEYS.securityNumber)?.trim() || "BM2026",
     emailRelay: {
       source: "database",
       configPath: null,
