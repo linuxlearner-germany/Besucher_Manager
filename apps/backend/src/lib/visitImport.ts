@@ -98,7 +98,7 @@ async function resolveGateId(row: ImportVisitInput, fallbackGateId?: string | nu
 export async function createImportedPreRegistrations(
   rows: ImportVisitInput[],
   options: {
-    source: "public_group_form" | "file_import";
+    source: "public_group_form";
     submittedIpAddress?: string | null;
     userAgent?: string | null;
     createdBy?: AuthenticatedUser | null;
@@ -321,7 +321,7 @@ export async function createImportedPreRegistrations(
       {
         user: options.createdBy?.username ?? `public:${cleanOptional(options.submittedIpAddress) ?? "unknown"}`,
         userId: options.createdBy?.id,
-        action: options.source === "file_import" ? "VISITS_IMPORTED_FROM_FILE" : "PUBLIC_GROUP_PRE_REGISTRATION_CREATED",
+        action: "PUBLIC_GROUP_PRE_REGISTRATION_CREATED",
         objectType: "visit",
         objectId: "bulk",
         ipAddress: cleanOptional(options.submittedIpAddress),

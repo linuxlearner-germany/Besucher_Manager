@@ -162,7 +162,7 @@ Nach dem Update im Browser pruefen:
 - Admin laedt
 - Voranmeldung funktioniert
 - Druckansicht oeffnet
-- Importseite laedt
+- Fuer freigeschaltete SiBe-Benutzer ist die vereinfachte Personenanlage verfuegbar
 
 ## Wenn das Update fehlschlaegt
 

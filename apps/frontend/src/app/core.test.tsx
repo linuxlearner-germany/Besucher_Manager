@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  canUseSimplifiedSibeRegistration,
   formatDateOnly,
   formatStatus,
   hasPermission,
@@ -33,5 +34,16 @@ describe("frontend core helpers", () => {
   it("uses the explicit permission model", () => {
     expect(hasPermission(user, "visits.checkIn")).toBe(true);
     expect(hasPermission(user, "visits.checkOut")).toBe(false);
+  });
+
+  it("enables simplified registration only for SiBe with the stored activation key", () => {
+    const sibe: User = {
+      ...user,
+      role: "sibe",
+      menuAccess: ["sibe", "import"]
+    };
+    expect(canUseSimplifiedSibeRegistration(sibe)).toBe(true);
+    expect(canUseSimplifiedSibeRegistration({ ...sibe, menuAccess: ["sibe"] })).toBe(false);
+    expect(canUseSimplifiedSibeRegistration({ ...sibe, role: "guard" })).toBe(false);
   });
 });

@@ -886,6 +886,14 @@ export function hasPermission(user: User | AdminUser | null | undefined, permiss
   return Boolean(sectionValue[key]);
 }
 
+export function canUseSimplifiedSibeRegistration(user: User | null | undefined): boolean {
+  return Boolean(
+    user?.role === "sibe"
+    && user.menuAccess.includes("import")
+    && hasPermission(user, "visits.create")
+  );
+}
+
 export function hasMenuAccess(user: User | AdminUser | null | undefined, menuKey: AppMenuKey): boolean {
   return getEffectiveMenuAccess(user).includes(menuKey);
 }
@@ -1232,7 +1240,6 @@ export function AppLayout({ children }: PropsWithChildren) {
   const menuItems: Array<{ to: string; label: string; visible: boolean }> = [
     { to: "/", label: "Voranmeldung", visible: !user || Boolean(user && hasMenuAccess(user, "voranmeldung")) },
     { to: "/wache", label: "Wache", visible: Boolean(user && hasMenuAccess(user, "wache") && hasPermission(user, "visits.read")) },
-    { to: "/import", label: "Import", visible: Boolean(!user || (user && hasMenuAccess(user, "import") && hasPermission(user, "imports.execute"))) },
     { to: "/admin", label: "Admin", visible: Boolean(user && hasMenuAccess(user, "admin") && (hasPermission(user, "admin.users") || hasPermission(user, "admin.guards") || hasPermission(user, "admin.fields") || hasPermission(user, "admin.map") || hasPermission(user, "admin.system") || hasPermission(user, "logs.audit") || hasPermission(user, "logs.errors"))) },
     { to: "/sibe", label: "SiBe", visible: Boolean(user && hasMenuAccess(user, "sibe") && hasPermission(user, "dashboards.sibe")) },
     { to: "/sibe/ablehnungen", label: "Ablehnungen", visible: Boolean(user && hasMenuAccess(user, "sibe") && hasPermission(user, "visits.read")) },
@@ -1243,7 +1250,7 @@ export function AppLayout({ children }: PropsWithChildren) {
   ];
   const visibleMenuItems = menuItems.filter((item) => item.visible);
   const adminRoleMenus: Array<{ key: "wache" | "sibe" | "kaskdt"; label: string; paths: string[] }> = [
-    { key: "wache", label: "Wache", paths: ["/wache", "/import"] },
+    { key: "wache", label: "Wache", paths: ["/wache"] },
     { key: "sibe", label: "SiBe", paths: ["/sibe", "/sibe/ablehnungen", "/sibe/benachrichtigungen"] },
     { key: "kaskdt", label: "KasKdt", paths: ["/kaskdt", "/texte"] }
   ];

@@ -9,6 +9,7 @@ import {
   assertCanUpdateHostSignature,
   canAccessGate,
   canManageGuardScopedVisit,
+  canUseSimplifiedSibeRegistration,
   HOST_SIGNATURE_STATUS,
   VISIT_STATUS,
   type AuthenticatedUser
@@ -107,6 +108,16 @@ test("sibe has no implicit guard scope access", () => {
   const sibe = makeUser("sibe", null);
 
   assert.equal(canAccessGate(sibe, "gate-1"), false);
+});
+
+test("simplified visitor registration is restricted to SiBe with the existing activation flag", () => {
+  const sibe = makeUser("sibe", null);
+  const inactiveSibe = { ...sibe, menuAccess: sibe.menuAccess.filter((key) => key !== "import") };
+  const guard = makeUser("guard", "gate-1");
+
+  assert.equal(canUseSimplifiedSibeRegistration(sibe), true);
+  assert.equal(canUseSimplifiedSibeRegistration(inactiveSibe), false);
+  assert.equal(canUseSimplifiedSibeRegistration(guard), false);
 });
 
 test("unassigned visits remain blocked when the workflow requires an assigned gate", () => {

@@ -139,6 +139,17 @@ test("public pre-registration validates required fields without requiring gate",
   assert.equal(result.success, false);
 });
 
+test("normal pre-registration still rejects missing standard required fields", () => {
+  const result = publicPreRegistrationSchema.safeParse({ firstName: "Max", lastName: "Muster" });
+  assert.equal(result.success, false);
+  if (!result.success) {
+    const fields = result.error.issues.map((issue) => issue.path.join("."));
+    assert.equal(fields.includes("company"), true);
+    assert.equal(fields.includes("hostName"), true);
+    assert.equal(fields.includes("purpose"), true);
+  }
+});
+
 test("public pre-registration rejects future birth dates", () => {
   const result = publicPreRegistrationSchema.safeParse({
     firstName: "Max",

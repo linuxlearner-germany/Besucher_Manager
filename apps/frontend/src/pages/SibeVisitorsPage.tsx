@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { CountrySelect } from "../components/CountrySelect";
 import { Alert, Card, DataTable, FormField } from "../components/ui";
 import {
   AppLayout,
+  canUseSimplifiedSibeRegistration,
   type ApiError,
   fetchJson,
   formatDateOnly,
@@ -19,6 +21,7 @@ import {
 export function SibeVisitorsPage() {
   const { user } = useAuth();
   const isCommanderView = user?.role === "kaskdt";
+  const simplifiedRegistrationEnabled = canUseSimplifiedSibeRegistration(user);
   const [visits, setVisits] = useState<SibeVisitRow[]>([]);
   const [visitors, setVisitors] = useState<SibeVisitorRow[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -32,6 +35,16 @@ export function SibeVisitorsPage() {
   const [licensePlateFilter, setLicensePlateFilter] = useState("");
   const [badgeFilter, setBadgeFilter] = useState("");
   const [exportDate, setExportDate] = useState(() => toDateInputValue(new Date()));
+  const [simplifiedVisitor, setSimplifiedVisitor] = useState({
+    firstName: "", lastName: "", company: "", nationalityCode: "", birthDate: "",
+    phone: "", email: "", visitorStreet: "", visitorHouseNumber: "",
+    visitorPostalCode: "", visitorCity: "", idDocumentType: "",
+    idDocumentValidUntil: "", idDocumentNumber: ""
+  });
+  const [simplifiedSubmitState, setSimplifiedSubmitState] = useState<{
+    kind: "idle" | "saving" | "success" | "error";
+    message?: string;
+  }>({ kind: "idle" });
   const filteredVisitCount = visits.length;
   const filteredVisitorCount = visitors.length;
   const checkedInCount = visits.filter((visit) => visit.status === "checked_in").length;
@@ -101,6 +114,32 @@ export function SibeVisitorsPage() {
     setGateFilter("");
     setLicensePlateFilter("");
     setBadgeFilter("");
+  }
+
+  function updateSimplifiedVisitor(field: keyof typeof simplifiedVisitor, value: string) {
+    setSimplifiedVisitor((current) => ({ ...current, [field]: value }));
+  }
+
+  async function submitSimplifiedVisitor(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSimplifiedSubmitState({ kind: "saving" });
+    try {
+      const payload = await fetchJson<{ message: string }>("/api/sibe/visitors", {
+        method: "POST",
+        body: JSON.stringify(simplifiedVisitor)
+      });
+      setSimplifiedVisitor({
+        firstName: "", lastName: "", company: "", nationalityCode: "", birthDate: "",
+        phone: "", email: "", visitorStreet: "", visitorHouseNumber: "",
+        visitorPostalCode: "", visitorCity: "", idDocumentType: "",
+        idDocumentValidUntil: "", idDocumentNumber: ""
+      });
+      setSimplifiedSubmitState({ kind: "success", message: payload.message });
+      await loadData();
+    } catch (apiError) {
+      const errorPayload = apiError as ApiError;
+      setSimplifiedSubmitState({ kind: "error", message: errorPayload.message || "Die Person konnte nicht angelegt werden." });
+    }
   }
 
   return (
@@ -193,11 +232,80 @@ export function SibeVisitorsPage() {
 
         {error ? <Alert type="error">{error}</Alert> : null}
 
+        {simplifiedRegistrationEnabled && !isCommanderView ? (
+          <Card>
+            <div className="section-header">
+              <div>
+                <h3>Person nach vereinfachter Besucherregelung anlegen</h3>
+                <p className="section-copy">Nur Vor- und Nachname sind erforderlich. Alle weiteren Angaben sind freiwillig.</p>
+              </div>
+            </div>
+            <form onSubmit={submitSimplifiedVisitor}>
+              <div className="form-grid two-columns">
+                <FormField label="Vorname" required>
+                  <input required maxLength={120} value={simplifiedVisitor.firstName} onChange={(event) => updateSimplifiedVisitor("firstName", event.target.value)} />
+                </FormField>
+                <FormField label="Nachname" required>
+                  <input required maxLength={120} value={simplifiedVisitor.lastName} onChange={(event) => updateSimplifiedVisitor("lastName", event.target.value)} />
+                </FormField>
+                <FormField label="Firma / Organisation">
+                  <input maxLength={255} value={simplifiedVisitor.company} onChange={(event) => updateSimplifiedVisitor("company", event.target.value)} />
+                </FormField>
+                <FormField label="Nationalität">
+                  <CountrySelect value={simplifiedVisitor.nationalityCode} onChange={(value) => updateSimplifiedVisitor("nationalityCode", value)} />
+                </FormField>
+                <FormField label="Geburtsdatum">
+                  <input type="date" max={toDateInputValue(new Date())} value={simplifiedVisitor.birthDate} onChange={(event) => updateSimplifiedVisitor("birthDate", event.target.value)} />
+                </FormField>
+                <FormField label="Telefon">
+                  <input maxLength={80} value={simplifiedVisitor.phone} onChange={(event) => updateSimplifiedVisitor("phone", event.target.value)} />
+                </FormField>
+                <FormField label="E-Mail">
+                  <input type="email" value={simplifiedVisitor.email} onChange={(event) => updateSimplifiedVisitor("email", event.target.value)} />
+                </FormField>
+                <FormField label="Straße">
+                  <input maxLength={255} value={simplifiedVisitor.visitorStreet} onChange={(event) => updateSimplifiedVisitor("visitorStreet", event.target.value)} />
+                </FormField>
+                <FormField label="Hausnummer">
+                  <input maxLength={40} value={simplifiedVisitor.visitorHouseNumber} onChange={(event) => updateSimplifiedVisitor("visitorHouseNumber", event.target.value)} />
+                </FormField>
+                <FormField label="PLZ">
+                  <input maxLength={20} value={simplifiedVisitor.visitorPostalCode} onChange={(event) => updateSimplifiedVisitor("visitorPostalCode", event.target.value)} />
+                </FormField>
+                <FormField label="Ort">
+                  <input maxLength={120} value={simplifiedVisitor.visitorCity} onChange={(event) => updateSimplifiedVisitor("visitorCity", event.target.value)} />
+                </FormField>
+                <FormField label="Ausweisart">
+                  <select value={simplifiedVisitor.idDocumentType} onChange={(event) => updateSimplifiedVisitor("idDocumentType", event.target.value)}>
+                    <option value="">Bitte wählen</option>
+                    <option value="identity_card">Personalausweis</option>
+                    <option value="passport">Reisepass</option>
+                    <option value="service_id">Dienstausweis</option>
+                    <option value="other">Sonstiges</option>
+                  </select>
+                </FormField>
+                <FormField label="Ausweis gültig bis">
+                  <input type="date" value={simplifiedVisitor.idDocumentValidUntil} onChange={(event) => updateSimplifiedVisitor("idDocumentValidUntil", event.target.value)} />
+                </FormField>
+                <FormField label="Ausweisnummer">
+                  <input maxLength={120} value={simplifiedVisitor.idDocumentNumber} onChange={(event) => updateSimplifiedVisitor("idDocumentNumber", event.target.value)} />
+                </FormField>
+              </div>
+              <div className="form-actions">
+                <button type="submit" disabled={simplifiedSubmitState.kind === "saving"}>
+                  {simplifiedSubmitState.kind === "saving" ? "Speichert..." : "Person anlegen"}
+                </button>
+              </div>
+              {simplifiedSubmitState.kind === "success" ? <Alert type="success">{simplifiedSubmitState.message}</Alert> : null}
+              {simplifiedSubmitState.kind === "error" ? <Alert type="error">{simplifiedSubmitState.message}</Alert> : null}
+            </form>
+          </Card>
+        ) : null}
+
         {!isCommanderView ? (
           <Card>
             <h3>Export</h3>
             <div className="toolbar filter-bar import-export-bar">
-              <Link className="button-link" to="/import">Import öffnen</Link>
               <input type="date" value={exportDate} onChange={(event) => setExportDate(event.target.value)} />
               <button type="button" className="secondary-button" onClick={() => downloadExport("day")}>Tagesexport</button>
               <button type="button" className="secondary-button" onClick={() => downloadExport("week")}>Wochenexport</button>

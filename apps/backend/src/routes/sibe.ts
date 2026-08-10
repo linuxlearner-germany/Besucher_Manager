@@ -5,14 +5,15 @@ import { writeAuditLog } from "../lib/auditLog";
 import { getPool } from "../lib/db";
 import { COUNTRIES, getCountryName, normalizeCountryCode } from "../lib/countries";
 import { HOST_SIGNATURE_STATUS, VISIT_STATUS } from "../lib/visitWorkflow";
-import { getRequestIp, getRequestUserAgent, handleUnexpectedError, requireAnyPermission, requirePermission, requireRole, sendError, sendValidationError } from "./shared";
-import { handleVisitorImportUpload, sendVisitorImportTemplateWorkbook } from "./visitorImport";
+import { canUseSimplifiedSibeRegistration } from "../lib/visitWorkflow";
+import { createSimplifiedSibeVisitor } from "../lib/simplifiedSibeRegistration";
+import { simplifiedSibeVisitorSchema } from "../lib/simplifiedSibeRegistrationSchema";
+import { getRequestIp, getRequestUserAgent, handleUnexpectedError, requireAnyPermission, requireAuthenticatedUser, requirePermission, requireRole, sendError, sendForbidden, sendValidationError } from "./shared";
 
 export const sibeRouter = Router();
 
 const sibeReadRoles = ["admin", "sibe", "kaskdt"] as const;
 const sibeWriteRoles = ["admin", "sibe"] as const;
-const importRoles = ["admin", "guard", "sibe"] as const;
 const sibeVisitNotesSchema = z.object({
   notes: z.string().trim().max(4000, "Die Anmerkung darf maximal 4000 Zeichen enthalten.").optional().or(z.literal(""))
 });
@@ -270,6 +271,34 @@ sibeRouter.get("/api/sibe/visitors", async (request, response) => {
   }
 });
 
+sibeRouter.post("/api/sibe/visitors", async (request, response) => {
+  const user = await requireAuthenticatedUser(request, response);
+  if (!user) return;
+
+  if (!canUseSimplifiedSibeRegistration(user)) {
+    return sendForbidden(response);
+  }
+
+  const parsed = simplifiedSibeVisitorSchema.safeParse(request.body);
+  if (!parsed.success) return sendValidationError(response, parsed.error.flatten());
+
+  try {
+    const created = await createSimplifiedSibeVisitor(
+      user,
+      parsed.data,
+      getRequestIp(request),
+      getRequestUserAgent(request)
+    );
+    return response.status(201).json({
+      success: true,
+      visitorId: created.visitorId,
+      message: "Die Person wurde mit vereinfachten Angaben angelegt."
+    });
+  } catch (error) {
+    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Person konnte nicht angelegt werden.");
+  }
+});
+
 sibeRouter.get("/api/sibe/visits", async (request, response) => {
   const user = await requirePermission(request, response, "visits.read");
   if (!user) return;
@@ -516,23 +545,6 @@ sibeRouter.get("/api/sibe/visits/export", async (request, response) => {
   } catch (error) {
     return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der Besucherexport konnte nicht erstellt werden.");
   }
-});
-
-sibeRouter.post("/api/sibe/visits/import", async (request, response) => {
-  const user = await requirePermission(request, response, "imports.execute");
-  if (!user) return;
-
-  return handleVisitorImportUpload(request, response, {
-    createdBy: user,
-    fallbackGateId: user.role === "guard" ? user.gateId : null
-  });
-});
-
-sibeRouter.get("/api/sibe/visits/import-template.xlsx", async (request, response) => {
-  const user = await requireRole(request, response, [...importRoles]);
-  if (!user) return;
-
-  return sendVisitorImportTemplateWorkbook(response);
 });
 
 sibeRouter.get("/api/sibe/visits/:id", async (request, response) => {

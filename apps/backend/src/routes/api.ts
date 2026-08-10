@@ -28,7 +28,6 @@ import {
 import { writeAuditLog } from "../lib/auditLog";
 import { getPool } from "../lib/db";
 import sql from "mssql";
-import { handleVisitorImportUpload, sendVisitorImportTemplateWorkbook } from "./visitorImport";
 import { adminRouter } from "./admin";
 import { guardRouter } from "./guard";
 import { sibeRouter } from "./sibe";
@@ -360,27 +359,6 @@ apiRouter.post("/api/public/pre-registrations/group", async (request, response) 
     }
     return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der Gruppenimport konnte nicht gespeichert werden.");
   }
-});
-
-apiRouter.post("/api/public/visits/import", async (request, response) => {
-  const rateLimitKey = `public-visitor-import:${request.ip || request.socket.remoteAddress || "unknown"}`;
-  const rateLimitDecision = checkRateLimit(rateLimitKey, 8, 60);
-  if (!rateLimitDecision.allowed) {
-    response.setHeader("Retry-After", String(rateLimitDecision.retryAfterSeconds));
-    return response.status(429).json({
-      error: "RATE_LIMITED",
-      message: "Zu viele Importversuche. Bitte spaeter erneut versuchen."
-    });
-  }
-
-  return handleVisitorImportUpload(request, response, {
-    createdBy: null,
-    fallbackGateId: null
-  });
-});
-
-apiRouter.get("/api/public/visits/import-template.xlsx", async (_request, response) => {
-  return sendVisitorImportTemplateWorkbook(response);
 });
 
 apiRouter.post("/api/auth/logout", async (_request, response) => {

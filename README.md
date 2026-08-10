@@ -111,9 +111,9 @@ Nationalitätsmeldungen laufen unabhängig vom operativen Ablauf. Ein SMTP-Fehle
 
 | Rolle | Standardbereiche | Besonderheiten |
 |---|---|---|
-| Nicht angemeldet | Voranmeldung, Gruppenanmeldung, öffentlicher Excel-Import, Login | Öffentliche Endpunkte sind CSRF- und rate-limit-geschützt |
-| `guard` | Wache, Import | Wählt beim Login eine aktive Wache; Zugriff auf den eigenen Wachenbereich |
-| `sibe` | SiBe, Import | Kann Länder abonnieren und Besucher recherchieren |
+| Nicht angemeldet | Voranmeldung, Gruppenanmeldung, Login | Öffentliche Endpunkte sind CSRF- und rate-limit-geschützt |
+| `guard` | Wache | Wählt beim Login eine aktive Wache; Zugriff auf den eigenen Wachenbereich |
+| `sibe` | SiBe | Kann Länder abonnieren, Besucher recherchieren und bei aktivierter vereinfachter Besucherregelung Personen mit reduzierten Angaben anlegen |
 | `kaskdt` | KasKdt, Texte | Darf die vollständige Textverwaltung nutzen |
 | `admin` | Alle Bereiche | Benutzer-, System-, Feld-, Text- und Betriebsverwaltung |
 | `custom` | Individuell | Menüs und fachliche Berechtigungen werden explizit gesetzt |
@@ -128,7 +128,6 @@ Menüzugriffe und API-Berechtigungen werden serverseitig geprüft. Eine ausgeble
 | Backend | Node.js 22, Express, TypeScript |
 | Validierung | Zod |
 | Datenbank | Microsoft SQL Server |
-| Excel | ExcelJS und SheetJS |
 | E-Mail | Nodemailer, SMTP-Relay |
 | Betrieb | Docker, Docker Compose |
 
@@ -288,16 +287,9 @@ Details: https://besucher.example.intern/sibe/besucher/<visit-id>
 
 ## Import und Export
 
-### Besucherimport
+### Vereinfachte Besucherregelung
 
-- Format: `XLSX`
-- Öffentlicher und interner Import
-- Downloadbare Excel-Vorlage
-- Versteckte vollständige Länderliste mit 249 ISO-3166-1-Einträgen
-- Dropdown für Nationalität und Ausweisart
-- „Dienstausweis“ wird unterstützt
-- Leere oder unbekannte Nationalitäten lehnen die gesamte Datei vor dem ersten Insert ab
-- Die Fehlermeldung nennt alle betroffenen Excel-Zeilen
+Administratoren können die bestehende SiBe-Einstellung „Vereinfachte Besucherregelung“ pro Benutzer aktivieren. Nur SiBe-Benutzer mit dieser Aktivierung und der Berechtigung zum Anlegen von Besuchen dürfen Personen mit Vor- und Nachname als Minimalangaben erfassen. Alle weiteren Angaben bleiben freiwillig. Die Berechtigung wird zusätzlich im Backend geprüft; die Pflichtfelder der normalen Voranmeldung bleiben unverändert.
 
 ### Benutzerimport
 
@@ -397,9 +389,8 @@ Die letzte Formatwahl wird im Browser gespeichert. Das gewählte Format wird im 
 | `/wache` | Wachenübersicht und Kalender |
 | `/wache/besuche/:id` | Besuch bearbeiten |
 | `/wache/besuche/:id/druck` | A4-/A5-Druckansicht |
-| `/import` | Besucherimport |
 | `/sibe` | SiBe-Dashboard und Länderabonnements |
-| `/sibe/besucher` | Besucher- und Besuchsrecherche |
+| `/sibe/besucher` | Besucher- und Besuchsrecherche; bei Freigabe vereinfachte Personenanlage |
 | `/sibe/benutzer` | Benutzerrecherche |
 | `/kaskdt` | KasKdt-Dashboard |
 | `/kaskdt/texte` | Textverwaltung |
@@ -415,6 +406,7 @@ Die letzte Formatwahl wird im Browser gespeichert. Das gewählte Format wird im 
 | `GET /api/field-definitions?context=public` | aktive Felddefinitionen |
 | `GET /api/sibe/nationality-subscriptions` | eigenes Länderabonnement |
 | `PUT /api/sibe/nationality-subscriptions` | Länderabonnement speichern |
+| `POST /api/sibe/visitors` | serverseitig geschützte vereinfachte Personenanlage für freigeschaltete SiBe-Benutzer |
 | `POST /api/guard/visits/:id/print-log` | Druckaudit mit Papierformat |
 | `GET /api/admin/users/export.csv` | Benutzerexport |
 | `GET /api/admin/users/import-template.csv` | Benutzerimportvorlage |

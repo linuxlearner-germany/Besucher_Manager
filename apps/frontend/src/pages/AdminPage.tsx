@@ -52,7 +52,7 @@ export function AdminPage() {
   const menuOptions: Array<{ key: AppMenuKey; label: string }> = [
     { key: "voranmeldung", label: "Voranmeldung" },
     { key: "wache", label: "Wache" },
-    { key: "import", label: "Import" },
+    { key: "import", label: "Vereinfachte Besucherregelung" },
     { key: "admin", label: "Admin" },
     { key: "sibe", label: "SiBe" },
     { key: "laenderbenachrichtigungen", label: "Länderbenachrichtigungen" },
@@ -75,7 +75,6 @@ export function AdminPage() {
     {
       title: "Verwaltung",
       items: [
-        { key: "imports.execute", label: "Import ausführen" },
         { key: "dashboards.sibe", label: "SiBe-Übersicht" },
         { key: "dashboards.commander", label: "KasKdt-Lagebild" },
         { key: "admin.users", label: "Benutzer verwalten" },
