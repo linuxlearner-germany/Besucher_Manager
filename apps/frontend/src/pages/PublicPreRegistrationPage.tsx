@@ -221,13 +221,18 @@ export function PublicPreRegistrationPage() {
   return (
     <AppLayout>
       <main className="page-panel page-shell-full public-pre-registration-shell">
-        <section className="panel public-form-panel">
-          <div className="section-header">
+        <section className="panel public-form-panel public-shared-details">
+          <div className="public-form-intro">
             <div>
-              <h3>Gemeinsame Besuchsdaten</h3>
+              <p className="eyebrow">Voranmeldung</p>
+              <h2>Besuch anmelden</h2>
+              <p className="section-copy">Bitte erfassen Sie zuerst die Besuchsdaten. Danach folgen die Angaben zum Besucher.</p>
             </div>
+            <span className="required-hint"><span aria-hidden="true">*</span> Pflichtfeld</span>
           </div>
-          <div className="form-grid two-columns">
+          <section className="public-form-section" aria-labelledby="visit-section-title">
+            <div className="section-header compact-section-header"><div><h3 id="visit-section-title">Besuch</h3></div></div>
+            <div className="form-grid two-columns">
             <FormField label="Wache" required error={fieldErrors.gateId}>
               <select required value={form.gateId} onChange={(event) => updateField("gateId", event.target.value)} disabled={gates.length === 0}>
                 <option value="">Wache auswählen</option>
@@ -237,14 +242,8 @@ export function PublicPreRegistrationPage() {
             {shown("host_name") ? <FormField label="Ansprechpartner" required={required("host_name")} error={fieldErrors.hostName}>
               <input required={required("host_name")} value={form.hostName} onChange={(event) => updateField("hostName", event.target.value)} />
             </FormField> : null}
-            {shown("host_email") ? <FormField label="Anmelder-E-Mail" required={required("host_email")}>
-              <input required={required("host_email")} type="email" value={form.hostEmail} onChange={(event) => updateField("hostEmail", event.target.value)} />
-            </FormField> : null}
             {shown("host_phone") ? <FormField label="Ansprechpartner Telefon" required={required("host_phone")} error={fieldErrors.hostPhone}>
               <input required={required("host_phone")} value={form.hostPhone} onChange={(event) => updateField("hostPhone", event.target.value)} />
-            </FormField> : null}
-            {shown("host_department") ? <FormField label="Geschäftsfeld" required={required("host_department")} error={fieldErrors.hostDepartment}>
-              <input required={required("host_department")} value={form.hostDepartment} onChange={(event) => updateField("hostDepartment", event.target.value)} />
             </FormField> : null}
             {shown("visit_purpose") ? <FormField label="Besuchszweck" required={required("visit_purpose")} error={fieldErrors.purpose}>
               <input required={required("visit_purpose")} value={form.purpose} onChange={(event) => updateField("purpose", event.target.value)} />
@@ -255,26 +254,35 @@ export function PublicPreRegistrationPage() {
             {shown("valid_until") ? <FormField label="Gültig bis" required={required("valid_until")} error={fieldErrors.validUntil}>
               <input required={required("valid_until")} type="date" value={form.validUntil} onChange={(event) => updateField("validUntil", event.target.value)} />
             </FormField> : null}
-          </div>
-          {shown("visit_note") ? <FormField label="Bemerkung" required={required("visit_note")}>
-            <textarea required={required("visit_note")} rows={3} value={form.notes} onChange={(event) => updateField("notes", event.target.value)} />
-          </FormField> : null}
-        </section>
-
-        <section className="public-entry-grid">
-          <section className="panel public-form-panel">
-            <div className="section-header">
+              <FormField label="Voraussichtliche Ankunftszeit" error={fieldErrors.expectedArrivalTime}>
+                <input type="time" value={form.expectedArrivalTime} onChange={(event) => updateField("expectedArrivalTime", event.target.value)} />
+              </FormField>
+            </div>
+          </section>
+          <section className="public-form-section" aria-labelledby="registrant-section-title">
+            <div className="section-header compact-section-header"><div><h3 id="registrant-section-title">Anmelder</h3></div></div>
+            <div className="form-grid two-columns">
+              {shown("host_email") ? <FormField label="Anmelder-E-Mail" required={required("host_email")} error={fieldErrors.hostEmail}>
+                <input required={required("host_email")} type="email" value={form.hostEmail} onChange={(event) => updateField("hostEmail", event.target.value)} />
+              </FormField> : null}
+              {shown("host_department") ? <FormField label="Geschäftsfeld" required={required("host_department")} error={fieldErrors.hostDepartment}>
+                <input required={required("host_department")} value={form.hostDepartment} onChange={(event) => updateField("hostDepartment", event.target.value)} />
+              </FormField> : null}
+            </div>
+            {shown("visit_note") ? <FormField label="Bemerkung" required={required("visit_note")} error={fieldErrors.notes}>
+              <textarea required={required("visit_note")} rows={3} value={form.notes} onChange={(event) => updateField("notes", event.target.value)} />
+            </FormField> : null}
+          </section>
+          <section className="public-form-section" aria-labelledby="visitor-section-title">
+            <div className="section-header compact-section-header">
               <div>
-                <h3>Einzelanmeldung</h3>
+                <h3 id="visitor-section-title">Besucher</h3>
               </div>
             </div>
 
             <form className="pre-registration-form" onSubmit={handleSubmit}>
               <div className="form-section">
                 <div className="form-grid two-columns">
-                  <FormField label="Voraussichtliche Ankunftszeit" error={fieldErrors.expectedArrivalTime}>
-                    <input type="time" value={form.expectedArrivalTime} onChange={(event) => updateField("expectedArrivalTime", event.target.value)} />
-                  </FormField>
                   {shown("visitor_first_name") ? <FormField label="Vorname" required={required("visitor_first_name")} error={fieldErrors.firstName}>
                     <input required={required("visitor_first_name")} value={form.firstName} onChange={(event) => updateField("firstName", event.target.value)} />
                   </FormField> : null}
@@ -330,7 +338,7 @@ export function PublicPreRegistrationPage() {
                 {documentExpired ? <Alert type="error">Das angegebene Ausweisdokument ist bereits abgelaufen.</Alert> : null}
               </div>
 
-              <div className="form-actions">
+              <div className="form-actions public-action-bar">
                 <button type="submit" disabled={isSubmitting || !csrfToken}>
                   {isSubmitting ? "Speichert..." : "Voranmeldung senden"}
                 </button>
@@ -359,7 +367,9 @@ export function PublicPreRegistrationPage() {
               {submitState.kind === "error" ? <Alert type="error">{submitState.message}</Alert> : null}
             </form>
           </section>
+        </section>
 
+        <section className="public-entry-grid public-group-entry-grid">
           <section className="panel public-form-panel group-registration-panel">
             <form className="pre-registration-form group-pre-registration-form" onSubmit={handleGroupSubmit}>
               <div className="form-section">
