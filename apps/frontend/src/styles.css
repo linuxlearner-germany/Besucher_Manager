@@ -1527,7 +1527,20 @@ textarea {
 }
 
 body:has(.public-pre-registration-shell) {
-  background-position: calc(100% + 120px) center;
+  width: 100%;
+  min-width: 0;
+  min-height: 100vh;
+  background-position: right top;
+  background-size: cover;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
+
+body:has(.public-pre-registration-shell) #root,
+body:has(.public-pre-registration-shell) .app-shell {
+  width: 100%;
+  min-width: 0;
+  min-height: 100vh;
 }
 
 .public-inline-status {
@@ -4059,10 +4072,6 @@ input[type="checkbox"] {
 }
 
 @media (max-width: 600px) {
-  body:has(.public-pre-registration-shell) {
-    background-image: none;
-  }
-
   .public-pre-registration-shell .public-form-panel {
     padding: 16px;
     border-radius: 10px;
