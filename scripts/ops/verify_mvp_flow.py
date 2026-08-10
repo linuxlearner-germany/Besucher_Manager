@@ -128,11 +128,12 @@ class HttpClient:
             raise ApiError(error.code, error_payload) from error
 
 
-def make_public_payload(suffix: str) -> dict[str, Any]:
+def make_public_payload(suffix: str, gate_id: str) -> dict[str, Any]:
     now = dt.datetime.now().astimezone().replace(microsecond=0)
     valid_from = now - dt.timedelta(minutes=30)
     valid_until = now + dt.timedelta(hours=2)
     return {
+        "gateId": gate_id,
         "firstName": "MVP",
         "lastName": f"Flow-{suffix}",
         "birthDate": "1990-05-10",
@@ -395,7 +396,7 @@ def main() -> int:
     pre_registration = public_client.request(
         "POST",
         "/api/public/pre-registrations",
-        payload=make_public_payload(suffix),
+        payload=make_public_payload(suffix, gate["id"]),
         headers={"X-CSRF-Token": csrf_token, "User-Agent": "MVP-Flow-Check/1.0"},
     )
     visit_id = pre_registration["visitId"]
