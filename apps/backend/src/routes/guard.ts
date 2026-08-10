@@ -202,7 +202,8 @@ const guardCalendarQuerySchema = z.object({
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   status: z.string().optional(),
-  search: z.string().optional()
+  search: z.string().optional(),
+  scope: z.enum(["own", "all"]).optional()
 }).superRefine((value, context) => {
   const from = new Date(`${value.from}T00:00:00.000Z`);
   const to = new Date(`${value.to}T00:00:00.000Z`);
@@ -245,13 +246,13 @@ const guardWalkInCreateSchema = z.object({
   validFrom: z.string().trim().min(1),
   validUntil: z.string().trim().min(1),
   notes: z.string().trim().optional().or(z.literal("")),
-  visitorStreet: z.string().trim().min(1).max(255),
-  visitorHouseNumber: z.string().trim().min(1).max(40),
-  visitorPostalCode: z.string().trim().min(1).max(20),
-  visitorCity: z.string().trim().min(1).max(120),
-  idDocumentType: z.enum(["identity_card", "passport", "service_id", "other"]),
-  idDocumentValidUntil: z.string().trim().min(1),
-  idDocumentNumber: z.string().trim().min(1).max(120),
+  visitorStreet: z.string().trim().max(255).default(""),
+  visitorHouseNumber: z.string().trim().max(40).default(""),
+  visitorPostalCode: z.string().trim().max(20).default(""),
+  visitorCity: z.string().trim().max(120).default(""),
+  idDocumentType: z.enum(["identity_card", "passport", "service_id", "other"]).or(z.literal("")).default(""),
+  idDocumentValidUntil: z.string().trim().default(""),
+  idDocumentNumber: z.string().trim().max(120).default(""),
   devicePhotoApp: z.boolean().optional(),
   deviceFilmApp: z.boolean().optional(),
   deviceVideoCamera: z.boolean().optional(),
@@ -400,7 +401,8 @@ guardRouter.get("/api/guard/visits/today", async (request, response) => {
     const visits = await getTodayVisitsForUser(user, {
       search: typeof request.query.search === "string" ? request.query.search : undefined,
       status: typeof request.query.status === "string" ? request.query.status : undefined,
-      signatureStatus: typeof request.query.signatureStatus === "string" ? request.query.signatureStatus : undefined
+      signatureStatus: typeof request.query.signatureStatus === "string" ? request.query.signatureStatus : undefined,
+      scope: request.query.scope === "all" ? "all" : "own"
     });
 
     return response.json({ visits });
@@ -417,7 +419,8 @@ guardRouter.get("/api/guard/visits/calendar", async (request, response) => {
     from: request.query.from,
     to: request.query.to,
     status: typeof request.query.status === "string" ? request.query.status : undefined,
-    search: typeof request.query.search === "string" ? request.query.search : undefined
+    search: typeof request.query.search === "string" ? request.query.search : undefined,
+    scope: request.query.scope === "all" ? "all" : "own"
   });
   if (!parsed.success) {
     return sendValidationError(response, parsed.error.flatten());
@@ -431,7 +434,8 @@ guardRouter.get("/api/guard/visits/calendar", async (request, response) => {
       from,
       to: toExclusiveDate.toISOString(),
       status: parsed.data.status,
-      search: parsed.data.search
+      search: parsed.data.search,
+      scope: parsed.data.scope
     });
     return response.json({ items: visits });
   } catch (error) {

@@ -984,11 +984,11 @@ export function GuardDashboardPage() {
                 <FormField label="Besuchszweck" required error={walkInFieldErrors.purpose}><input value={walkInForm.purpose} onChange={(event) => setWalkInForm((current) => ({ ...current, purpose: event.target.value }))} /></FormField>
                 <FormField label="Gültig von" required error={walkInFieldErrors.validFrom}><input type="date" value={walkInForm.validFrom} onChange={(event) => setWalkInForm((current) => ({ ...current, validFrom: event.target.value }))} /></FormField>
                 <FormField label="Gültig bis" required error={walkInFieldErrors.validUntil}><input type="date" value={walkInForm.validUntil} onChange={(event) => setWalkInForm((current) => ({ ...current, validUntil: event.target.value }))} /></FormField>
-                <FormField label="Straße" required error={walkInFieldErrors.visitorStreet}><input value={walkInForm.visitorStreet} onChange={(event) => setWalkInForm((current) => ({ ...current, visitorStreet: event.target.value }))} /></FormField>
-                <FormField label="Hausnummer" required error={walkInFieldErrors.visitorHouseNumber}><input value={walkInForm.visitorHouseNumber} onChange={(event) => setWalkInForm((current) => ({ ...current, visitorHouseNumber: event.target.value }))} /></FormField>
-                <FormField label="PLZ" required error={walkInFieldErrors.visitorPostalCode}><input value={walkInForm.visitorPostalCode} onChange={(event) => setWalkInForm((current) => ({ ...current, visitorPostalCode: event.target.value }))} /></FormField>
-                <FormField label="Wohnort" required error={walkInFieldErrors.visitorCity}><input value={walkInForm.visitorCity} onChange={(event) => setWalkInForm((current) => ({ ...current, visitorCity: event.target.value }))} /></FormField>
-                <FormField label="Ausweisart" required error={walkInFieldErrors.idDocumentType}>
+                <FormField label="Straße" error={walkInFieldErrors.visitorStreet}><input value={walkInForm.visitorStreet} onChange={(event) => setWalkInForm((current) => ({ ...current, visitorStreet: event.target.value }))} /></FormField>
+                <FormField label="Hausnummer" error={walkInFieldErrors.visitorHouseNumber}><input value={walkInForm.visitorHouseNumber} onChange={(event) => setWalkInForm((current) => ({ ...current, visitorHouseNumber: event.target.value }))} /></FormField>
+                <FormField label="PLZ" error={walkInFieldErrors.visitorPostalCode}><input value={walkInForm.visitorPostalCode} onChange={(event) => setWalkInForm((current) => ({ ...current, visitorPostalCode: event.target.value }))} /></FormField>
+                <FormField label="Wohnort" error={walkInFieldErrors.visitorCity}><input value={walkInForm.visitorCity} onChange={(event) => setWalkInForm((current) => ({ ...current, visitorCity: event.target.value }))} /></FormField>
+                <FormField label="Ausweisart" error={walkInFieldErrors.idDocumentType}>
                   <select value={walkInForm.idDocumentType} onChange={(event) => setWalkInForm((current) => ({ ...current, idDocumentType: event.target.value as WalkInFormState["idDocumentType"] }))}>
                     <option value="identity_card">Personalausweis</option>
                     <option value="passport">Reisepass</option>
@@ -996,8 +996,8 @@ export function GuardDashboardPage() {
                     <option value="other">Sonstiges</option>
                   </select>
                 </FormField>
-                <FormField label="Ausweis gültig bis" required error={walkInFieldErrors.idDocumentValidUntil}><input className={isPastDate(walkInForm.idDocumentValidUntil) ? "required-missing" : ""} type="date" value={walkInForm.idDocumentValidUntil} onChange={(event) => setWalkInForm((current) => ({ ...current, idDocumentValidUntil: event.target.value }))} /></FormField>
-                <FormField label="Ausweisnummer" required error={walkInFieldErrors.idDocumentNumber}><input value={walkInForm.idDocumentNumber} onChange={(event) => setWalkInForm((current) => ({ ...current, idDocumentNumber: event.target.value }))} /></FormField>
+                <FormField label="Ausweis gültig bis" error={walkInFieldErrors.idDocumentValidUntil}><input className={isPastDate(walkInForm.idDocumentValidUntil) ? "required-missing" : ""} type="date" value={walkInForm.idDocumentValidUntil} onChange={(event) => setWalkInForm((current) => ({ ...current, idDocumentValidUntil: event.target.value }))} /></FormField>
+                <FormField label="Ausweisnummer" error={walkInFieldErrors.idDocumentNumber}><input value={walkInForm.idDocumentNumber} onChange={(event) => setWalkInForm((current) => ({ ...current, idDocumentNumber: event.target.value }))} /></FormField>
               </div>
               {isPastDate(walkInForm.idDocumentValidUntil) ? (
                 <Alert type="warning">Der Ausweis ist abgelaufen. Die Anmeldung und das Einchecken sind trotzdem möglich.</Alert>
