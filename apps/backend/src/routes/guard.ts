@@ -222,6 +222,7 @@ const guardCalendarQuerySchema = z.object({
 const guardWalkInCreateSchema = z.object({
   clientRequestId: z.string().trim().min(8).max(64).optional().or(z.literal("")),
   existingVisitorId: z.string().uuid().optional().or(z.literal("")),
+  gateId: z.string().uuid().optional().or(z.literal("")),
   action: z.enum(["save", "check_in", "check_in_and_print"]).optional(),
   firstName: z.string().trim().min(1).max(120),
   lastName: z.string().trim().min(1).max(120),

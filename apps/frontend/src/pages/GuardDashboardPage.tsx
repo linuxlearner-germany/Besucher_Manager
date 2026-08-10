@@ -14,6 +14,7 @@ import {
   toDateInputValue,
   useAuth,
   type CheckoutFormState,
+  type Gate,
   type GuardCalendarItem,
   type VisitRow
 } from "../app/core";
@@ -25,6 +26,7 @@ type WalkInAction = "save" | "check_in" | "check_in_and_print";
 type WalkInFormState = {
   clientRequestId: string;
   existingVisitorId: string | null;
+  gateId: string;
   firstName: string;
   lastName: string;
   company: string;
@@ -123,6 +125,7 @@ function buildInitialWalkInForm(): WalkInFormState {
   return {
     clientRequestId: buildWalkInRequestId(),
     existingVisitorId: null,
+    gateId: "",
     firstName: "",
     lastName: "",
     company: "",
@@ -204,6 +207,7 @@ function applyVisitorToWalkInForm(current: WalkInFormState, visitor: GuardVisito
 export function GuardDashboardPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const isGuardUser = user?.role === "guard";
   const [visits, setVisits] = useState<VisitRow[]>([]);
   const [calendarItems, setCalendarItems] = useState<GuardCalendarItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -220,6 +224,7 @@ export function GuardDashboardPage() {
   const [walkInSaving, setWalkInSaving] = useState(false);
   const [walkInError, setWalkInError] = useState<string | null>(null);
   const [walkInFieldErrors, setWalkInFieldErrors] = useState<Record<string, string>>({});
+  const [walkInGates, setWalkInGates] = useState<Gate[]>([]);
   const [walkInForm, setWalkInForm] = useState<WalkInFormState>(() => buildInitialWalkInForm());
   const [visitorSearchForm, setVisitorSearchForm] = useState<VisitorSearchFormState>(() => buildInitialVisitorSearchForm());
   const [visitorSearchLoading, setVisitorSearchLoading] = useState(false);
@@ -288,7 +293,14 @@ export function GuardDashboardPage() {
 
   const todayKey = toDayKey(new Date());
   const selectedDayKey = toDayKey(selectedDay);
-  const isGuardUser = user?.role === "guard";
+  useEffect(() => {
+    setWalkInForm((current) => ({ ...current, gateId: current.gateId || user?.gateId || "" }));
+    if (isGuardUser) return;
+
+    void fetchJson<{ gates: Gate[] }>("/api/public/gates", { method: "GET", headers: {} })
+      .then((payload) => setWalkInGates(payload.gates))
+      .catch(() => setWalkInGates([]));
+  }, [isGuardUser, user?.gateId]);
 
   const stats = useMemo(() => {
     const preRegistered = visits.filter((visit) => visit.status === "pre_registered").length;
@@ -969,6 +981,12 @@ export function GuardDashboardPage() {
               ) : null}
 
               <div className="form-grid two-columns">
+                {!isGuardUser ? <FormField label="Wache" required error={walkInFieldErrors.gateId}>
+                  <select required value={walkInForm.gateId} onChange={(event) => setWalkInForm((current) => ({ ...current, gateId: event.target.value }))}>
+                    <option value="">Wache auswählen</option>
+                    {walkInGates.map((gate) => <option key={gate.id} value={gate.id}>{gate.name}</option>)}
+                  </select>
+                </FormField> : null}
                 <FormField label="Vorname" required error={walkInFieldErrors.firstName}><input value={walkInForm.firstName} onChange={(event) => setWalkInForm((current) => ({ ...current, firstName: event.target.value }))} /></FormField>
                 <FormField label="Nachname" required error={walkInFieldErrors.lastName}><input value={walkInForm.lastName} onChange={(event) => setWalkInForm((current) => ({ ...current, lastName: event.target.value }))} /></FormField>
                 <FormField label="Firma / Organisation" required error={walkInFieldErrors.company}><input value={walkInForm.company} onChange={(event) => setWalkInForm((current) => ({ ...current, company: event.target.value }))} /></FormField>

@@ -27,6 +27,7 @@ const MISSING_IMPORT_VALUE = "[fehlt]";
 export type GuardWalkInVisitInput = {
   clientRequestId?: string | null;
   existingVisitorId?: string | null;
+  gateId?: string | null;
   action?: "save" | "check_in" | "check_in_and_print";
   firstName: string;
   lastName: string;
@@ -1322,11 +1323,20 @@ export async function createWalkInVisit(
   ipAddress?: string | null,
   userAgent?: string | null
 ): Promise<{ visitId: string; visitorId: string; badgeNumber: string; status: string; warnings: string[]; alreadyExisted?: boolean }> {
-  if (!user.gateId) {
+  const requestedGateId = cleanOptional(input.gateId);
+  const gateId = user.role === "admin" ? requestedGateId || user.gateId : user.gateId;
+  if (!gateId || (user.role !== "admin" && requestedGateId && requestedGateId !== user.gateId)) {
     throw new Error("visit_gate_required_for_checkin");
   }
 
   const pool = await getPool();
+  const activeGate = await pool.request()
+    .input("gateId", sql.UniqueIdentifier, gateId)
+    .query<{ id: string }>("SELECT id FROM dbo.gates WHERE id = @gateId AND is_active = 1");
+  if (!activeGate.recordset[0]) {
+    throw new Error("visit_gate_required_for_checkin");
+  }
+
   const transaction = new sql.Transaction(pool);
   await transaction.begin();
 
@@ -1433,7 +1443,7 @@ export async function createWalkInVisit(
           ipAddress,
           userAgent,
           metadata: {
-            gateId: user.gateId
+            gateId
           }
         },
         transaction
@@ -1505,7 +1515,7 @@ export async function createWalkInVisit(
           ipAddress,
           userAgent,
           metadata: {
-            gateId: user.gateId
+            gateId
           }
         },
         transaction
@@ -1517,7 +1527,7 @@ export async function createWalkInVisit(
     const visitInsert = await new sql.Request(transaction)
       .input("clientRequestId", sql.NVarChar(64), clientRequestId)
       .input("visitorId", sql.UniqueIdentifier, visitorId)
-      .input("gateId", sql.UniqueIdentifier, user.gateId)
+      .input("gateId", sql.UniqueIdentifier, gateId)
       .input("hostName", sql.NVarChar(255), input.hostName.trim())
       .input("hostEmail", sql.NVarChar(255), cleanOptional(input.hostEmail))
       .input("hostPhone", sql.NVarChar(80), input.hostPhone.trim())
@@ -1611,7 +1621,7 @@ export async function createWalkInVisit(
         metadata: {
           source: "guard_walk_in",
           badgeNumber,
-          gateId: user.gateId,
+          gateId,
           visitorId,
           reusedVisitor: visitorWasReused,
           status: visit.status,
@@ -1632,7 +1642,7 @@ export async function createWalkInVisit(
           ipAddress,
           userAgent,
           metadata: {
-            gateId: user.gateId,
+            gateId,
             visitorId,
             badgeNumber
           }
