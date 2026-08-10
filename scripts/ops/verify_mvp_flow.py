@@ -21,17 +21,13 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import http.cookiejar
-import io
 import json
-import uuid
 import sys
 import urllib.error
 import urllib.parse
 import urllib.request
-import zipfile
 from dataclasses import dataclass
 from typing import Any
-from xml.sax.saxutils import escape
 
 from env_loader import env_default
 
@@ -85,54 +81,12 @@ class HttpClient:
                 payload = {"message": body or error.reason}
             raise ApiError(error.code, payload) from error
 
-    def upload_file(
-        self,
-        path: str,
-        *,
-        field_name: str,
-        filename: str,
-        content: bytes,
-        content_type: str,
-        headers: dict[str, str] | None = None,
-    ) -> Any:
-        boundary = f"----UploadBoundary{uuid.uuid4().hex}"
-        request_headers = {
-            "Accept": "application/json",
-            "Content-Type": f"multipart/form-data; boundary={boundary}",
-            **(headers or {}),
-        }
-        body = b"".join([
-            f"--{boundary}\r\n".encode("utf-8"),
-            f'Content-Disposition: form-data; name="{field_name}"; filename="{filename}"\r\n'.encode("utf-8"),
-            f"Content-Type: {content_type}\r\n\r\n".encode("utf-8"),
-            content,
-            b"\r\n",
-            f"--{boundary}--\r\n".encode("utf-8"),
-        ])
-        req = urllib.request.Request(
-            urllib.parse.urljoin(self.base_url, path),
-            data=body,
-            method="POST",
-            headers=request_headers,
-        )
-        try:
-            with self.opener.open(req) as response:
-                payload = response.read().decode("utf-8")
-                return json.loads(payload) if payload else None
-        except urllib.error.HTTPError as error:
-            payload = error.read().decode("utf-8")
-            try:
-                error_payload = json.loads(payload) if payload else {"message": error.reason}
-            except json.JSONDecodeError:
-                error_payload = {"message": payload or error.reason}
-            raise ApiError(error.code, error_payload) from error
-
-
-def make_public_payload(suffix: str) -> dict[str, Any]:
+def make_public_payload(suffix: str, gate_id: str) -> dict[str, Any]:
     now = dt.datetime.now().astimezone().replace(microsecond=0)
     valid_from = now - dt.timedelta(minutes=30)
     valid_until = now + dt.timedelta(hours=2)
     return {
+        "gateId": gate_id,
         "firstName": "MVP",
         "lastName": f"Flow-{suffix}",
         "birthDate": "1990-05-10",
@@ -193,130 +147,6 @@ def make_guard_update_payload(detail: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def excel_column_name(column_index: int) -> str:
-    label = ""
-    current = column_index
-    while current > 0:
-        current, remainder = divmod(current - 1, 26)
-        label = chr(65 + remainder) + label
-    return label
-
-
-def build_inline_string_cell(reference: str, value: str) -> str:
-    return f'<c r="{reference}" t="inlineStr"><is><t>{escape(value)}</t></is></c>'
-
-
-def build_import_workbook(gate_name: str, suffix: str) -> bytes:
-    today = dt.date.today().strftime("%d.%m.%Y")
-    rows = [
-        [
-            "Vorname [Pflicht]",
-            "Nachname [Pflicht]",
-            "Firma / Organisation [Pflicht]",
-            "Nationalität [Pflicht]",
-            "Straße [Pflicht]",
-            "Hausnummer [Pflicht]",
-            "PLZ [Pflicht]",
-            "Ort [Pflicht]",
-            "Ansprechpartner [Pflicht]",
-            "Ansprechpartner E-Mail [Pflicht]",
-            "Ansprechpartner Telefon [Pflicht]",
-            "Besuchszweck [Pflicht]",
-            "Gültig von [Pflicht]",
-            "Gültig bis [Pflicht]",
-            "Wache [Optional]",
-            "Ausweisart [Pflicht]",
-            "Ausweis gültig bis [Pflicht]",
-            "Ausweisnummer [Pflicht]",
-        ],
-        [
-            "Import",
-            f"Voll-{suffix}",
-            "Test Import GmbH",
-            "Deutschland",
-            "Musterstraße",
-            "12",
-            "10115",
-            "Berlin",
-            "Import Ansprechpartner",
-            "import.ansprechpartner@bundeswehr.org",
-            "0401234567",
-            "Importtest vollständig",
-            today,
-            today,
-            gate_name,
-            "Personalausweis",
-            "31.12.2030",
-            f"IMP{suffix[-6:]}A",
-        ],
-    ]
-    sheet_rows: list[str] = []
-    for row_index, values in enumerate(rows, start=1):
-        cells = [
-            build_inline_string_cell(f"{excel_column_name(column_index)}{row_index}", value)
-            for column_index, value in enumerate(values, start=1)
-        ]
-        sheet_rows.append(f'<row r="{row_index}">{"".join(cells)}</row>')
-
-    worksheet_xml = (
-        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-        f'<sheetData>{"".join(sheet_rows)}</sheetData>'
-        "</worksheet>"
-    )
-    workbook_xml = (
-        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-        '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
-        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
-        '<sheets><sheet name="Importvorlage" sheetId="1" r:id="rId1"/></sheets>'
-        "</workbook>"
-    )
-    workbook_rels_xml = (
-        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
-        '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
-        "</Relationships>"
-    )
-    root_rels_xml = (
-        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
-        "</Relationships>"
-    )
-    content_types_xml = (
-        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
-        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
-        '<Default Extension="xml" ContentType="application/xml"/>'
-        '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
-        '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
-        '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'
-        "</Types>"
-    )
-    styles_xml = (
-        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-        '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-        '<fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts>'
-        '<fills count="1"><fill><patternFill patternType="none"/></fill></fills>'
-        '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>'
-        '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
-        '<cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs>'
-        '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>'
-        "</styleSheet>"
-    )
-
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as workbook:
-        workbook.writestr("[Content_Types].xml", content_types_xml)
-        workbook.writestr("_rels/.rels", root_rels_xml)
-        workbook.writestr("xl/workbook.xml", workbook_xml)
-        workbook.writestr("xl/_rels/workbook.xml.rels", workbook_rels_xml)
-        workbook.writestr("xl/worksheets/sheet1.xml", worksheet_xml)
-        workbook.writestr("xl/styles.xml", styles_xml)
-    return buffer.getvalue()
-
-
 def login(client: HttpClient, username: str, password: str, gate_name: str = "") -> dict[str, Any]:
     payload = client.request("POST", "/api/auth/login", payload={"username": username, "password": password})
     if payload.get("requiresGateSelection"):
@@ -362,7 +192,7 @@ def main() -> int:
     sibe_client = HttpClient(args.base_url)
     admin_client = HttpClient(args.base_url)
 
-    print("1/11 Lade aktive Wachen und CSRF-Token...")
+    print("1/9 Lade aktive Wachen und CSRF-Token...")
     gates_payload = public_client.request("GET", "/api/public/gates")
     gates = gates_payload.get("gates", [])
     csrf_token = gates_payload.get("csrfToken")
@@ -374,34 +204,17 @@ def main() -> int:
     if gate is None:
         gate = gates[0]
 
-    print("2/11 Pruefe vollstaendigen oeffentlichen Excel-Import...")
-    import_result = public_client.upload_file(
-        "/api/public/visits/import",
-        field_name="file",
-        filename="besucher-import-test.xlsx",
-        content=build_import_workbook(gate["name"], suffix),
-        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
-    if int(import_result.get("imported", 0)) != 1:
-        raise RuntimeError("Oeffentlicher Import hat nicht genau einen vollstaendigen Eintrag verarbeitet.")
-    if int(import_result.get("needsReview", 0)) != 0:
-        raise RuntimeError("Vollstaendiger Import wurde unerwartet zur Nachbearbeitung markiert.")
-    imported_rows = import_result.get("rows", [])
-    if not imported_rows:
-        raise RuntimeError("Import-Ergebnis enthaelt keinen Besuch.")
-    imported_visit_id = imported_rows[0]["visitId"]
-
-    print("3/11 Lege oeffentliche Voranmeldung an...")
+    print("2/9 Lege oeffentliche Voranmeldung an...")
     pre_registration = public_client.request(
         "POST",
         "/api/public/pre-registrations",
-        payload=make_public_payload(suffix),
+        payload=make_public_payload(suffix, gate["id"]),
         headers={"X-CSRF-Token": csrf_token, "User-Agent": "MVP-Flow-Check/1.0"},
     )
     visit_id = pre_registration["visitId"]
     visitor_id = pre_registration["visitorId"]
 
-    print("4/11 Guard meldet sich an und findet den Besuch...")
+    print("3/9 Guard meldet sich an und findet den Besuch...")
     guard_login = login(guard_client, args.guard_user, args.guard_password, gate["name"])
     visits_payload = guard_client.request("GET", "/api/guard/visits/today?status=all")
     visits = visits_payload.get("visits", [])
@@ -411,29 +224,20 @@ def main() -> int:
     if pending_visit.get("hostSignatureStatus") != "pending":
         raise RuntimeError("Wache zeigt vor Check-out keinen offenen Unterschriftsstatus.")
 
-    print("5/11 Guard aktualisiert Voranmeldedaten...")
+    print("4/9 Guard aktualisiert Voranmeldedaten...")
     detail_before = guard_client.request("GET", f"/api/guard/visits/{visit_id}")["visit"]
     guard_client.request("PUT", f"/api/guard/visits/{visit_id}", payload=make_guard_update_payload(detail_before))
 
-    print("6/11 SiBe prueft den Besuch...")
+    print("5/9 SiBe prueft den Besuch...")
     login(sibe_client, args.sibe_user, args.sibe_password)
     sibe_client.request("GET", f"/api/sibe/visits/{visit_id}")
 
-    print("7/11 SiBe sieht den vollstaendig importierten Datensatz...")
-    imported_sibe_visit = require_visit(
-        sibe_client.request("GET", "/api/sibe/visits?status=all")["visits"],
-        imported_visit_id,
-        "Importierter Besuch in SiBe-Liste",
-    )
-    if imported_sibe_visit.get("status") != "pre_registered":
-        raise RuntimeError("Importierter Besuch ist in SiBe nicht vorangemeldet.")
-
-    print("8/11 Guard checkt den Besucher ein...")
+    print("6/9 Guard checkt den Besucher ein...")
     check_in = guard_client.request("POST", f"/api/guard/visits/{visit_id}/check-in", payload={})
     if check_in.get("status") != "checked_in":
         raise RuntimeError("Check-in hat nicht den erwarteten Status geliefert.")
 
-    print("9/11 Guard schreibt Druck-Audit...")
+    print("7/9 Guard schreibt Druck-Audit...")
     guard_client.request("POST", f"/api/guard/visits/{visit_id}/print-log", payload={"paperSize": "A5"})
 
     signature_payload: dict[str, Any] = {
@@ -448,7 +252,7 @@ def main() -> int:
     elif args.signature_status == "not_required":
         signature_payload["host_signature_note"] = "Fachlich nicht erforderlich"
 
-    print("10/11 Guard erfasst den Unterschriftsstatus waehrend des laufenden Besuchs...")
+    print("8/9 Guard erfasst den Unterschriftsstatus waehrend des laufenden Besuchs...")
     guard_client.request(
         "PUT",
         f"/api/guard/visits/{visit_id}/signature",
@@ -468,7 +272,7 @@ def main() -> int:
     if not signature_captured_at or not signature_captured_by:
         raise RuntimeError("Signaturerfassung hat keinen bestaetigenden Benutzer oder Zeitstempel hinterlegt.")
 
-    print("11/11 Guard checkt mit Unterschriftsstatus aus und SiBe/Admin pruefen Nachvollziehbarkeit...")
+    print("9/9 Guard checkt mit Unterschriftsstatus aus und SiBe/Admin pruefen Nachvollziehbarkeit...")
     check_out = guard_client.request(
         "POST",
         f"/api/guard/visits/{visit_id}/check-out",
@@ -514,14 +318,12 @@ def main() -> int:
     admin_system = admin_client.request("GET", "/api/admin/system-status")
     visit_logs = admin_client.request("GET", f"/api/admin/audit-logs?search={visit_id}")["logs"]
     visitor_logs = admin_client.request("GET", f"/api/admin/audit-logs?search={visitor_id}")["logs"]
-    import_logs = admin_client.request("GET", "/api/admin/audit-logs?action=VISITS_IMPORTED_FROM_FILE")["logs"]
-    audit_logs_by_id = {entry["id"]: entry for entry in [*visit_logs, *visitor_logs, *import_logs]}
+    audit_logs_by_id = {entry["id"]: entry for entry in [*visit_logs, *visitor_logs]}
     audit_logs = list(audit_logs_by_id.values())
     require_actions(
         audit_logs,
         {
             "PUBLIC_PRE_REGISTRATION_CREATED",
-            "VISITS_IMPORTED_FROM_FILE",
             "VISITOR_UPDATED_BY_GUARD",
             "VISIT_UPDATED_BY_GUARD",
             "VISIT_CHECKED_IN",

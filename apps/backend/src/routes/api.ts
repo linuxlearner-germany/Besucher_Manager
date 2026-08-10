@@ -12,7 +12,7 @@ import {
 import { listFieldDefinitions } from "../lib/fieldDefinitions";
 import { checkRateLimit } from "../lib/rateLimit";
 import { findUserById, findUserForLogin, hashPassword, verifyPassword } from "../lib/users";
-import { ImportValidationError, createImportedPreRegistrations } from "../lib/visitImport";
+import { GroupRegistrationValidationError, createGroupPreRegistrations } from "../lib/groupRegistration";
 import { loadWorkflowSettings } from "../lib/systemSettings";
 import { APP_VERSION } from "../lib/appVersion";
 import {
@@ -28,7 +28,6 @@ import {
 import { writeAuditLog } from "../lib/auditLog";
 import { getPool } from "../lib/db";
 import sql from "mssql";
-import { handleVisitorImportUpload, sendVisitorImportTemplateWorkbook } from "./visitorImport";
 import { adminRouter } from "./admin";
 import { guardRouter } from "./guard";
 import { sibeRouter } from "./sibe";
@@ -269,7 +268,7 @@ apiRouter.post("/api/public/pre-registrations/group", async (request, response) 
     response.setHeader("Retry-After", String(rateLimitDecision.retryAfterSeconds));
     return response.status(429).json({
       error: "RATE_LIMITED",
-      message: "Zu viele Gruppenimporte. Bitte spaeter erneut versuchen."
+      message: "Zu viele Gruppenanmeldungen. Bitte spaeter erneut versuchen."
     });
   }
 
@@ -319,7 +318,7 @@ apiRouter.post("/api/public/pre-registrations/group", async (request, response) 
       return sendValidationError(response, { fieldErrors: { visitors: missingFields } });
     }
 
-    const created = await createImportedPreRegistrations(
+    const created = await createGroupPreRegistrations(
       parsed.data.visitors.map((visitor) => ({
         ...visitor,
         gateId: parsed.data.gateId,
@@ -355,32 +354,11 @@ apiRouter.post("/api/public/pre-registrations/group", async (request, response) 
       ...created
     });
   } catch (error) {
-    if (error instanceof ImportValidationError) {
+    if (error instanceof GroupRegistrationValidationError) {
       return sendValidationError(response, { fieldErrors: { visitors: error.messages } });
     }
-    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der Gruppenimport konnte nicht gespeichert werden.");
+    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Gruppenanmeldung konnte nicht gespeichert werden.");
   }
-});
-
-apiRouter.post("/api/public/visits/import", async (request, response) => {
-  const rateLimitKey = `public-visitor-import:${request.ip || request.socket.remoteAddress || "unknown"}`;
-  const rateLimitDecision = checkRateLimit(rateLimitKey, 8, 60);
-  if (!rateLimitDecision.allowed) {
-    response.setHeader("Retry-After", String(rateLimitDecision.retryAfterSeconds));
-    return response.status(429).json({
-      error: "RATE_LIMITED",
-      message: "Zu viele Importversuche. Bitte spaeter erneut versuchen."
-    });
-  }
-
-  return handleVisitorImportUpload(request, response, {
-    createdBy: null,
-    fallbackGateId: null
-  });
-});
-
-apiRouter.get("/api/public/visits/import-template.xlsx", async (_request, response) => {
-  return sendVisitorImportTemplateWorkbook(response);
 });
 
 apiRouter.post("/api/auth/logout", async (_request, response) => {

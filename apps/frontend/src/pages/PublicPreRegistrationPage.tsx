@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { ImportReviewModal } from "../components/ImportReviewModal";
+import { GroupRegistrationReviewModal } from "../components/GroupRegistrationReviewModal";
 import { Alert, FieldLabel, FormField } from "../components/ui";
 import { CountrySelect } from "../components/CountrySelect";
 import {
@@ -36,7 +36,7 @@ type GroupVisitorForm = {
   idDocumentValidUntil: string;
   idDocumentNumber: string;
 };
-type GroupImportResult = {
+type GroupRegistrationResult = {
   imported: number;
   needsReview: number;
   rows: Array<{
@@ -90,7 +90,7 @@ export function PublicPreRegistrationPage() {
   const [gates, setGates] = useState<Gate[]>([]);
   const [publicFields, setPublicFields] = useState<AdminFieldDefinition[] | null>(null);
   const [groupVisitors, setGroupVisitors] = useState<GroupVisitorForm[]>(() => [emptyGroupVisitor(), emptyGroupVisitor(), emptyGroupVisitor()]);
-  const [groupResult, setGroupResult] = useState<GroupImportResult | null>(null);
+  const [groupResult, setGroupResult] = useState<GroupRegistrationResult | null>(null);
 
   useEffect(() => {
     async function loadCsrf() {
@@ -178,7 +178,7 @@ export function PublicPreRegistrationPage() {
     setGroupResult(null);
 
     try {
-      const payload = await fetchJson<GroupImportResult>("/api/public/pre-registrations/group", {
+      const payload = await fetchJson<GroupRegistrationResult>("/api/public/pre-registrations/group", {
         method: "POST",
         headers: {
           "X-CSRF-Token": csrfToken
@@ -202,7 +202,7 @@ export function PublicPreRegistrationPage() {
     } catch (error) {
       const apiError = error as ApiError;
       setFieldErrors(extractFieldErrors(apiError) as FieldErrorState);
-      setGroupSubmitState({ kind: "error", message: apiError.message || "Der Gruppenimport konnte nicht gespeichert werden." });
+      setGroupSubmitState({ kind: "error", message: apiError.message || "Die Gruppenanmeldung konnte nicht gespeichert werden." });
     } finally {
       setIsSubmittingGroup(false);
     }
@@ -443,7 +443,7 @@ export function PublicPreRegistrationPage() {
         </section>
 
         {groupResult && groupResult.needsReview > 0 ? (
-          <ImportReviewModal
+          <GroupRegistrationReviewModal
             rows={groupResult.rows}
             showLoginHint
             onClose={() => setGroupResult(null)}

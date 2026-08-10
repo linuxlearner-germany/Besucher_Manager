@@ -197,7 +197,6 @@ export function SibeVisitorsPage() {
           <Card>
             <h3>Export</h3>
             <div className="toolbar filter-bar import-export-bar">
-              <Link className="button-link" to="/import">Import öffnen</Link>
               <input type="date" value={exportDate} onChange={(event) => setExportDate(event.target.value)} />
               <button type="button" className="secondary-button" onClick={() => downloadExport("day")}>Tagesexport</button>
               <button type="button" className="secondary-button" onClick={() => downloadExport("week")}>Wochenexport</button>
