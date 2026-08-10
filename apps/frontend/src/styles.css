@@ -1203,21 +1203,21 @@ button:disabled {
   min-height: 420px;
 }
 
-.import-review-modal {
+.group-registration-review-modal {
   width: min(760px, 96vw);
 }
 
-.import-review-stack {
+.group-registration-review-stack {
   display: grid;
   gap: 14px;
 }
 
-.import-review-list {
+.group-registration-review-list {
   display: grid;
   gap: 12px;
 }
 
-.import-review-item {
+.group-registration-review-item {
   display: grid;
   gap: 10px;
   padding: 14px;
@@ -1226,24 +1226,24 @@ button:disabled {
   background: var(--surface-subtle);
 }
 
-.import-review-item-header {
+.group-registration-review-item-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
 }
 
-.import-review-item-header p,
-.import-review-status {
+.group-registration-review-item-header p,
+.group-registration-review-status {
   margin: 0;
 }
 
-.import-review-status {
+.group-registration-review-status {
   color: var(--muted);
   line-height: 1.45;
 }
 
-.import-review-actions {
+.group-registration-review-actions {
   align-items: stretch;
 }
 

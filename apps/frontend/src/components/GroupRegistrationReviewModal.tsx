@@ -1,7 +1,7 @@
 import { type ReactNode } from "react";
 import { Link } from "react-router-dom";
 
-type ImportReviewRow = {
+type GroupRegistrationReviewRow = {
   rowNumber: number;
   visitId: string;
   visitorName: string;
@@ -11,26 +11,26 @@ type ImportReviewRow = {
   needsReview: boolean;
 };
 
-type ImportReviewModalProps = {
+type GroupRegistrationReviewModalProps = {
   title?: string;
-  rows: ImportReviewRow[];
+  rows: GroupRegistrationReviewRow[];
   onClose: () => void;
   detailBasePath?: string | null;
   showLoginHint?: boolean;
 };
 
-function buildStatusText(row: ImportReviewRow): string {
+function buildStatusText(row: GroupRegistrationReviewRow): string {
   const parts = [...row.missingFields, ...row.warnings].filter(Boolean);
   return parts.length ? parts.join(" ") : "Nachbearbeitung erforderlich";
 }
 
-export function ImportReviewModal({
+export function GroupRegistrationReviewModal({
   title = "Nachbearbeitung erforderlich",
   rows,
   onClose,
   detailBasePath,
   showLoginHint = false
-}: ImportReviewModalProps) {
+}: GroupRegistrationReviewModalProps) {
   const reviewRows = rows.filter((row) => row.needsReview);
   const firstReviewRow = reviewRows[0] ?? null;
 
@@ -44,32 +44,32 @@ export function ImportReviewModal({
         onClose();
       }
     }}>
-      <div className="modal-card panel import-review-modal">
+      <div className="modal-card panel group-registration-review-modal">
         <div className="modal-header">
           <h4>{title}</h4>
           <button type="button" className="secondary-button modal-close-button" onClick={onClose}>Schließen</button>
         </div>
 
-        <div className="import-review-stack">
+        <div className="group-registration-review-stack">
           {showLoginHint ? (
             <AlertNote>
               Für die direkte Nachbearbeitung ist eine Anmeldung an der Wache, im SiBe- oder Admin-Bereich erforderlich.
             </AlertNote>
           ) : null}
 
-          <div className="import-review-list">
+          <div className="group-registration-review-list">
             {reviewRows.map((row) => (
-              <article key={row.visitId} className="import-review-item">
-                <div className="import-review-item-header">
+              <article key={row.visitId} className="group-registration-review-item">
+                <div className="group-registration-review-item-header">
                   <div>
                     <strong>{row.visitorName}</strong>
                     <p>{row.company || "-"}</p>
                   </div>
                   <span className="field-config-badge">Zeile {row.rowNumber}</span>
                 </div>
-                <p className="import-review-status">{buildStatusText(row)}</p>
+                <p className="group-registration-review-status">{buildStatusText(row)}</p>
                 {detailBasePath ? (
-                  <div className="row-actions import-review-actions">
+                  <div className="row-actions group-registration-review-actions">
                     <Link className="button-link" to={`${detailBasePath}/${row.visitId}`}>
                       Besuch öffnen
                     </Link>

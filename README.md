@@ -91,7 +91,7 @@ Die Anwendung bildet den vollständigen Ablauf vom Erfassen eines Besuchs über 
 
 ```mermaid
 flowchart LR
-    A[Einzel-, Gruppen- oder Excel-Anmeldung] --> B[pre_registered]
+    A[Einzel- oder Gruppenanmeldung] --> B[pre_registered]
     B --> C{Pflichtfelder für Check-in vollständig?}
     C -- Nein --> D[Wache ergänzt Daten]
     D --> C
@@ -111,9 +111,9 @@ Nationalitätsmeldungen laufen unabhängig vom operativen Ablauf. Ein SMTP-Fehle
 
 | Rolle | Standardbereiche | Besonderheiten |
 |---|---|---|
-| Nicht angemeldet | Voranmeldung, Gruppenanmeldung, öffentlicher Excel-Import, Login | Öffentliche Endpunkte sind CSRF- und rate-limit-geschützt |
-| `guard` | Wache, Import | Wählt beim Login eine aktive Wache; Zugriff auf den eigenen Wachenbereich |
-| `sibe` | SiBe, Import | Kann Länder abonnieren und Besucher recherchieren |
+| Nicht angemeldet | Voranmeldung, Gruppenanmeldung, Login | Öffentliche Endpunkte sind CSRF- und rate-limit-geschützt |
+| `guard` | Wache | Wählt beim Login eine aktive Wache; Zugriff auf den eigenen Wachenbereich |
+| `sibe` | SiBe | Kann Länder abonnieren und Besucher recherchieren |
 | `kaskdt` | KasKdt, Texte | Darf die vollständige Textverwaltung nutzen |
 | `admin` | Alle Bereiche | Benutzer-, System-, Feld-, Text- und Betriebsverwaltung |
 | `custom` | Individuell | Menüs und fachliche Berechtigungen werden explizit gesetzt |
@@ -128,7 +128,6 @@ Menüzugriffe und API-Berechtigungen werden serverseitig geprüft. Eine ausgeble
 | Backend | Node.js 22, Express, TypeScript |
 | Validierung | Zod |
 | Datenbank | Microsoft SQL Server |
-| Excel | ExcelJS und SheetJS |
 | E-Mail | Nodemailer, SMTP-Relay |
 | Betrieb | Docker, Docker Compose |
 
@@ -288,17 +287,6 @@ Details: https://besucher.example.intern/sibe/besucher/<visit-id>
 
 ## Import und Export
 
-### Besucherimport
-
-- Format: `XLSX`
-- Öffentlicher und interner Import
-- Downloadbare Excel-Vorlage
-- Versteckte vollständige Länderliste mit 249 ISO-3166-1-Einträgen
-- Dropdown für Nationalität und Ausweisart
-- „Dienstausweis“ wird unterstützt
-- Leere oder unbekannte Nationalitäten lehnen die gesamte Datei vor dem ersten Insert ab
-- Die Fehlermeldung nennt alle betroffenen Excel-Zeilen
-
 ### Benutzerimport
 
 Im Admincenter kann eine CSV-Vorlage heruntergeladen und anschließend importiert werden.
@@ -397,7 +385,6 @@ Die letzte Formatwahl wird im Browser gespeichert. Das gewählte Format wird im 
 | `/wache` | Wachenübersicht und Kalender |
 | `/wache/besuche/:id` | Besuch bearbeiten |
 | `/wache/besuche/:id/druck` | A4-/A5-Druckansicht |
-| `/import` | Besucherimport |
 | `/sibe` | SiBe-Dashboard und Länderabonnements |
 | `/sibe/besucher` | Besucher- und Besuchsrecherche |
 | `/sibe/benutzer` | Benutzerrecherche |

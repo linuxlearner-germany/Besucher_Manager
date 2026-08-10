@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { findCountryCode, normalizeCountryCode } from "./countries";
 import { bundeswehrEmailSchema } from "./emailPolicy";
-import type { ImportVisitInput } from "./visitImportDefinitions";
+import type { GroupRegistrationInput } from "./groupRegistrationDefinitions";
 
 export const PUBLIC_FIELD_INPUT_MAP = {
   visitor_first_name: "firstName",
@@ -153,7 +153,7 @@ export const publicPreRegistrationSchema = createPublicPreRegistrationSchema();
 
 export type PublicPreRegistrationInput = z.infer<typeof publicPreRegistrationSchema>;
 
-function normalizeImportDateForValidation(value: string | null | undefined): string {
+function normalizeGroupDateForValidation(value: string | null | undefined): string {
   const cleaned = String(value ?? "").trim();
   if (!cleaned) return "";
 
@@ -174,7 +174,7 @@ function normalizeImportDateForValidation(value: string | null | undefined): str
   return cleaned;
 }
 
-function normalizeImportIdDocumentType(value: string | null | undefined): string {
+function normalizeGroupIdDocumentType(value: string | null | undefined): string {
   const cleaned = String(value ?? "").trim();
   if (!cleaned) return "";
   const normalized = cleaned.toLowerCase().replace(/[\s_-]+/g, "");
@@ -185,9 +185,9 @@ function normalizeImportIdDocumentType(value: string | null | undefined): string
   return cleaned;
 }
 
-/** Applies the same public-field and format rules to every Excel import row. */
-export function validateImportedPreRegistrationRows(
-  rows: ImportVisitInput[],
+/** Applies the same public-field and format rules to every group-registration row. */
+export function validateGroupPreRegistrationRows(
+  rows: GroupRegistrationInput[],
   requiredFieldKeys: ReadonlySet<PublicFieldKey>
 ): string[] {
   const schema = createPublicPreRegistrationSchema(requiredFieldKeys);
@@ -203,7 +203,7 @@ export function validateImportedPreRegistrationRows(
       visitorPostalCode: row.visitorPostalCode ?? "",
       visitorCity: row.visitorCity ?? "",
       nationalityCode: findCountryCode(row.nationalityCode) ?? row.nationalityCode ?? "",
-      birthDate: normalizeImportDateForValidation(row.birthDate),
+      birthDate: normalizeGroupDateForValidation(row.birthDate),
       phone: row.phone ?? "",
       email: row.email ?? "",
       licensePlate: row.licensePlate ?? "",
@@ -212,16 +212,16 @@ export function validateImportedPreRegistrationRows(
       hostPhone: row.hostPhone ?? "",
       hostDepartment: row.hostDepartment ?? "",
       purpose: row.purpose ?? "",
-      validFrom: normalizeImportDateForValidation(row.validFrom),
-      validUntil: normalizeImportDateForValidation(row.validUntil),
-      idDocumentType: normalizeImportIdDocumentType(row.idDocumentType),
-      idDocumentValidUntil: normalizeImportDateForValidation(row.idDocumentValidUntil),
+      validFrom: normalizeGroupDateForValidation(row.validFrom),
+      validUntil: normalizeGroupDateForValidation(row.validUntil),
+      idDocumentType: normalizeGroupIdDocumentType(row.idDocumentType),
+      idDocumentValidUntil: normalizeGroupDateForValidation(row.idDocumentValidUntil),
       idDocumentNumber: row.idDocumentNumber ?? "",
       notes: row.notes ?? ""
     });
     if (parsed.success) return [];
 
-    const rowNumber = row.sourceExcelRowNumber ?? index + 1;
+    const rowNumber = row.sourceRowNumber ?? index + 1;
     return parsed.error.issues.map((issue) => `Zeile ${rowNumber}: ${issue.message}`);
   });
 }

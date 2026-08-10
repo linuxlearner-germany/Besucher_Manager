@@ -2,7 +2,6 @@ import { type ChangeEvent, type DragEvent, type FormEvent, type PropsWithChildre
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AdminPage } from "./pages/AdminPage";
 import { GuardDashboardPage } from "./pages/GuardDashboardPage";
-import { ImportPage } from "./pages/ImportPage";
 import { LoginPage } from "./pages/LoginPage";
 import { PrintViewPage } from "./pages/PrintViewPage";
 import { PublicPreRegistrationPage } from "./pages/PublicPreRegistrationPage";
@@ -119,10 +118,6 @@ function AppRoutes() {
         }
       />
       <Route path="/kaskdt/texte" element={<Navigate to="/texte" replace />} />
-      <Route
-        path="/import"
-        element={<ImportPage />}
-      />
       <Route
         path="/sibe/besucher"
         element={

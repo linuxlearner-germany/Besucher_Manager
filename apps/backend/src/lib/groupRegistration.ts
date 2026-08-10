@@ -8,27 +8,27 @@ import { findCountryCode } from "./countries";
 import { notifyNationalitySubscribers } from "./mailRelay";
 import { findActiveGateById, listActiveGates } from "./publicPreRegistrations";
 import { getVisitCompleteness } from "./guardVisits";
-import type { ImportVisitInput, ImportVisitResult, ImportVisitsResult } from "./visitImportDefinitions";
-import { validateImportedPreRegistrationRows, type PublicFieldKey } from "./publicPreRegistrationSchema";
+import type { GroupRegistrationInput, GroupRegistrationResult, GroupRegistrationResultSet } from "./groupRegistrationDefinitions";
+import { validateGroupPreRegistrationRows, type PublicFieldKey } from "./publicPreRegistrationSchema";
 import { VISIT_STATUS, type AuthenticatedUser } from "./visitWorkflow";
 
-export const MISSING_IMPORT_VALUE = "[fehlt]";
+export const MISSING_GROUP_VALUE = "[fehlt]";
 
-export class ImportValidationError extends Error {
+export class GroupRegistrationValidationError extends Error {
   constructor(public readonly messages: string[]) {
-    super("invalid_import_data");
+    super("invalid_group_registration_data");
   }
 }
 
-export function isMissingImportValue(value: string | null | undefined): boolean {
-  return isBlankOrPlaceholder(value, MISSING_IMPORT_VALUE);
+export function isMissingGroupValue(value: string | null | undefined): boolean {
+  return isBlankOrPlaceholder(value, MISSING_GROUP_VALUE);
 }
 
 function requiredOrPlaceholder(value: string | null | undefined): string {
-  return cleanRequired(value, MISSING_IMPORT_VALUE);
+  return cleanRequired(value, MISSING_GROUP_VALUE);
 }
 
-export function normalizeImportDateOnly(value: string | null | undefined): string | null {
+export function normalizeGroupDateOnly(value: string | null | undefined): string | null {
   const cleaned = cleanOptional(value);
   if (!cleaned) {
     return null;
@@ -77,7 +77,7 @@ function todayDateOnly(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-async function resolveGateId(row: ImportVisitInput, fallbackGateId?: string | null): Promise<string | null> {
+async function resolveGateId(row: GroupRegistrationInput, fallbackGateId?: string | null): Promise<string | null> {
   const explicitGateId = cleanOptional(row.gateId);
   if (explicitGateId) {
     const gate = await findActiveGateById(explicitGateId);
@@ -95,29 +95,29 @@ async function resolveGateId(row: ImportVisitInput, fallbackGateId?: string | nu
   return fallbackGateId ?? null;
 }
 
-export async function createImportedPreRegistrations(
-  rows: ImportVisitInput[],
+export async function createGroupPreRegistrations(
+  rows: GroupRegistrationInput[],
   options: {
-    source: "public_group_form" | "file_import";
+    source: "public_group_form";
     submittedIpAddress?: string | null;
     userAgent?: string | null;
     createdBy?: AuthenticatedUser | null;
     fallbackGateId?: string | null;
     requiredPublicFieldKeys?: ReadonlySet<PublicFieldKey>;
   }
-): Promise<ImportVisitsResult> {
+): Promise<GroupRegistrationResultSet> {
   if (options.requiredPublicFieldKeys) {
-    const validationMessages = validateImportedPreRegistrationRows(rows, options.requiredPublicFieldKeys);
+    const validationMessages = validateGroupPreRegistrationRows(rows, options.requiredPublicFieldKeys);
     if (validationMessages.length > 0) {
-      throw new ImportValidationError(validationMessages);
+      throw new GroupRegistrationValidationError(validationMessages);
     }
   }
 
   const invalidNationalityRows = rows.flatMap((row, index) =>
-    findCountryCode(row.nationalityCode) ? [] : [row.sourceExcelRowNumber ?? index + 2]
+    findCountryCode(row.nationalityCode) ? [] : [row.sourceRowNumber ?? index + 1]
   );
   if (invalidNationalityRows.length > 0) {
-    const error = new Error("invalid_import_nationalities") as Error & { rows: number[] };
+    const error = new Error("invalid_group_nationalities") as Error & { rows: number[] };
     error.rows = invalidNationalityRows;
     throw error;
   }
@@ -127,7 +127,7 @@ export async function createImportedPreRegistrations(
   await transaction.begin();
 
   try {
-    const importedRows: ImportVisitResult[] = [];
+    const createdRows: GroupRegistrationResult[] = [];
     const nationalityNotifications: Array<{
       visitId: string;
       nationalityCode: string;
@@ -140,11 +140,11 @@ export async function createImportedPreRegistrations(
 
     for (const [index, row] of rows.entries()) {
       const badgeNumber = await generateUniqueBadgeNumber(transaction);
-      const validFrom = normalizeImportDateOnly(row.validFrom) ?? todayDateOnly();
-      const validUntil = normalizeImportDateOnly(row.validUntil) ?? validFrom;
-      const idDocumentValidUntil = normalizeImportDateOnly(row.idDocumentValidUntil);
+      const validFrom = normalizeGroupDateOnly(row.validFrom) ?? todayDateOnly();
+      const validUntil = normalizeGroupDateOnly(row.validUntil) ?? validFrom;
+      const idDocumentValidUntil = normalizeGroupDateOnly(row.idDocumentValidUntil);
       const idDocumentType = normalizeIdDocumentType(row.idDocumentType);
-      const birthDate = normalizeImportDateOnly(row.birthDate);
+      const birthDate = normalizeGroupDateOnly(row.birthDate);
       const gateId = await resolveGateId(row, options.fallbackGateId);
       const nationalityCode = findCountryCode(row.nationalityCode)!;
 
@@ -293,8 +293,8 @@ export async function createImportedPreRegistrations(
         idDocumentIssuingPlace: null
       });
 
-      importedRows.push({
-        rowNumber: row.sourceExcelRowNumber ?? index + 1,
+      createdRows.push({
+        rowNumber: row.sourceRowNumber ?? index + 1,
         visitId: visit.id,
         visitorId,
         badgeNumber,
@@ -321,15 +321,15 @@ export async function createImportedPreRegistrations(
       {
         user: options.createdBy?.username ?? `public:${cleanOptional(options.submittedIpAddress) ?? "unknown"}`,
         userId: options.createdBy?.id,
-        action: options.source === "file_import" ? "VISITS_IMPORTED_FROM_FILE" : "PUBLIC_GROUP_PRE_REGISTRATION_CREATED",
+        action: "PUBLIC_GROUP_PRE_REGISTRATION_CREATED",
         objectType: "visit",
         objectId: "bulk",
         ipAddress: cleanOptional(options.submittedIpAddress),
         userAgent: cleanOptional(options.userAgent),
         metadata: {
           source: options.source,
-          imported: importedRows.length,
-          needs_review: importedRows.filter((row) => row.needsReview).length
+          created: createdRows.length,
+          needs_review: createdRows.filter((row) => row.needsReview).length
         }
       },
       transaction
@@ -342,9 +342,9 @@ export async function createImportedPreRegistrations(
     }
 
     return {
-      imported: importedRows.length,
-      needsReview: importedRows.filter((row) => row.needsReview).length,
-      rows: importedRows
+      imported: createdRows.length,
+      needsReview: createdRows.filter((row) => row.needsReview).length,
+      rows: createdRows
     };
   } catch (error) {
     await transaction.rollback();

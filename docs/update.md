@@ -162,7 +162,6 @@ Nach dem Update im Browser pruefen:
 - Admin laedt
 - Voranmeldung funktioniert
 - Druckansicht oeffnet
-- Importseite laedt
 
 ## Wenn das Update fehlschlaegt
 
