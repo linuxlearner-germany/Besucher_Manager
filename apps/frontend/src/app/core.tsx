@@ -810,6 +810,10 @@ export function formatFileSize(value: number | null | undefined): string {
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+export function formatPersonName(firstName: string | null | undefined, lastName?: string | null): string {
+  return [firstName, lastName].map((value) => value?.trim() ?? "").filter(Boolean).join(" ") || "Ohne Namensangabe";
+}
+
 export function statusClassName(status: string): string {
   switch (status) {
     case "pre_registered":

@@ -8,6 +8,7 @@ import {
   extractFieldErrors,
   formatDateOnly,
   formatDateTime,
+  formatPersonName,
   formatSignatureStatus,
   formatStatus,
   statusClassName,
@@ -701,7 +702,7 @@ export function GuardDashboardPage() {
                         <span className={statusClassName(visit.status)}>{formatStatus(visit.status)}</span>
                       </td>
                       <td className="cell-nowrap">{visit.status === "pre_registered" && visit.expectedArrivalTime ? `${visit.expectedArrivalTime} Uhr` : formatDateTime(visitTime)}</td>
-                      <td className="cell-nowrap">{visit.firstName} {visit.lastName}</td>
+                      <td className="cell-nowrap">{formatPersonName(visit.firstName, visit.lastName)}</td>
                       <td>{visit.company}</td>
                       <td>{visit.nationalityName || visit.nationalityCode || "-"}</td>
                       <td>{visit.hostName}</td>
@@ -849,7 +850,7 @@ export function GuardDashboardPage() {
                         <tr key={item.id}>
                           <td className="cell-nowrap">{formatDateTime(item.validFrom)}</td>
                           <td className="cell-nowrap">{item.badgeNumber || "-"}</td>
-                          <td>{item.visitorName}</td>
+                          <td>{formatPersonName(item.visitorName)}</td>
                           <td>{item.company}</td>
                           <td>{item.hostName}</td>
                           <td><span className={statusClassName(item.status)}>{formatStatus(item.status)}</span></td>

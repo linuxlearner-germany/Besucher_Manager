@@ -10,6 +10,7 @@ import { CommanderDashboardPage } from "./pages/CommanderDashboardPage";
 import { SibeDashboardPage } from "./pages/SibeDashboardPage";
 import { SibeNationalityNotificationsPage } from "./pages/SibeNationalityNotificationsPage";
 import { SibeRejectionsPage } from "./pages/SibeRejectionsPage";
+import { SibeSimplifiedEntryPage } from "./pages/SibeSimplifiedEntryPage";
 import { SibeUsersPage } from "./pages/SibeUsersPage";
 import { SibeVisitDetailPage } from "./pages/SibeVisitDetailPage";
 import { SibeVisitorsPage } from "./pages/SibeVisitorsPage";
@@ -128,6 +129,14 @@ function AppRoutes() {
         element={
           <RequireRoles allowedRoles={["admin", "sibe"]} requiredMenuKey="sibe" requiredPermissions={["visits.read"]} redirectTo="/" >
             <SibeVisitorsPage />
+          </RequireRoles>
+        }
+      />
+      <Route
+        path="/sibe/besucher/vereinfacht"
+        element={
+          <RequireRoles allowedRoles={["sibe"]} requiredMenuKey="sibe" requiredPermissions={["visits.create"]} redirectTo="/" >
+            <SibeSimplifiedEntryPage />
           </RequireRoles>
         }
       />

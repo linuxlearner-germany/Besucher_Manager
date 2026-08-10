@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatDateOnly,
+  formatPersonName,
   formatStatus,
   hasPermission,
   type User
@@ -28,6 +29,11 @@ describe("frontend core helpers", () => {
   it("formats date-only values and known visit statuses", () => {
     expect(formatDateOnly("2026-08-06")).toBe("06.08.2026");
     expect(formatStatus("checked_in")).toBe("Eingecheckt");
+  });
+
+  it("formats missing visitor names without leaking undefined", () => {
+    expect(formatPersonName("", "")).toBe("Ohne Namensangabe");
+    expect(formatPersonName("Erika", "Muster")).toBe("Erika Muster");
   });
 
   it("uses the explicit permission model", () => {

@@ -4,8 +4,11 @@ import { z } from "zod";
 import { writeAuditLog } from "../lib/auditLog";
 import { getPool } from "../lib/db";
 import { COUNTRIES, getCountryName, normalizeCountryCode } from "../lib/countries";
+import { createSimplifiedSibeEntry } from "../lib/simplifiedSibeEntry";
+import { canCreateSimplifiedSibeEntry } from "../lib/simplifiedSibeEntryAuthorization";
+import { simplifiedSibeEntrySchema } from "../lib/simplifiedSibeEntrySchema";
 import { HOST_SIGNATURE_STATUS, VISIT_STATUS } from "../lib/visitWorkflow";
-import { getRequestIp, getRequestUserAgent, handleUnexpectedError, requireAnyPermission, requirePermission, requireRole, sendError, sendValidationError } from "./shared";
+import { getRequestIp, getRequestUserAgent, handleUnexpectedError, requireAnyPermission, requireAuthenticatedUser, requirePermission, requireRole, sendError, sendForbidden, sendValidationError } from "./shared";
 import { handleVisitorImportUpload, sendVisitorImportTemplateWorkbook } from "./visitorImport";
 
 export const sibeRouter = Router();
@@ -270,6 +273,42 @@ sibeRouter.get("/api/sibe/visitors", async (request, response) => {
   }
 });
 
+sibeRouter.post("/api/sibe/visits/simplified", async (request, response) => {
+  const user = await requireAuthenticatedUser(request, response);
+  if (!user) return;
+
+  if (!canCreateSimplifiedSibeEntry(user)) {
+    return sendForbidden(response);
+  }
+
+  const parsed = simplifiedSibeEntrySchema.safeParse(request.body);
+  if (!parsed.success) {
+    return sendValidationError(response, parsed.error.flatten());
+  }
+
+  try {
+    const created = await createSimplifiedSibeEntry(
+      user,
+      parsed.data,
+      getRequestIp(request),
+      getRequestUserAgent(request)
+    );
+    return response.status(201).json({
+      success: true,
+      message: "Der Besuch wurde mit vereinfachten Angaben erfasst.",
+      ...created
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === "simplified_sibe_gate_not_found") {
+      return sendError(response, 400, "VALIDATION_ERROR", "Bitte eine aktive Wache auswählen.");
+    }
+    if (error instanceof Error && error.message === "simplified_sibe_entry_forbidden") {
+      return sendForbidden(response);
+    }
+    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der vereinfachte Besuch konnte nicht gespeichert werden.");
+  }
+});
+
 sibeRouter.get("/api/sibe/visits", async (request, response) => {
   const user = await requirePermission(request, response, "visits.read");
   if (!user) return;
@@ -396,7 +435,7 @@ sibeRouter.get("/api/sibe/visits", async (request, response) => {
       SELECT
         vt.id,
         vis.id AS visitorId,
-        CONCAT(vis.first_name, ' ', vis.last_name) AS visitorName,
+        COALESCE(NULLIF(LTRIM(RTRIM(CONCAT(vis.first_name, ' ', vis.last_name))), ''), 'Ohne Namensangabe') AS visitorName,
         vis.company,
         vis.nationality_code AS nationalityCode,
         vis.nationality_code AS nationalityName,
@@ -476,7 +515,7 @@ sibeRouter.get("/api/sibe/visits/export", async (request, response) => {
 
     const result = await requestBuilder.query<Record<string, unknown>>(`
       SELECT
-        CONCAT(vis.first_name, ' ', vis.last_name) AS visitorName,
+        COALESCE(NULLIF(LTRIM(RTRIM(CONCAT(vis.first_name, ' ', vis.last_name))), ''), 'Ohne Namensangabe') AS visitorName,
         vis.company,
         vis.nationality_code AS nationalityCode,
         vt.license_plate AS licensePlate,

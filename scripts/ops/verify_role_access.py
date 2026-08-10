@@ -115,6 +115,8 @@ def main() -> int:
     for method, path, expected, label in checks:
         status, _payload = unauth.request(method, path)
         assert_status(status, expected, label)
+    status, _payload = unauth.request("POST", "/api/sibe/visits/simplified", {})
+    assert_status(status, 401, "unauth simplified sibe entry")
 
     print("2/4 Guard pruefen...")
     login(guard, args.guard_user, args.guard_password, args.gate_name)
@@ -126,6 +128,8 @@ def main() -> int:
     for method, path, expected, label in guard_checks:
         status, _payload = guard.request(method, path)
         assert_status(status, expected, label)
+    status, _payload = guard.request("POST", "/api/sibe/visits/simplified", {})
+    assert_status(status, 403, "guard blocked from simplified sibe entry")
 
     print("3/4 SiBe pruefen...")
     login(sibe, args.sibe_user, args.sibe_password)
@@ -137,6 +141,8 @@ def main() -> int:
     for method, path, expected, label in sibe_checks:
         status, _payload = sibe.request(method, path)
         assert_status(status, expected, label)
+    status, _payload = sibe.request("POST", "/api/sibe/visits/simplified", {})
+    assert_status(status, 400, "sibe reaches simplified validation")
 
     print("4/4 Admin pruefen...")
     login(admin, args.admin_user, args.admin_password)
@@ -148,8 +154,10 @@ def main() -> int:
     for method, path, expected, label in admin_checks:
         status, _payload = admin.request(method, path)
         assert_status(status, expected, label)
+    status, _payload = admin.request("POST", "/api/sibe/visits/simplified", {})
+    assert_status(status, 403, "admin blocked from simplified sibe entry")
 
-    print(json.dumps({"success": True, "checked": 12}, indent=2))
+    print(json.dumps({"success": True, "checked": 16}, indent=2))
     return 0
 
 
