@@ -353,14 +353,6 @@ export function hasPermission(user: Pick<AuthenticatedUser, "role" | "permission
   return readPermissionValue(user.permissions, permission);
 }
 
-export function canUseSimplifiedSibeRegistration(
-  user: Pick<AuthenticatedUser, "role" | "menuAccess" | "permissions">
-): boolean {
-  return user.role === "sibe"
-    && user.menuAccess.includes("import")
-    && hasPermission(user, "visits.create");
-}
-
 export type AuthenticatedUser = {
   id: string;
   username: string;

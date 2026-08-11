@@ -36,14 +36,17 @@ describe("frontend core helpers", () => {
     expect(hasPermission(user, "visits.checkOut")).toBe(false);
   });
 
-  it("enables simplified registration only for SiBe with the stored activation key", () => {
+  it("enables simplified registration exclusively for the canonical SiBe role", () => {
     const sibe: User = {
       ...user,
       role: "sibe",
-      menuAccess: ["sibe", "import"]
+      menuAccess: ["sibe"]
     };
     expect(canUseSimplifiedSibeRegistration(sibe)).toBe(true);
-    expect(canUseSimplifiedSibeRegistration({ ...sibe, menuAccess: ["sibe"] })).toBe(false);
+    expect(canUseSimplifiedSibeRegistration({ ...sibe, role: "admin" })).toBe(false);
     expect(canUseSimplifiedSibeRegistration({ ...sibe, role: "guard" })).toBe(false);
+    expect(canUseSimplifiedSibeRegistration({ ...sibe, role: "kaskdt" })).toBe(false);
+    expect(canUseSimplifiedSibeRegistration({ ...sibe, role: "custom" })).toBe(false);
+    expect(canUseSimplifiedSibeRegistration(null)).toBe(false);
   });
 });
