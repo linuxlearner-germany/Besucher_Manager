@@ -53,7 +53,7 @@ const passwordChangeSchema = zod_1.z.object({
     }
 });
 const publicGroupPreRegistrationSchema = zod_1.z.object({
-    gateId: zod_1.z.string().uuid().optional().or(zod_1.z.literal("")),
+    gateId: zod_1.z.string().uuid("Bitte eine Wache auswählen."),
     hostName: zod_1.z.string().trim().optional().or(zod_1.z.literal("")),
     hostEmail: emailPolicy_1.bundeswehrEmailSchema,
     hostPhone: zod_1.z.string().trim().optional().or(zod_1.z.literal("")),
@@ -251,6 +251,14 @@ exports.apiRouter.post("/api/public/pre-registrations/group", async (request, re
         return (0, shared_1.sendValidationError)(response, parsed.error.flatten());
     }
     try {
+        const gateId = parsed.data.gateId?.trim();
+        if (!gateId) {
+            return (0, shared_1.sendValidationError)(response, { fieldErrors: { gateId: ["Bitte eine Wache auswählen."] } });
+        }
+        const gate = await (0, publicPreRegistrations_1.findActiveGateById)(gateId);
+        if (!gate) {
+            return (0, shared_1.sendValidationError)(response, { fieldErrors: { gateId: ["Die ausgewählte Wache ist nicht verfügbar."] } });
+        }
         const definitions = await (0, fieldDefinitions_1.listFieldDefinitions)("public");
         const requiredDefinitions = definitions.filter((field) => field.requiredPublic);
         const supportedKeys = new Set(Object.keys(publicPreRegistrationSchema_1.PUBLIC_FIELD_INPUT_MAP));
@@ -290,7 +298,7 @@ exports.apiRouter.post("/api/public/pre-registrations/group", async (request, re
             source: "public_group_form",
             submittedIpAddress: request.ip || request.socket.remoteAddress || null,
             userAgent: typeof request.headers["user-agent"] === "string" ? request.headers["user-agent"] : null,
-            fallbackGateId: parsed.data.gateId || null,
+            fallbackGateId: parsed.data.gateId,
             requiredPublicFieldKeys
         });
         if (parsed.data.hostEmail) {
@@ -418,8 +426,17 @@ exports.apiRouter.post("/api/public/pre-registrations", async (request, response
         if (!parsed.success) {
             return (0, shared_1.sendValidationError)(response, parsed.error.flatten());
         }
+        const gateId = parsed.data.gateId?.trim();
+        if (!gateId) {
+            return (0, shared_1.sendValidationError)(response, { fieldErrors: { gateId: ["Bitte eine Wache auswählen."] } });
+        }
+        const gate = await (0, publicPreRegistrations_1.findActiveGateById)(gateId);
+        if (!gate) {
+            return (0, shared_1.sendValidationError)(response, { fieldErrors: { gateId: ["Die ausgewählte Wache ist nicht verfügbar."] } });
+        }
         const created = await (0, publicPreRegistrations_1.createPreRegistration)({
             ...parsed.data,
+            gateId,
             submittedIpAddress: request.ip || request.socket.remoteAddress || null,
             userAgent: typeof request.headers["user-agent"] === "string" ? request.headers["user-agent"] : null
         });

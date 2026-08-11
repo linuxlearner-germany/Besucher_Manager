@@ -229,6 +229,7 @@ export function GuardDashboardPage() {
   const [visitorSearchForm, setVisitorSearchForm] = useState<VisitorSearchFormState>(() => buildInitialVisitorSearchForm());
   const [visitorSearchLoading, setVisitorSearchLoading] = useState(false);
   const [visitorSearchResults, setVisitorSearchResults] = useState<GuardVisitorMatch[]>([]);
+  const [walkInSearchOpen, setWalkInSearchOpen] = useState(true);
   const [selectedVisitor, setSelectedVisitor] = useState<GuardVisitorMatch | null>(null);
   const [possibleDuplicates, setPossibleDuplicates] = useState<GuardVisitorMatch[]>([]);
   const [recentWalkInResult, setRecentWalkInResult] = useState<RecentWalkInResult | null>(null);
@@ -369,6 +370,23 @@ export function GuardDashboardPage() {
   }, [loadCalendar]);
 
   useEffect(() => {
+    if (walkInOpen) return;
+
+    const refreshDashboard = () => {
+      if (document.visibilityState === "visible") {
+        void Promise.all([loadVisits(), loadCalendar()]);
+      }
+    };
+    const interval = window.setInterval(refreshDashboard, 60_000);
+    document.addEventListener("visibilitychange", refreshDashboard);
+
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", refreshDashboard);
+    };
+  }, [loadCalendar, loadVisits, walkInOpen]);
+
+  useEffect(() => {
     if (!walkInOpen || !hasSearchCriteria(visitorSearchForm)) {
       setVisitorSearchResults([]);
       setVisitorSearchLoading(false);
@@ -497,6 +515,9 @@ export function GuardDashboardPage() {
   async function handleWalkInCreate(action: WalkInAction) {
     if (walkInSaving) return;
 
+    // Das Fenster muss noch innerhalb des Klick-Ereignisses geöffnet werden,
+    // sonst wird es nach der asynchronen Speicherung von Popup-Blockern verworfen.
+    const printWindow = action === "check_in_and_print" ? window.open("", "_blank") : null;
     setActionMessage(null);
     setWalkInError(null);
     setWalkInFieldErrors({});
@@ -524,7 +545,10 @@ export function GuardDashboardPage() {
         status: payload.status
       });
       if (action === "check_in_and_print") {
-        const printWindow = window.open(`/wache/besuche/${payload.visitId}/druck?autoprint=1`, "_blank", "noopener,noreferrer");
+        if (printWindow) {
+          printWindow.opener = null;
+          printWindow.location.replace(`/wache/besuche/${payload.visitId}/druck?autoprint=1`);
+        }
         const warningText = payload.warnings.length ? ` Warnung: ${payload.warnings.join(" ")}` : "";
         setActionMessage(printWindow
           ? `${payload.message} Besuchsnummer: ${payload.badgeNumber}. Druckansicht wurde geöffnet.${warningText}`
@@ -535,6 +559,7 @@ export function GuardDashboardPage() {
       }
       await Promise.all([loadVisits(), loadCalendar()]);
     } catch (apiError) {
+      printWindow?.close();
       const errorPayload = apiError as ApiError;
       const message = errorPayload.message || "Spontanbesucher konnte nicht angelegt werden.";
       setWalkInError(message);
@@ -548,6 +573,10 @@ export function GuardDashboardPage() {
   function selectExistingVisitor(visitor: GuardVisitorMatch) {
     setSelectedVisitor(visitor);
     setWalkInForm((current) => applyVisitorToWalkInForm(current, visitor));
+    setVisitorSearchForm(buildInitialVisitorSearchForm());
+    setVisitorSearchResults([]);
+    setPossibleDuplicates([]);
+    setWalkInSearchOpen(false);
   }
 
   function resetWalkInDialog() {
@@ -557,6 +586,7 @@ export function GuardDashboardPage() {
     setWalkInFieldErrors({});
     setVisitorSearchForm(buildInitialVisitorSearchForm());
     setVisitorSearchResults([]);
+    setWalkInSearchOpen(true);
     setSelectedVisitor(null);
     setPossibleDuplicates([]);
   }
@@ -584,6 +614,7 @@ export function GuardDashboardPage() {
             <button type="button" className="secondary-button" onClick={() => {
               setWalkInError(null);
               setWalkInFieldErrors({});
+              setWalkInSearchOpen(true);
               setWalkInOpen(true);
             }}>
               Spontanbesucher anmelden
@@ -881,7 +912,7 @@ export function GuardDashboardPage() {
             </div>
             {walkInError ? <Alert type="error"><strong>Spontananmeldung konnte nicht gespeichert werden.</strong><br />{walkInError}</Alert> : null}
             <div className="form-grid">
-              <section className="walkin-search-panel">
+              {walkInSearchOpen ? <section className="walkin-search-panel">
                 <div className="section-header">
                   <div>
                     <h3>Bestehenden Besucher suchen</h3>
@@ -905,6 +936,7 @@ export function GuardDashboardPage() {
                       onClick={() => {
                         setSelectedVisitor(null);
                         setWalkInForm((current) => ({ ...current, existingVisitorId: null, clientRequestId: buildWalkInRequestId() }));
+                        setWalkInSearchOpen(true);
                       }}
                     >
                       Auswahl aufheben
@@ -918,13 +950,28 @@ export function GuardDashboardPage() {
                 {visitorSearchResults.length > 0 ? (
                   <div className="walkin-search-results">
                     {visitorSearchResults.map((visitor) => (
-                      <article key={visitor.visitorId} className="walkin-search-result">
+                      <article
+                        key={visitor.visitorId}
+                        className="walkin-search-result"
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => selectExistingVisitor(visitor)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            selectExistingVisitor(visitor);
+                          }
+                        }}
+                      >
                         <div className="walkin-search-result-head">
                           <div>
                             <strong>{visitor.firstName} {visitor.lastName}</strong>
                             <div>{visitor.company}</div>
                           </div>
-                          <button type="button" onClick={() => selectExistingVisitor(visitor)}>Besucher übernehmen</button>
+                          <button type="button" onClick={(event) => {
+                            event.stopPropagation();
+                            selectExistingVisitor(visitor);
+                          }}>Besucher übernehmen</button>
                         </div>
                         <div className="walkin-search-meta">
                           <span>Wohnort: {visitor.visitorCity || "-"}</span>
@@ -964,7 +1011,25 @@ export function GuardDashboardPage() {
                     ))}
                   </div>
                 ) : null}
-              </section>
+              </section> : selectedVisitor ? (
+                <div className="feedback info">
+                  Besucher übernommen: {selectedVisitor.firstName} {selectedVisitor.lastName} ({selectedVisitor.company})
+                  <button type="button" className="secondary-button" onClick={() => setWalkInSearchOpen(true)}>
+                    Anderen Besucher suchen
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => {
+                      setSelectedVisitor(null);
+                      setWalkInForm((current) => ({ ...current, existingVisitorId: null, clientRequestId: buildWalkInRequestId() }));
+                      setWalkInSearchOpen(true);
+                    }}
+                  >
+                    Auswahl aufheben
+                  </button>
+                </div>
+              ) : null}
 
               {possibleDuplicates.length > 0 && !selectedVisitor ? (
                 <div className="feedback warning walkin-duplicate-warning">

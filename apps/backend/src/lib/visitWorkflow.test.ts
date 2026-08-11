@@ -118,8 +118,9 @@ test("unassigned visits remain blocked when the workflow requires an assigned ga
   );
 });
 
-test("default menu access gives KasKdt text management without import", () => {
-  assert.equal(getDefaultMenuAccessForRole("kaskdt").includes("import"), false);
+test("default menu access gives KasKdt text management and import", () => {
+  assert.equal(getDefaultMenuAccessForRole("kaskdt").includes("import"), true);
   assert.equal(getDefaultMenuAccessForRole("kaskdt").includes("texte"), true);
   assert.equal(getDefaultPermissionsForRole("kaskdt").texts.manage, true);
+  assert.equal(getDefaultPermissionsForRole("kaskdt").imports.execute, true);
 });

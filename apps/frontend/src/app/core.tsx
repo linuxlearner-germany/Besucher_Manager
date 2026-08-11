@@ -335,7 +335,7 @@ const defaultMenuAccessByRole: Record<User["role"], AppMenuKey[]> = {
   admin: ["voranmeldung", "wache", "import", "admin", "sibe", "laenderbenachrichtigungen", "kaskdt", "texte"],
   guard: ["voranmeldung", "wache", "import"],
   sibe: ["sibe", "import", "laenderbenachrichtigungen"],
-  kaskdt: ["kaskdt", "texte"],
+  kaskdt: ["kaskdt", "texte", "import"],
   custom: []
 };
 
@@ -343,7 +343,7 @@ const allowedMenuAccessByRole: Record<User["role"], AppMenuKey[]> = {
   admin: ["voranmeldung", "wache", "import", "admin", "sibe", "laenderbenachrichtigungen", "kaskdt", "texte"],
   guard: ["voranmeldung", "wache", "import"],
   sibe: ["sibe", "import", "laenderbenachrichtigungen"],
-  kaskdt: ["kaskdt", "texte"],
+  kaskdt: ["kaskdt", "texte", "import"],
   custom: ["voranmeldung", "wache", "import", "admin", "sibe", "laenderbenachrichtigungen", "kaskdt", "texte"]
 };
 
@@ -432,9 +432,10 @@ export function getDefaultPermissionsForRole(role: User["role"]): UserPermission
       });
     case "kaskdt":
       return mergePermissions(createEmptyPermissions(), {
-        menu: { preRegistration: false, guard: false, import: false, admin: false, sibe: false, commander: true, texts: true },
+        menu: { preRegistration: false, guard: false, import: true, admin: false, sibe: false, commander: true, texts: true },
         visits: { read: true, create: false, update: false, delete: false, checkIn: false, checkOut: false, printBadge: false },
         texts: { manage: true },
+        imports: { execute: true },
         dashboards: { sibe: false, commander: true }
       });
     case "custom":
@@ -1359,7 +1360,7 @@ export function AppLayout({ children }: PropsWithChildren) {
                 checked={mode === "dark"}
                 onChange={toggle}
                 role="switch"
-                aria-label="Dunkelmodus aktivieren"
+                aria-label={mode === "dark" ? "Dunkelmodus deaktivieren" : "Dunkelmodus aktivieren"}
               />
               <span className="theme-switch-track" aria-hidden="true"><span /></span>
             </label>

@@ -35,19 +35,12 @@ const defaultRequiredFieldKeys = new Set([
     "visitor_first_name",
     "visitor_last_name",
     "visitor_company",
-    "visitor_street",
-    "visitor_house_number",
-    "visitor_postal_code",
-    "visitor_city",
     "visitor_nationality",
     "host_name",
     "host_phone",
     "visit_purpose",
     "valid_from",
     "valid_until",
-    "id_document_type",
-    "id_document_valid_until",
-    "id_document_number"
 ]);
 function createPublicPreRegistrationSchema(requiredFieldKeys = defaultRequiredFieldKeys) {
     return zod_1.z
@@ -77,6 +70,7 @@ function createPublicPreRegistrationSchema(requiredFieldKeys = defaultRequiredFi
         purpose: zod_1.z.string().trim().max(500).optional().default(""),
         validFrom: zod_1.z.string().trim().optional().default(""),
         validUntil: zod_1.z.string().trim().optional().default(""),
+        expectedArrivalTime: zod_1.z.string().trim().regex(/^$|^([01]\d|2[0-3]):[0-5]\d$/, "Bitte eine gültige Ankunftszeit angeben.").optional().default(""),
         birthDate: zod_1.z.string().trim().optional().or(zod_1.z.literal("")),
         phone: zod_1.z.string().trim().optional(),
         email: zod_1.z.string().trim().email("Ungültige E-Mail-Adresse.").optional().or(zod_1.z.literal("")),

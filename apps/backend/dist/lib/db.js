@@ -29,7 +29,12 @@ function getSqlConfig() {
 }
 async function getPool() {
     if (!poolPromise) {
-        poolPromise = new mssql_1.default.ConnectionPool(getSqlConfig()).connect();
+        poolPromise = new mssql_1.default.ConnectionPool(getSqlConfig()).connect().catch((error) => {
+            // A failed initial connection must not poison all later attempts. This is
+            // essential while SQL Server is starting or reconnecting after an outage.
+            poolPromise = null;
+            throw error;
+        });
     }
     return poolPromise;
 }
