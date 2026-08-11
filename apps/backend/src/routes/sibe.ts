@@ -5,10 +5,9 @@ import { writeAuditLog } from "../lib/auditLog";
 import { getPool } from "../lib/db";
 import { COUNTRIES, getCountryName, normalizeCountryCode } from "../lib/countries";
 import { HOST_SIGNATURE_STATUS, VISIT_STATUS } from "../lib/visitWorkflow";
-import { canUseSimplifiedSibeRegistration } from "../lib/visitWorkflow";
 import { createSimplifiedSibeVisitor } from "../lib/simplifiedSibeRegistration";
 import { simplifiedSibeVisitorSchema } from "../lib/simplifiedSibeRegistrationSchema";
-import { getRequestIp, getRequestUserAgent, handleUnexpectedError, requireAnyPermission, requireAuthenticatedUser, requirePermission, requireRole, sendError, sendForbidden, sendValidationError } from "./shared";
+import { getRequestIp, getRequestUserAgent, handleUnexpectedError, requireAnyPermission, requirePermission, requireRole, sendError, sendValidationError } from "./shared";
 
 export const sibeRouter = Router();
 
@@ -272,12 +271,8 @@ sibeRouter.get("/api/sibe/visitors", async (request, response) => {
 });
 
 sibeRouter.post("/api/sibe/visitors", async (request, response) => {
-  const user = await requireAuthenticatedUser(request, response);
+  const user = await requireRole(request, response, ["sibe"]);
   if (!user) return;
-
-  if (!canUseSimplifiedSibeRegistration(user)) {
-    return sendForbidden(response);
-  }
 
   const parsed = simplifiedSibeVisitorSchema.safeParse(request.body);
   if (!parsed.success) return sendValidationError(response, parsed.error.flatten());

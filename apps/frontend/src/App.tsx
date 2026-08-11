@@ -119,6 +119,14 @@ function AppRoutes() {
       />
       <Route path="/kaskdt/texte" element={<Navigate to="/texte" replace />} />
       <Route
+        path="/sibe/vereinfachte-besuchsregelung"
+        element={
+          <RequireRoles allowedRoles={["sibe"]} redirectTo="/">
+            <SibeVisitorsPage />
+          </RequireRoles>
+        }
+      />
+      <Route
         path="/sibe/besucher"
         element={
           <RequireRoles allowedRoles={["admin", "sibe"]} requiredMenuKey="sibe" requiredPermissions={["visits.read"]} redirectTo="/" >
