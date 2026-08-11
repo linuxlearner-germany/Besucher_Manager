@@ -57,6 +57,10 @@ async function createPreRegistration(input) {
         const validUntil = input.validUntil || validFrom;
         const validFromDate = (0, dateOnly_1.dateOnlyStart)(validFrom);
         const validUntilDate = (0, dateOnly_1.dateOnlyEnd)(validUntil);
+        const expectedArrivalTime = (0, textValues_1.cleanOptional)(input.expectedArrivalTime);
+        const expectedArrivalTimeValue = expectedArrivalTime
+            ? new Date(`1970-01-01T${expectedArrivalTime}:00.000Z`)
+            : null;
         const visitorInsert = await new mssql_1.default.Request(transaction)
             .input("firstName", mssql_1.default.NVarChar(120), input.firstName.trim())
             .input("lastName", mssql_1.default.NVarChar(120), input.lastName.trim())
@@ -121,6 +125,7 @@ async function createPreRegistration(input) {
             .input("purpose", mssql_1.default.NVarChar(500), input.purpose.trim())
             .input("validFrom", mssql_1.default.DateTime2, validFromDate)
             .input("validUntil", mssql_1.default.DateTime2, validUntilDate)
+            .input("expectedArrivalTime", mssql_1.default.Time, expectedArrivalTimeValue)
             .input("licensePlate", mssql_1.default.NVarChar(40), (0, textValues_1.cleanOptional)(input.licensePlate))
             .input("badgeNumber", mssql_1.default.NVarChar(64), badgeNumber)
             .input("notes", mssql_1.default.NVarChar(mssql_1.default.MAX), (0, textValues_1.cleanOptional)(input.notes))
@@ -136,6 +141,7 @@ async function createPreRegistration(input) {
           purpose,
           valid_from,
           valid_until,
+          expected_arrival_time,
           license_plate,
           badge_number,
           status,
@@ -154,6 +160,7 @@ async function createPreRegistration(input) {
           @purpose,
           @validFrom,
           @validUntil,
+          @expectedArrivalTime,
           @licensePlate,
           @badgeNumber,
           '${visitWorkflow_1.VISIT_STATUS.PRE_REGISTERED}',

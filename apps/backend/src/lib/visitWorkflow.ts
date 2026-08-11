@@ -199,7 +199,7 @@ const defaultMenuAccessByRole: Record<AppRole, AppMenuKey[]> = {
   admin: [...APP_MENU_KEYS],
   guard: ["voranmeldung", "wache", "import"],
   sibe: ["sibe", "import", "laenderbenachrichtigungen"],
-  kaskdt: ["kaskdt", "texte"],
+  kaskdt: ["kaskdt", "texte", "import"],
   custom: []
 };
 
@@ -207,7 +207,7 @@ const allowedMenuAccessByRole: Record<AppRole, AppMenuKey[]> = {
   admin: [...APP_MENU_KEYS],
   guard: ["voranmeldung", "wache", "import"],
   sibe: ["import", "sibe", "laenderbenachrichtigungen"],
-  kaskdt: ["kaskdt", "texte"],
+  kaskdt: ["kaskdt", "texte", "import"],
   custom: [...APP_MENU_KEYS]
 };
 
@@ -280,7 +280,7 @@ export function getDefaultPermissionsForRole(role: AppRole): UserPermissions {
         menu: {
           preRegistration: false,
           guard: false,
-          import: false,
+          import: true,
           admin: false,
           sibe: false,
           commander: true,
@@ -296,6 +296,7 @@ export function getDefaultPermissionsForRole(role: AppRole): UserPermissions {
           printBadge: false
         },
         texts: { manage: true },
+        imports: { execute: true },
         dashboards: {
           sibe: false,
           commander: true

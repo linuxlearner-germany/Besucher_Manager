@@ -74,9 +74,9 @@ function buildTodayQuery(status, search, signatureStatus) {
     }
     return predicates.join(" AND ");
 }
-function createScopeClause(user) {
-    if (user.role === "admin" || user.role === "guard") {
-        return "1 = 1";
+function createScopeClause(user, scope) {
+    if (scope === "own" && user.role === "guard") {
+        return user.gateId ? "v.gate_id = @gateId" : "1 = 0";
     }
     return "1 = 1";
 }
@@ -299,7 +299,8 @@ async function getTodayVisitsForUser(user, options) {
     const pool = await (0, db_1.getPool)();
     const request = pool.request();
     const search = options.search?.trim();
-    if (user.role !== "admin" && user.role !== "guard") {
+    const scope = options.scope ?? (user.role === "guard" ? "own" : "all");
+    if (scope === "own" && user.role === "guard" && user.gateId) {
         request.input("gateId", mssql_1.default.UniqueIdentifier, user.gateId);
     }
     if (options.status && options.status !== "all") {
@@ -311,13 +312,14 @@ async function getTodayVisitsForUser(user, options) {
     if (options.signatureStatus && options.signatureStatus !== "all") {
         request.input("signatureStatus", mssql_1.default.NVarChar(40), options.signatureStatus);
     }
-    const whereClause = `${createScopeClause(user)} AND ${buildTodayQuery(options.status, search, options.signatureStatus)}`;
+    const whereClause = `${createScopeClause(user, scope)} AND ${buildTodayQuery(options.status, search, options.signatureStatus)}`;
     const result = await request.query(`
     SELECT
       v.id,
       ${normalizedStatusSql} AS status,
       CONVERT(NVARCHAR(30), v.valid_from, 127) AS validFrom,
       CONVERT(NVARCHAR(30), v.valid_until, 127) AS validUntil,
+      CONVERT(CHAR(5), v.expected_arrival_time, 108) AS expectedArrivalTime,
       CONVERT(NVARCHAR(30), v.check_in_at, 127) AS checkInAt,
       CONVERT(NVARCHAR(30), v.check_out_at, 127) AS checkOutAt,
       vis.first_name AS firstName,
@@ -398,8 +400,9 @@ async function getTodayVisitsForUser(user, options) {
 async function getCalendarVisitsForUser(user, options) {
     const pool = await (0, db_1.getPool)();
     const request = pool.request();
-    const conditions = [createScopeClause(user)];
-    if (user.role !== "admin" && user.role !== "guard") {
+    const scope = options.scope ?? (user.role === "guard" ? "own" : "all");
+    const conditions = [createScopeClause(user, scope)];
+    if (scope === "own" && user.role === "guard" && user.gateId) {
         request.input("gateId", mssql_1.default.UniqueIdentifier, user.gateId);
     }
     request.input("fromDate", mssql_1.default.DateTime2, new Date(options.from));

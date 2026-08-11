@@ -44,11 +44,28 @@ const idDocumentFields = {
         purpose: "Besprechung",
         validFrom: "2026-05-21T08:00:00.000Z",
         validUntil: "2026-05-21T10:00:00.000Z",
+        expectedArrivalTime: "08:30",
         birthDate: "1990-01-15",
         email: "max@example.com",
         ...idDocumentFields
     });
     strict_1.default.equal(result.success, true);
+});
+(0, node_test_1.default)("public pre-registration rejects an invalid expected arrival time", () => {
+    const result = publicPreRegistrationSchema_1.publicPreRegistrationSchema.safeParse({
+        firstName: "Max",
+        lastName: "Mustermann",
+        company: "Test GmbH",
+        hostName: "Sabine Keller",
+        hostEmail: "sabine.keller@bundeswehr.org",
+        hostPhone: "0123",
+        purpose: "Besprechung",
+        validFrom: "2026-05-21T08:00:00.000Z",
+        validUntil: "2026-05-21T10:00:00.000Z",
+        expectedArrivalTime: "25:00",
+        ...idDocumentFields
+    });
+    strict_1.default.equal(result.success, false);
 });
 (0, node_test_1.default)("public pre-registration accepts optional gate id", () => {
     const result = publicPreRegistrationSchema_1.publicPreRegistrationSchema.safeParse({
@@ -159,20 +176,19 @@ const idDocumentFields = {
     const result = schema.safeParse({ nationalityCode: "DE" });
     strict_1.default.equal(result.success, true);
 });
-(0, node_test_1.default)("public pre-registration requires the complete address by default", () => {
+(0, node_test_1.default)("public pre-registration allows address and document data to be omitted by default", () => {
     const result = publicPreRegistrationSchema_1.publicPreRegistrationSchema.safeParse({
         firstName: "Max",
         lastName: "Mustermann",
         company: "Test GmbH",
+        nationalityCode: "DE",
         hostName: "Sabine Keller",
         hostPhone: "0123",
         purpose: "Besprechung",
         validFrom: "2026-05-21",
-        validUntil: "2026-05-21",
-        ...idDocumentFields,
-        visitorStreet: ""
+        validUntil: "2026-05-21"
     });
-    strict_1.default.equal(result.success, false);
+    strict_1.default.equal(result.success, true);
 });
 (0, node_test_1.default)("public pre-registration validates the complete structured address when configured", () => {
     const schema = (0, publicPreRegistrationSchema_1.createPublicPreRegistrationSchema)(new Set([

@@ -12,16 +12,30 @@ const migrate_1 = require("./migrate");
 const mailRelay_1 = require("../lib/mailRelay");
 const retentionCleanup_1 = require("../lib/retentionCleanup");
 const appVersion_1 = require("../lib/appVersion");
+const DATABASE_RETRY_DELAY_MS = 10_000;
 async function verifyDatabaseConnection() {
     const pool = await (0, db_1.getPool)();
     await pool.request().query("SELECT 1 AS ok");
     console.log(`Connected to MSSQL ${env_1.env.MSSQL_HOST}:${env_1.env.MSSQL_PORT}/${env_1.env.MSSQL_DATABASE}`);
 }
+async function waitForDatabaseConnection() {
+    for (;;) {
+        try {
+            await verifyDatabaseConnection();
+            return;
+        }
+        catch (error) {
+            await (0, db_1.closePool)().catch(() => undefined);
+            console.error(`Database is unavailable at ${env_1.env.MSSQL_HOST}:${env_1.env.MSSQL_PORT}; retrying in ${DATABASE_RETRY_DELAY_MS / 1000}s.`, error instanceof Error ? error.message : error);
+            await new Promise((resolve) => setTimeout(resolve, DATABASE_RETRY_DELAY_MS));
+        }
+    }
+}
 async function main() {
     node_fs_1.default.mkdirSync(env_1.env.uploadDir, { recursive: true });
     console.log("Starting Besucher Manager container bootstrap...");
     console.log(`Application version: ${appVersion_1.APP_VERSION}`);
-    await verifyDatabaseConnection();
+    await waitForDatabaseConnection();
     const appliedMigrations = await (0, migrate_1.runMigrations)();
     console.log(appliedMigrations.length > 0
         ? `Applied migrations: ${appliedMigrations.join(", ")}`
