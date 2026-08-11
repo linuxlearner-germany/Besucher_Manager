@@ -36,10 +36,10 @@ export function FormField({
   children
 }: PropsWithChildren<{ label: string; required?: boolean; error?: string }>) {
   return (
-    <label>
+    <label className={`form-field${error ? " has-error" : ""}`}>
       <FieldLabel label={label} required={required} />
       {children}
-      {error ? <span className="field-error">{error}</span> : null}
+      {error ? <span className="field-error" role="alert">{error}</span> : null}
     </label>
   );
 }
