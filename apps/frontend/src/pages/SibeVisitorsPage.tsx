@@ -7,6 +7,7 @@ import {
   fetchJson,
   formatDateOnly,
   formatDateTime,
+  formatPersonName,
   formatSignatureStatus,
   formatStatus,
   statusClassName,
@@ -110,6 +111,9 @@ export function SibeVisitorsPage() {
           <div className="page-hero-grid">
             <div className="page-hero-content">
               <h2>{isCommanderView ? "Besucherübersicht" : "SiBe Besucherübersicht"}</h2>
+              {user?.role === "sibe" ? (
+                <Link className="button-link" to="/sibe/besucher/vereinfacht">Besucher vereinfacht erfassen</Link>
+              ) : null}
             </div>
             <div className="hero-stat-grid">
               <div className="hero-stat-card">
@@ -231,14 +235,14 @@ export function SibeVisitorsPage() {
             <tbody>
               {visits.map((visit) => (
                 <tr key={visit.id}>
-                  <td>{visit.visitorName}</td>
-                  <td>{visit.company}</td>
+                  <td>{formatPersonName(visit.visitorName)}</td>
+                  <td>{visit.company || "-"}</td>
                   <td>{visit.nationalityName || visit.nationalityCode || "-"}</td>
                   <td>{visit.licensePlate || "-"}</td>
                   <td>{visit.badgeNumber || visit.id.slice(0, 8).toUpperCase()}</td>
                   <td><span className={statusClassName(visit.status)}>{formatStatus(visit.status)}</span></td>
                   <td>{visit.gateName}</td>
-                  <td>{visit.hostName}</td>
+                  <td>{visit.hostName || "-"}</td>
                   <td>{formatDateOnly(visit.validFrom)}</td>
                   <td>{formatDateOnly(visit.validUntil)}</td>
                   <td>{formatDateTime(visit.checkInAt)}</td>
@@ -275,9 +279,9 @@ export function SibeVisitorsPage() {
             <tbody>
               {visitors.map((visitor) => (
                 <tr key={visitor.id}>
-                  <td>{visitor.firstName} {visitor.lastName}</td>
+                  <td>{formatPersonName(visitor.firstName, visitor.lastName)}</td>
                   <td>{formatDateOnly(visitor.birthDate)}</td>
-                  <td>{visitor.company}</td>
+                  <td>{visitor.company || "-"}</td>
                   <td>{visitor.nationalityName || visitor.nationalityCode || "-"}</td>
                   <td>{visitor.phone || "-"}</td>
                   <td>{visitor.email || "-"}</td>

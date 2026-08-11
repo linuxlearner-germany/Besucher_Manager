@@ -733,7 +733,7 @@ export async function getCalendarVisitsForUser(
       v.id,
       v.badge_number AS badgeNumber,
       ${normalizedStatusSql} AS status,
-      CONCAT(vis.first_name, ' ', vis.last_name) AS visitorName,
+      COALESCE(NULLIF(LTRIM(RTRIM(CONCAT(vis.first_name, ' ', vis.last_name))), ''), 'Ohne Namensangabe') AS visitorName,
       vis.company,
       v.host_name AS hostName,
       v.host_department AS hostDepartment,

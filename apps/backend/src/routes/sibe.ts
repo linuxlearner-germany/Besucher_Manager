@@ -4,11 +4,13 @@ import { z } from "zod";
 import { writeAuditLog } from "../lib/auditLog";
 import { getPool } from "../lib/db";
 import { COUNTRIES, getCountryName, normalizeCountryCode } from "../lib/countries";
+import { createSimplifiedSibeEntry } from "../lib/simplifiedSibeEntry";
+import { simplifiedSibeEntrySchema } from "../lib/simplifiedSibeEntrySchema";
 import { HOST_SIGNATURE_STATUS, VISIT_STATUS } from "../lib/visitWorkflow";
 import { createImportedPreRegistrations, ImportValidationError } from "../lib/visitImport";
 import type { ImportVisitInput } from "../lib/visitImportDefinitions";
 import { parseSimplifiedVisitorRulePdf } from "../lib/simplifiedVisitorRulePdf";
-import { getRequestIp, getRequestUserAgent, handleUnexpectedError, requireAnyPermission, requirePermission, requireRole, sendError, sendValidationError } from "./shared";
+import { getRequestIp, getRequestUserAgent, handleUnexpectedError, requireAnyPermission, requirePermission, requireRole, sendError, sendForbidden, sendValidationError } from "./shared";
 import { handleVisitorImportUpload, sendVisitorImportTemplateWorkbook, visitorImportUpload } from "./visitorImport";
 
 export const sibeRouter = Router();
@@ -289,6 +291,38 @@ sibeRouter.get("/api/sibe/visitors", async (request, response) => {
   }
 });
 
+sibeRouter.post("/api/sibe/visits/simplified", async (request, response) => {
+  const user = await requireRole(request, response, ["sibe"]);
+  if (!user) return;
+
+  const parsed = simplifiedSibeEntrySchema.safeParse(request.body);
+  if (!parsed.success) {
+    return sendValidationError(response, parsed.error.flatten());
+  }
+
+  try {
+    const created = await createSimplifiedSibeEntry(
+      user,
+      parsed.data,
+      getRequestIp(request),
+      getRequestUserAgent(request)
+    );
+    return response.status(201).json({
+      success: true,
+      message: "Der Besuch wurde mit vereinfachten Angaben erfasst.",
+      ...created
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === "simplified_sibe_gate_not_found") {
+      return sendError(response, 400, "VALIDATION_ERROR", "Bitte eine aktive Wache auswählen.");
+    }
+    if (error instanceof Error && error.message === "simplified_sibe_entry_forbidden") {
+      return sendForbidden(response);
+    }
+    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der vereinfachte Besuch konnte nicht gespeichert werden.");
+  }
+});
+
 sibeRouter.get("/api/sibe/visits", async (request, response) => {
   const user = await requirePermission(request, response, "visits.read");
   if (!user) return;
@@ -415,7 +449,7 @@ sibeRouter.get("/api/sibe/visits", async (request, response) => {
       SELECT
         vt.id,
         vis.id AS visitorId,
-        CONCAT(vis.first_name, ' ', vis.last_name) AS visitorName,
+        COALESCE(NULLIF(LTRIM(RTRIM(CONCAT(vis.first_name, ' ', vis.last_name))), ''), 'Ohne Namensangabe') AS visitorName,
         vis.company,
         vis.nationality_code AS nationalityCode,
         vis.nationality_code AS nationalityName,
@@ -495,7 +529,7 @@ sibeRouter.get("/api/sibe/visits/export", async (request, response) => {
 
     const result = await requestBuilder.query<Record<string, unknown>>(`
       SELECT
-        CONCAT(vis.first_name, ' ', vis.last_name) AS visitorName,
+        COALESCE(NULLIF(LTRIM(RTRIM(CONCAT(vis.first_name, ' ', vis.last_name))), ''), 'Ohne Namensangabe') AS visitorName,
         vis.company,
         vis.nationality_code AS nationalityCode,
         vt.license_plate AS licensePlate,
@@ -548,7 +582,7 @@ sibeRouter.post("/api/sibe/visits/import", async (request, response) => {
 });
 
 sibeRouter.post("/api/sibe/visits/simplified-rule/preview", async (request, response) => {
-  const user = await requirePermission(request, response, "imports.execute");
+  const user = await requireRole(request, response, ["sibe"]);
   if (!user) return;
 
   return visitorImportUpload.single("file")(request, response, async (error) => {
@@ -575,7 +609,7 @@ sibeRouter.post("/api/sibe/visits/simplified-rule/preview", async (request, resp
 });
 
 sibeRouter.post("/api/sibe/visits/simplified-rule/import", async (request, response) => {
-  const user = await requirePermission(request, response, "imports.execute");
+  const user = await requireRole(request, response, ["sibe"]);
   if (!user) return;
 
   const parsed = simplifiedVisitorRuleImportSchema.safeParse(request.body);

@@ -811,6 +811,10 @@ export function formatFileSize(value: number | null | undefined): string {
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+export function formatPersonName(firstName: string | null | undefined, lastName?: string | null): string {
+  return [firstName, lastName].map((value) => value?.trim() ?? "").filter(Boolean).join(" ") || "Ohne Namensangabe";
+}
+
 export function statusClassName(status: string): string {
   switch (status) {
     case "pre_registered":
@@ -885,6 +889,10 @@ export function hasPermission(user: User | AdminUser | null | undefined, permiss
   const [section, key] = permission.split(".") as [keyof UserPermissions, string];
   const sectionValue = getEffectivePermissions(user)[section] as Record<string, boolean>;
   return Boolean(sectionValue[key]);
+}
+
+export function canUseSimplifiedVisitPolicy(user: User | AdminUser | null | undefined): boolean {
+  return user?.role === "sibe";
 }
 
 export function hasMenuAccess(user: User | AdminUser | null | undefined, menuKey: AppMenuKey): boolean {
@@ -1236,6 +1244,7 @@ export function AppLayout({ children }: PropsWithChildren) {
     { to: "/import", label: "Import", visible: Boolean(!user || (user && hasMenuAccess(user, "import") && hasPermission(user, "imports.execute"))) },
     { to: "/admin", label: "Admin", visible: Boolean(user && hasMenuAccess(user, "admin") && (hasPermission(user, "admin.users") || hasPermission(user, "admin.guards") || hasPermission(user, "admin.fields") || hasPermission(user, "admin.map") || hasPermission(user, "admin.system") || hasPermission(user, "logs.audit") || hasPermission(user, "logs.errors"))) },
     { to: "/sibe", label: "SiBe", visible: Boolean(user && hasMenuAccess(user, "sibe") && hasPermission(user, "dashboards.sibe")) },
+    { to: "/sibe/besucher/vereinfacht", label: "Vereinfachte Besuchsregelung", visible: canUseSimplifiedVisitPolicy(user) },
     { to: "/sibe/ablehnungen", label: "Ablehnungen", visible: Boolean(user && hasMenuAccess(user, "sibe") && hasPermission(user, "visits.read")) },
     { to: "/sibe/benachrichtigungen", label: "Länderbenachrichtigungen", visible: Boolean(user && hasMenuAccess(user, "laenderbenachrichtigungen") && hasPermission(user, "dashboards.sibe")) },
     { to: "/kaskdt", label: "KasKdt", visible: Boolean(user && hasMenuAccess(user, "kaskdt") && hasPermission(user, "dashboards.commander")) },
@@ -1245,7 +1254,7 @@ export function AppLayout({ children }: PropsWithChildren) {
   const visibleMenuItems = menuItems.filter((item) => item.visible);
   const adminRoleMenus: Array<{ key: "wache" | "sibe" | "kaskdt"; label: string; paths: string[] }> = [
     { key: "wache", label: "Wache", paths: ["/wache", "/import"] },
-    { key: "sibe", label: "SiBe", paths: ["/sibe", "/sibe/ablehnungen", "/sibe/benachrichtigungen"] },
+    { key: "sibe", label: "SiBe", paths: ["/sibe", "/sibe/besucher/vereinfacht", "/sibe/ablehnungen", "/sibe/benachrichtigungen"] },
     { key: "kaskdt", label: "KasKdt", paths: ["/kaskdt", "/texte"] }
   ];
   const isAdminNavigation = user?.role === "admin";

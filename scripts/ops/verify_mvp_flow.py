@@ -363,7 +363,7 @@ def main() -> int:
     sibe_client = HttpClient(args.base_url)
     admin_client = HttpClient(args.base_url)
 
-    print("1/11 Lade aktive Wachen und CSRF-Token...")
+    print("1/12 Lade aktive Wachen und CSRF-Token...")
     gates_payload = public_client.request("GET", "/api/public/gates")
     gates = gates_payload.get("gates", [])
     csrf_token = gates_payload.get("csrfToken")
@@ -375,7 +375,7 @@ def main() -> int:
     if gate is None:
         gate = gates[0]
 
-    print("2/11 Pruefe vollstaendigen oeffentlichen Excel-Import...")
+    print("2/12 Pruefe vollstaendigen oeffentlichen Excel-Import...")
     import_result = public_client.upload_file(
         "/api/public/visits/import",
         field_name="file",
@@ -392,7 +392,7 @@ def main() -> int:
         raise RuntimeError("Import-Ergebnis enthaelt keinen Besuch.")
     imported_visit_id = imported_rows[0]["visitId"]
 
-    print("3/11 Lege oeffentliche Voranmeldung an...")
+    print("3/12 Lege oeffentliche Voranmeldung an...")
     pre_registration = public_client.request(
         "POST",
         "/api/public/pre-registrations",
@@ -402,7 +402,7 @@ def main() -> int:
     visit_id = pre_registration["visitId"]
     visitor_id = pre_registration["visitorId"]
 
-    print("4/11 Guard meldet sich an und findet den Besuch...")
+    print("4/12 Guard meldet sich an und findet den Besuch...")
     guard_login = login(guard_client, args.guard_user, args.guard_password, gate["name"])
     visits_payload = guard_client.request("GET", "/api/guard/visits/today?status=all")
     visits = visits_payload.get("visits", [])
@@ -412,15 +412,15 @@ def main() -> int:
     if pending_visit.get("hostSignatureStatus") != "pending":
         raise RuntimeError("Wache zeigt vor Check-out keinen offenen Unterschriftsstatus.")
 
-    print("5/11 Guard aktualisiert Voranmeldedaten...")
+    print("5/12 Guard aktualisiert Voranmeldedaten...")
     detail_before = guard_client.request("GET", f"/api/guard/visits/{visit_id}")["visit"]
     guard_client.request("PUT", f"/api/guard/visits/{visit_id}", payload=make_guard_update_payload(detail_before))
 
-    print("6/11 SiBe prueft den Besuch...")
+    print("6/12 SiBe prueft den Besuch...")
     login(sibe_client, args.sibe_user, args.sibe_password)
     sibe_client.request("GET", f"/api/sibe/visits/{visit_id}")
 
-    print("7/11 SiBe sieht den vollstaendig importierten Datensatz...")
+    print("7/12 SiBe sieht den vollstaendig importierten Datensatz...")
     imported_sibe_visit = require_visit(
         sibe_client.request("GET", "/api/sibe/visits?status=all")["visits"],
         imported_visit_id,
@@ -429,12 +429,31 @@ def main() -> int:
     if imported_sibe_visit.get("status") != "pre_registered":
         raise RuntimeError("Importierter Besuch ist in SiBe nicht vorangemeldet.")
 
-    print("8/11 Guard checkt den Besucher ein...")
+    print("8/12 SiBe legt einen Besuch ohne Personendaten an...")
+    today = dt.date.today().isoformat()
+    simplified_visit = sibe_client.request(
+        "POST",
+        "/api/sibe/visits/simplified",
+        payload={"gateId": gate["id"], "validFrom": today, "validUntil": today},
+    )
+    simplified_visit_id = simplified_visit["visitId"]
+    require_visit(
+        sibe_client.request("GET", "/api/sibe/visits?status=all")["visits"],
+        simplified_visit_id,
+        "Vereinfachter Besuch in SiBe-Liste",
+    )
+    require_visit(
+        guard_client.request("GET", "/api/guard/visits/today?status=all")["visits"],
+        simplified_visit_id,
+        "Vereinfachter Besuch in Wachenliste",
+    )
+
+    print("9/12 Guard checkt den Besucher ein...")
     check_in = guard_client.request("POST", f"/api/guard/visits/{visit_id}/check-in", payload={})
     if check_in.get("status") != "checked_in":
         raise RuntimeError("Check-in hat nicht den erwarteten Status geliefert.")
 
-    print("9/11 Guard schreibt Druck-Audit...")
+    print("10/12 Guard schreibt Druck-Audit...")
     guard_client.request("POST", f"/api/guard/visits/{visit_id}/print-log", payload={"paperSize": "A5"})
 
     signature_payload: dict[str, Any] = {
@@ -449,7 +468,7 @@ def main() -> int:
     elif args.signature_status == "not_required":
         signature_payload["host_signature_note"] = "Fachlich nicht erforderlich"
 
-    print("10/11 Guard erfasst den Unterschriftsstatus waehrend des laufenden Besuchs...")
+    print("11/12 Guard erfasst den Unterschriftsstatus waehrend des laufenden Besuchs...")
     guard_client.request(
         "PUT",
         f"/api/guard/visits/{visit_id}/signature",
@@ -469,7 +488,7 @@ def main() -> int:
     if not signature_captured_at or not signature_captured_by:
         raise RuntimeError("Signaturerfassung hat keinen bestaetigenden Benutzer oder Zeitstempel hinterlegt.")
 
-    print("11/11 Guard checkt mit Unterschriftsstatus aus und SiBe/Admin pruefen Nachvollziehbarkeit...")
+    print("12/12 Guard checkt mit Unterschriftsstatus aus und SiBe/Admin pruefen Nachvollziehbarkeit...")
     check_out = guard_client.request(
         "POST",
         f"/api/guard/visits/{visit_id}/check-out",
@@ -515,14 +534,16 @@ def main() -> int:
     admin_system = admin_client.request("GET", "/api/admin/system-status")
     visit_logs = admin_client.request("GET", f"/api/admin/audit-logs?search={visit_id}")["logs"]
     visitor_logs = admin_client.request("GET", f"/api/admin/audit-logs?search={visitor_id}")["logs"]
+    simplified_logs = admin_client.request("GET", f"/api/admin/audit-logs?search={simplified_visit_id}")["logs"]
     import_logs = admin_client.request("GET", "/api/admin/audit-logs?action=VISITS_IMPORTED_FROM_FILE")["logs"]
-    audit_logs_by_id = {entry["id"]: entry for entry in [*visit_logs, *visitor_logs, *import_logs]}
+    audit_logs_by_id = {entry["id"]: entry for entry in [*visit_logs, *visitor_logs, *import_logs, *simplified_logs]}
     audit_logs = list(audit_logs_by_id.values())
     require_actions(
         audit_logs,
         {
             "PUBLIC_PRE_REGISTRATION_CREATED",
             "VISITS_IMPORTED_FROM_FILE",
+            "SIBE_SIMPLIFIED_VISIT_CREATED",
             "VISITOR_UPDATED_BY_GUARD",
             "VISIT_UPDATED_BY_GUARD",
             "VISIT_CHECKED_IN",
