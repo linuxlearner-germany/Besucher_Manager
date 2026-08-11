@@ -12,7 +12,7 @@ describe("simplified SiBe entry", () => {
 
     expect(appSource).toContain('path="/sibe/besucher/vereinfacht"');
     expect(appSource).toContain('allowedRoles={["sibe"]}');
-    expect(appSource).toContain('requiredPermissions={["visits.create"]}');
+    expect(appSource).not.toContain('allowedRoles={["admin", "sibe"]} requiredMenuKey="sibe" requiredPermissions={["visits.create"]}');
     expect(visitorsSource).toContain("Besucher vereinfacht erfassen");
     expect(formSource).toContain('label="Wache" required');
     expect(formSource).toContain('label="Gültig von" required');

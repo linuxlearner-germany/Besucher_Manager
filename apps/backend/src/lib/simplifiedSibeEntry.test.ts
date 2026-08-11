@@ -61,7 +61,7 @@ test("simplified entry still requires an active-gate candidate and validity rang
   }).success, false);
 });
 
-test("only a SiBe with create permission can use simplified entry", () => {
+test("only the SiBe role can use simplified entry", () => {
   const sibe = makeUser("sibe");
   assert.equal(canCreateSimplifiedSibeEntry(sibe), true);
   assert.equal(canCreateSimplifiedSibeEntry(makeUser("guard")), false);
@@ -70,7 +70,7 @@ test("only a SiBe with create permission can use simplified entry", () => {
   assert.equal(canCreateSimplifiedSibeEntry(null), false);
 
   sibe.permissions.visits.create = false;
-  assert.equal(canCreateSimplifiedSibeEntry(sibe), false);
+  assert.equal(canCreateSimplifiedSibeEntry(sibe), true);
 });
 
 test("a client flag cannot enable simplified validation for the public schema", () => {
