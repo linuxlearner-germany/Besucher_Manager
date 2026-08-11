@@ -230,7 +230,8 @@ export function PublicPreRegistrationPage() {
             </div>
             <span className="required-hint"><span aria-hidden="true">*</span> Pflichtfeld</span>
           </div>
-          <section className="public-form-section" aria-labelledby="visit-section-title">
+          <form className="pre-registration-form public-registration-form" onSubmit={handleSubmit}>
+            <section className="public-form-section" aria-labelledby="visit-section-title">
             <div className="section-header compact-section-header"><div><h3 id="visit-section-title">Besuch</h3></div></div>
             <div className="form-grid two-columns">
             <FormField label="Wache" required error={fieldErrors.gateId}>
@@ -258,8 +259,8 @@ export function PublicPreRegistrationPage() {
                 <input type="time" value={form.expectedArrivalTime} onChange={(event) => updateField("expectedArrivalTime", event.target.value)} />
               </FormField>
             </div>
-          </section>
-          <section className="public-form-section" aria-labelledby="registrant-section-title">
+            </section>
+            <section className="public-form-section" aria-labelledby="registrant-section-title">
             <div className="section-header compact-section-header"><div><h3 id="registrant-section-title">Anmelder</h3></div></div>
             <div className="form-grid two-columns">
               {shown("host_email") ? <FormField label="Anmelder-E-Mail" required={required("host_email")} error={fieldErrors.hostEmail}>
@@ -272,15 +273,14 @@ export function PublicPreRegistrationPage() {
             {shown("visit_note") ? <FormField label="Bemerkung" required={required("visit_note")} error={fieldErrors.notes}>
               <textarea required={required("visit_note")} rows={3} value={form.notes} onChange={(event) => updateField("notes", event.target.value)} />
             </FormField> : null}
-          </section>
-          <section className="public-form-section" aria-labelledby="visitor-section-title">
+            </section>
+            <section className="public-form-section" aria-labelledby="visitor-section-title">
             <div className="section-header compact-section-header">
               <div>
                 <h3 id="visitor-section-title">Besucher</h3>
               </div>
             </div>
 
-            <form className="pre-registration-form" onSubmit={handleSubmit}>
               <div className="form-section">
                 <div className="form-grid two-columns">
                   {shown("visitor_first_name") ? <FormField label="Vorname" required={required("visitor_first_name")} error={fieldErrors.firstName}>
@@ -365,8 +365,8 @@ export function PublicPreRegistrationPage() {
               ) : null}
 
               {submitState.kind === "error" ? <Alert type="error">{submitState.message}</Alert> : null}
-            </form>
-          </section>
+            </section>
+          </form>
         </section>
 
         <section className="public-entry-grid public-group-entry-grid">
