@@ -5,7 +5,6 @@ import { buildImportTemplateWorkbookBuffer } from "../lib/importTemplateFiles";
 import { ImportValidationError, createImportedPreRegistrations } from "../lib/visitImport";
 import { parseExcelBufferWithMetadata } from "../lib/visitImportParsing";
 import { listFieldDefinitions } from "../lib/fieldDefinitions";
-import { PUBLIC_FIELD_INPUT_MAP, type PublicFieldKey } from "../lib/publicPreRegistrationSchema";
 import {
   getRequestIp,
   getRequestUserAgent,
@@ -80,21 +79,12 @@ export function handleVisitorImportUpload(
         return sendError(response, 400, "VALIDATION_ERROR", "Bitte maximal 250 Besucher pro Datei importieren.");
       }
 
-      const definitions = await listFieldDefinitions("public");
-      const supportedKeys = new Set(Object.keys(PUBLIC_FIELD_INPUT_MAP));
-      const requiredPublicFieldKeys = new Set<PublicFieldKey>(
-        definitions
-          .filter((field) => field.requiredPublic && supportedKeys.has(field.fieldKey))
-          .map((field) => field.fieldKey as PublicFieldKey)
-      );
-
       const imported = await createImportedPreRegistrations(rows, {
         source: "file_import",
         createdBy: options.createdBy,
         submittedIpAddress: getRequestIp(request),
         userAgent: getRequestUserAgent(request),
-        fallbackGateId: options.fallbackGateId,
-        requiredPublicFieldKeys
+        fallbackGateId: options.fallbackGateId
       });
 
       return response.status(201).json({

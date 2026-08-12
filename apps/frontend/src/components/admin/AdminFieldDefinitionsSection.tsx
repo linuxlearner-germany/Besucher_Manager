@@ -124,13 +124,11 @@ export function AdminFieldDefinitionsSection({
                   {definition.showInGuard ? <span className="field-config-badge">Wache</span> : null}
                   {definition.showInSibe ? <span className="field-config-badge">SiBe</span> : null}
                   {definition.showOnBadge ? <span className="field-config-badge">Druck</span> : null}
-                  {definition.requiredPublic ? <span className="field-config-badge">Pflicht Voranmeldung</span> : null}
                   {definition.requiredGuardCheckin ? <span className="field-config-badge">Pflicht Check-in</span> : null}
                   {definition.requiredBeforePrint ? <span className="field-config-badge">Pflicht Druck</span> : null}
                 </div>
                 <div className="field-row-actions">
                   <div className="field-matrix-controls">
-                    <label className="checkbox-row"><input type="checkbox" checked={editableFieldDefinitions[definition.id]?.requiredPublic ?? definition.requiredPublic} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [definition.id]: { ...(current[definition.id] || definition), requiredPublic: event.target.checked, showInPublic: event.target.checked || (current[definition.id] || definition).showInPublic } }))} /> Pflicht Voranmeldung</label>
                     <label className="checkbox-row"><input type="checkbox" checked={editableFieldDefinitions[definition.id]?.requiredGuardCheckin ?? definition.requiredGuardCheckin} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [definition.id]: { ...(current[definition.id] || definition), requiredGuardCheckin: event.target.checked, showInGuard: event.target.checked || (current[definition.id] || definition).showInGuard } }))} /> Pflicht Check-in</label>
                     <label className="checkbox-row"><input type="checkbox" checked={editableFieldDefinitions[definition.id]?.requiredBeforePrint ?? definition.requiredBeforePrint} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [definition.id]: { ...(current[definition.id] || definition), requiredBeforePrint: event.target.checked, showOnBadge: event.target.checked || (current[definition.id] || definition).showOnBadge } }))} /> Pflicht Druck</label>
                     <button type="button" onClick={() => void saveFieldDefinition(definition.id)}>Speichern</button>
@@ -150,7 +148,6 @@ export function AdminFieldDefinitionsSection({
         <div className="field-section-grid">
           {groupedFieldDefinitions.map(({ section, items }) => {
             const activeCount = items.filter((item) => item.isActive).length;
-            const requiredPublicCount = items.filter((item) => item.requiredPublic && item.isActive).length;
             const requiredCheckinCount = items.filter((item) => item.requiredGuardCheckin && item.isActive).length;
             const requiredPrintCount = items.filter((item) => item.requiredBeforePrint && item.isActive).length;
             const printCount = items.filter((item) => item.showOnBadge && item.isActive).length;
@@ -161,7 +158,7 @@ export function AdminFieldDefinitionsSection({
                 </div>
                 <ul className="field-module-stats">
                   <li>{activeCount} aktive Felder</li>
-                  <li>{requiredPublicCount} Pflicht in Voranmeldung</li>
+                  <li>Voranmeldungsfelder sind optional</li>
                   <li>{requiredCheckinCount} Pflicht vor Check-in</li>
                   <li>{requiredPrintCount} Pflicht vor Druck</li>
                   <li>{printCount} Druckfelder</li>
@@ -193,7 +190,6 @@ export function AdminFieldDefinitionsSection({
                 <th className="col-flag">Wache</th>
                 <th className="col-flag">SiBe</th>
                 <th className="col-flag">Druck</th>
-                <th className="col-flag">Pflicht Public</th>
                 <th className="col-flag">Pflicht Check-in</th>
                 <th className="col-flag">Pflicht Druck</th>
                 <th className="col-order">Sortierung</th>
@@ -213,7 +209,6 @@ export function AdminFieldDefinitionsSection({
                   <td className="col-flag">{definition.showInGuard ? "Ja" : "Nein"}</td>
                   <td className="col-flag">{definition.showInSibe ? "Ja" : "Nein"}</td>
                   <td className="col-flag">{definition.showOnBadge ? "Ja" : "Nein"}</td>
-                  <td className="col-flag">{definition.requiredPublic ? "Ja" : "Nein"}</td>
                   <td className="col-flag">{definition.requiredGuardCheckin ? "Ja" : "Nein"}</td>
                   <td className="col-flag">{definition.requiredBeforePrint ? "Ja" : "Nein"}</td>
                   <td className="col-order">{definition.sortOrder}</td>
@@ -303,7 +298,7 @@ export function AdminFieldDefinitionsSection({
 
               <h5>Pflichtregeln</h5>
               <div className="form-grid two-columns">
-                <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.requiredPublic} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [selectedFieldDefinition.id]: { ...selectedFieldDefinition, requiredPublic: event.target.checked, showInPublic: event.target.checked || selectedFieldDefinition.showInPublic } }))} />Pflicht in Voranmeldung</label>
+                <p className="section-copy">Für Voranmeldungen sind alle Felder optional. Pflichtregeln gelten erst für nachgelagerte Abläufe.</p>
                 <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.requiredGuardCheckin} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [selectedFieldDefinition.id]: { ...selectedFieldDefinition, requiredGuardCheckin: event.target.checked, showInGuard: event.target.checked || selectedFieldDefinition.showInGuard } }))} />Pflicht vor Check-in</label>
                 <label className="checkbox-row"><input type="checkbox" checked={selectedFieldDefinition.requiredBeforePrint} onChange={(event) => setEditableFieldDefinitions((current) => ({ ...current, [selectedFieldDefinition.id]: { ...selectedFieldDefinition, requiredBeforePrint: event.target.checked, showOnBadge: event.target.checked || selectedFieldDefinition.showOnBadge } }))} />Pflicht vor Druck</label>
               </div>

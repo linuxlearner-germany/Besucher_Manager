@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildInitialFormState,
   formatDateOnly,
   formatPersonName,
   formatStatus,
@@ -26,6 +27,10 @@ const user: User = {
 };
 
 describe("frontend core helpers", () => {
+  it("starts public pre-registration without implicit field values", () => {
+    const form = buildInitialFormState();
+    expect(Object.values(form).every((value) => value === "")).toBe(true);
+  });
   it("formats date-only values and known visit statuses", () => {
     expect(formatDateOnly("2026-08-06")).toBe("06.08.2026");
     expect(formatStatus("checked_in")).toBe("Eingecheckt");

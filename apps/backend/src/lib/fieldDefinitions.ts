@@ -67,7 +67,10 @@ async function queryDefinitions(whereClause: string): Promise<FieldDefinition[]>
 }
 
 export async function listFieldDefinitions(context: FieldDefinitionContext): Promise<FieldDefinition[]> {
-  return queryDefinitions(buildContextWhereClause(context));
+  const definitions = await queryDefinitions(buildContextWhereClause(context));
+  return context === "public"
+    ? definitions.map((field) => ({ ...field, requiredPublic: false }))
+    : definitions;
 }
 
 export async function listAdminFieldDefinitions(): Promise<FieldDefinition[]> {
@@ -125,7 +128,7 @@ export async function updateFieldDefinition(
     .input("showInGuard", sql.Bit, payload.showInGuard)
     .input("showInSibe", sql.Bit, payload.showInSibe)
     .input("showOnBadge", sql.Bit, payload.showOnBadge)
-    .input("requiredPublic", sql.Bit, payload.requiredPublic)
+    .input("requiredPublic", sql.Bit, false)
     .input("requiredGuardCheckin", sql.Bit, payload.requiredGuardCheckin)
     .input("requiredBeforePrint", sql.Bit, payload.requiredBeforePrint)
     .input("sortOrder", sql.Int, payload.sortOrder)
@@ -137,7 +140,7 @@ export async function updateFieldDefinition(
         label = @label,
         section = @section,
         is_active = @isActive,
-        show_in_public = CASE WHEN @requiredPublic = 1 THEN 1 ELSE @showInPublic END,
+        show_in_public = @showInPublic,
         show_in_guard = CASE WHEN @requiredGuardCheckin = 1 THEN 1 ELSE @showInGuard END,
         show_in_sibe = @showInSibe,
         show_on_badge = CASE WHEN @requiredBeforePrint = 1 THEN 1 ELSE @showOnBadge END,

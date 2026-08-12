@@ -55,7 +55,7 @@ const emptyGroupVisitor = (): GroupVisitorForm => ({
   firstName: "",
   lastName: "",
   company: "",
-  nationalityCode: "DE",
+  nationalityCode: "",
   birthDate: "",
   visitorStreet: "",
   visitorHouseNumber: "",
@@ -167,11 +167,8 @@ export function PublicPreRegistrationPage() {
 
   async function handleGroupSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const visitors = groupVisitors.filter(hasGroupVisitorData);
-    if (visitors.length === 0) {
-      setGroupSubmitState({ kind: "error", message: "Bitte mindestens eine Besucherzeile ausfüllen." });
-      return;
-    }
+    const populatedVisitors = groupVisitors.filter(hasGroupVisitorData);
+    const visitors = populatedVisitors.length > 0 ? populatedVisitors : [emptyGroupVisitor()];
 
     setIsSubmittingGroup(true);
     setGroupSubmitState({ kind: "idle" });
@@ -209,14 +206,7 @@ export function PublicPreRegistrationPage() {
   }
 
   const documentExpired = isPastDate(form.idDocumentValidUntil);
-  const defaultRequiredFields = new Set([
-    "visitor_first_name", "visitor_last_name", "visitor_company", "visitor_nationality",
-    "host_name", "host_phone", "visit_purpose", "valid_from", "valid_until"
-  ]);
   const shown = (fieldKey: string) => publicFields === null || publicFields.some((field) => field.fieldKey === fieldKey);
-  const required = (fieldKey: string) => publicFields === null
-    ? defaultRequiredFields.has(fieldKey)
-    : Boolean(publicFields.find((field) => field.fieldKey === fieldKey)?.requiredPublic);
 
   return (
     <AppLayout>
@@ -228,32 +218,32 @@ export function PublicPreRegistrationPage() {
               <h2>Besuch anmelden</h2>
               <p className="section-copy">Bitte erfassen Sie zuerst die Besuchsdaten. Danach folgen die Angaben zum Besucher.</p>
             </div>
-            <span className="required-hint"><span aria-hidden="true">*</span> Pflichtfeld</span>
+            <span className="required-hint">Alle Angaben sind optional</span>
           </div>
-          <form className="pre-registration-form public-registration-form" onSubmit={handleSubmit}>
+          <form className="pre-registration-form public-registration-form" onSubmit={handleSubmit} noValidate>
             <section className="public-form-section" aria-labelledby="visit-section-title">
             <div className="section-header compact-section-header"><div><h3 id="visit-section-title">Besuch</h3></div></div>
             <div className="form-grid two-columns">
-            <FormField label="Wache" required error={fieldErrors.gateId}>
-              <select required value={form.gateId} onChange={(event) => updateField("gateId", event.target.value)} disabled={gates.length === 0}>
+            <FormField label="Wache" error={fieldErrors.gateId}>
+              <select value={form.gateId} onChange={(event) => updateField("gateId", event.target.value)} disabled={gates.length === 0}>
                 <option value="">Wache auswählen</option>
                 {gates.map((gate) => <option key={gate.id} value={gate.id}>{gate.name}</option>)}
               </select>
             </FormField>
-            {shown("host_name") ? <FormField label="Ansprechpartner" required={required("host_name")} error={fieldErrors.hostName}>
-              <input required={required("host_name")} value={form.hostName} onChange={(event) => updateField("hostName", event.target.value)} />
+            {shown("host_name") ? <FormField label="Ansprechpartner" error={fieldErrors.hostName}>
+              <input value={form.hostName} onChange={(event) => updateField("hostName", event.target.value)} />
             </FormField> : null}
-            {shown("host_phone") ? <FormField label="Ansprechpartner Telefon" required={required("host_phone")} error={fieldErrors.hostPhone}>
-              <input required={required("host_phone")} value={form.hostPhone} onChange={(event) => updateField("hostPhone", event.target.value)} />
+            {shown("host_phone") ? <FormField label="Ansprechpartner Telefon" error={fieldErrors.hostPhone}>
+              <input value={form.hostPhone} onChange={(event) => updateField("hostPhone", event.target.value)} />
             </FormField> : null}
-            {shown("visit_purpose") ? <FormField label="Besuchszweck" required={required("visit_purpose")} error={fieldErrors.purpose}>
-              <input required={required("visit_purpose")} value={form.purpose} onChange={(event) => updateField("purpose", event.target.value)} />
+            {shown("visit_purpose") ? <FormField label="Besuchszweck" error={fieldErrors.purpose}>
+              <input value={form.purpose} onChange={(event) => updateField("purpose", event.target.value)} />
             </FormField> : null}
-            {shown("valid_from") ? <FormField label="Gültig von" required={required("valid_from")} error={fieldErrors.validFrom}>
-              <input required={required("valid_from")} type="date" value={form.validFrom} onChange={(event) => updateField("validFrom", event.target.value)} />
+            {shown("valid_from") ? <FormField label="Gültig von" error={fieldErrors.validFrom}>
+              <input type="date" value={form.validFrom} onChange={(event) => updateField("validFrom", event.target.value)} />
             </FormField> : null}
-            {shown("valid_until") ? <FormField label="Gültig bis" required={required("valid_until")} error={fieldErrors.validUntil}>
-              <input required={required("valid_until")} type="date" value={form.validUntil} onChange={(event) => updateField("validUntil", event.target.value)} />
+            {shown("valid_until") ? <FormField label="Gültig bis" error={fieldErrors.validUntil}>
+              <input type="date" value={form.validUntil} onChange={(event) => updateField("validUntil", event.target.value)} />
             </FormField> : null}
               <FormField label="Voraussichtliche Ankunftszeit" error={fieldErrors.expectedArrivalTime}>
                 <input type="time" value={form.expectedArrivalTime} onChange={(event) => updateField("expectedArrivalTime", event.target.value)} />
@@ -263,15 +253,15 @@ export function PublicPreRegistrationPage() {
             <section className="public-form-section" aria-labelledby="registrant-section-title">
             <div className="section-header compact-section-header"><div><h3 id="registrant-section-title">Anmelder</h3></div></div>
             <div className="form-grid two-columns">
-              {shown("host_email") ? <FormField label="Anmelder-E-Mail" required={required("host_email")} error={fieldErrors.hostEmail}>
-                <input required={required("host_email")} type="email" value={form.hostEmail} onChange={(event) => updateField("hostEmail", event.target.value)} />
+              {shown("host_email") ? <FormField label="Anmelder-E-Mail" error={fieldErrors.hostEmail}>
+                <input type="email" value={form.hostEmail} onChange={(event) => updateField("hostEmail", event.target.value)} />
               </FormField> : null}
-              {shown("host_department") ? <FormField label="Geschäftsfeld" required={required("host_department")} error={fieldErrors.hostDepartment}>
-                <input required={required("host_department")} value={form.hostDepartment} onChange={(event) => updateField("hostDepartment", event.target.value)} />
+              {shown("host_department") ? <FormField label="Geschäftsfeld" error={fieldErrors.hostDepartment}>
+                <input value={form.hostDepartment} onChange={(event) => updateField("hostDepartment", event.target.value)} />
               </FormField> : null}
             </div>
-            {shown("visit_note") ? <FormField label="Bemerkung" required={required("visit_note")} error={fieldErrors.notes}>
-              <textarea required={required("visit_note")} rows={3} value={form.notes} onChange={(event) => updateField("notes", event.target.value)} />
+            {shown("visit_note") ? <FormField label="Bemerkung" error={fieldErrors.notes}>
+              <textarea rows={3} value={form.notes} onChange={(event) => updateField("notes", event.target.value)} />
             </FormField> : null}
             </section>
             <section className="public-form-section" aria-labelledby="visitor-section-title">
@@ -283,44 +273,44 @@ export function PublicPreRegistrationPage() {
 
               <div className="form-section">
                 <div className="form-grid two-columns">
-                  {shown("visitor_first_name") ? <FormField label="Vorname" required={required("visitor_first_name")} error={fieldErrors.firstName}>
-                    <input required={required("visitor_first_name")} value={form.firstName} onChange={(event) => updateField("firstName", event.target.value)} />
+                  {shown("visitor_first_name") ? <FormField label="Vorname" error={fieldErrors.firstName}>
+                    <input value={form.firstName} onChange={(event) => updateField("firstName", event.target.value)} />
                   </FormField> : null}
-                  {shown("visitor_last_name") ? <FormField label="Nachname" required={required("visitor_last_name")} error={fieldErrors.lastName}>
-                    <input required={required("visitor_last_name")} value={form.lastName} onChange={(event) => updateField("lastName", event.target.value)} />
+                  {shown("visitor_last_name") ? <FormField label="Nachname" error={fieldErrors.lastName}>
+                    <input value={form.lastName} onChange={(event) => updateField("lastName", event.target.value)} />
                   </FormField> : null}
-                  {shown("visitor_company") ? <FormField label="Firma / Organisation" required={required("visitor_company")} error={fieldErrors.company}>
-                    <input required={required("visitor_company")} value={form.company} onChange={(event) => updateField("company", event.target.value)} />
+                  {shown("visitor_company") ? <FormField label="Firma / Organisation" error={fieldErrors.company}>
+                    <input value={form.company} onChange={(event) => updateField("company", event.target.value)} />
                   </FormField> : null}
-                  {shown("visitor_street") ? <FormField label="Straße" required={required("visitor_street")} error={fieldErrors.visitorStreet}>
-                    <input required={required("visitor_street")} value={form.visitorStreet} onChange={(event) => updateField("visitorStreet", event.target.value)} />
+                  {shown("visitor_street") ? <FormField label="Straße" error={fieldErrors.visitorStreet}>
+                    <input value={form.visitorStreet} onChange={(event) => updateField("visitorStreet", event.target.value)} />
                   </FormField> : null}
-                  {shown("visitor_house_number") ? <FormField label="Hausnummer" required={required("visitor_house_number")} error={fieldErrors.visitorHouseNumber}>
-                    <input required={required("visitor_house_number")} value={form.visitorHouseNumber} onChange={(event) => updateField("visitorHouseNumber", event.target.value)} />
+                  {shown("visitor_house_number") ? <FormField label="Hausnummer" error={fieldErrors.visitorHouseNumber}>
+                    <input value={form.visitorHouseNumber} onChange={(event) => updateField("visitorHouseNumber", event.target.value)} />
                   </FormField> : null}
-                  {shown("visitor_postal_code") ? <FormField label="PLZ" required={required("visitor_postal_code")} error={fieldErrors.visitorPostalCode}>
-                    <input required={required("visitor_postal_code")} value={form.visitorPostalCode} onChange={(event) => updateField("visitorPostalCode", event.target.value)} />
+                  {shown("visitor_postal_code") ? <FormField label="PLZ" error={fieldErrors.visitorPostalCode}>
+                    <input value={form.visitorPostalCode} onChange={(event) => updateField("visitorPostalCode", event.target.value)} />
                   </FormField> : null}
-                  {shown("visitor_city") ? <FormField label="Ort" required={required("visitor_city")} error={fieldErrors.visitorCity}>
-                    <input required={required("visitor_city")} value={form.visitorCity} onChange={(event) => updateField("visitorCity", event.target.value)} />
+                  {shown("visitor_city") ? <FormField label="Ort" error={fieldErrors.visitorCity}>
+                    <input value={form.visitorCity} onChange={(event) => updateField("visitorCity", event.target.value)} />
                   </FormField> : null}
-                  {shown("visitor_nationality") ? <FormField label="Nationalität" required={required("visitor_nationality")} error={fieldErrors.nationalityCode}>
-                    <CountrySelect required={required("visitor_nationality")} value={form.nationalityCode} onChange={(value) => updateField("nationalityCode", value)} />
+                  {shown("visitor_nationality") ? <FormField label="Nationalität" error={fieldErrors.nationalityCode}>
+                    <CountrySelect value={form.nationalityCode} onChange={(value) => updateField("nationalityCode", value)} />
                   </FormField> : null}
-                  {shown("visitor_birth_date") ? <FormField label="Geburtsdatum" required={required("visitor_birth_date")} error={fieldErrors.birthDate}>
-                    <input required={required("visitor_birth_date")} type="date" max={toDateInputValue(new Date())} value={form.birthDate} onChange={(event) => updateField("birthDate", event.target.value)} />
+                  {shown("visitor_birth_date") ? <FormField label="Geburtsdatum" error={fieldErrors.birthDate}>
+                    <input type="date" max={toDateInputValue(new Date())} value={form.birthDate} onChange={(event) => updateField("birthDate", event.target.value)} />
                   </FormField> : null}
-                  {shown("visitor_phone") ? <FormField label="Telefonnummer" required={required("visitor_phone")}>
-                    <input required={required("visitor_phone")} value={form.phone} onChange={(event) => updateField("phone", event.target.value)} />
+                  {shown("visitor_phone") ? <FormField label="Telefonnummer">
+                    <input value={form.phone} onChange={(event) => updateField("phone", event.target.value)} />
                   </FormField> : null}
-                  {shown("visitor_email") ? <FormField label="E-Mail-Adresse" required={required("visitor_email")}>
-                    <input required={required("visitor_email")} type="email" value={form.email} onChange={(event) => updateField("email", event.target.value)} />
+                  {shown("visitor_email") ? <FormField label="E-Mail-Adresse">
+                    <input type="email" value={form.email} onChange={(event) => updateField("email", event.target.value)} />
                   </FormField> : null}
-                  {shown("visitor_license_plate") ? <FormField label="Kennzeichen" required={required("visitor_license_plate")}>
-                    <input required={required("visitor_license_plate")} value={form.licensePlate} onChange={(event) => updateField("licensePlate", event.target.value)} />
+                  {shown("visitor_license_plate") ? <FormField label="Kennzeichen">
+                    <input value={form.licensePlate} onChange={(event) => updateField("licensePlate", event.target.value)} />
                   </FormField> : null}
-                  {shown("id_document_type") ? <FormField label="Ausweisart" required={required("id_document_type")} error={fieldErrors.idDocumentType}>
-                    <select required={required("id_document_type")} value={form.idDocumentType} onChange={(event) => updateField("idDocumentType", event.target.value as FormState["idDocumentType"])}>
+                  {shown("id_document_type") ? <FormField label="Ausweisart" error={fieldErrors.idDocumentType}>
+                    <select value={form.idDocumentType} onChange={(event) => updateField("idDocumentType", event.target.value as FormState["idDocumentType"])}>
                       <option value="">Bitte wählen</option>
                       <option value="identity_card">Personalausweis</option>
                       <option value="passport">Reisepass</option>
@@ -328,11 +318,11 @@ export function PublicPreRegistrationPage() {
                       <option value="other">Sonstiges</option>
                     </select>
                   </FormField> : null}
-                  {shown("id_document_valid_until") ? <FormField label="Ausweis gültig bis" required={required("id_document_valid_until")} error={fieldErrors.idDocumentValidUntil}>
-                    <input required={required("id_document_valid_until")} type="date" value={form.idDocumentValidUntil} onChange={(event) => updateField("idDocumentValidUntil", event.target.value)} />
+                  {shown("id_document_valid_until") ? <FormField label="Ausweis gültig bis" error={fieldErrors.idDocumentValidUntil}>
+                    <input type="date" value={form.idDocumentValidUntil} onChange={(event) => updateField("idDocumentValidUntil", event.target.value)} />
                   </FormField> : null}
-                  {shown("id_document_number") ? <FormField label="Ausweisnummer" required={required("id_document_number")} error={fieldErrors.idDocumentNumber}>
-                    <input required={required("id_document_number")} value={form.idDocumentNumber} onChange={(event) => updateField("idDocumentNumber", event.target.value)} />
+                  {shown("id_document_number") ? <FormField label="Ausweisnummer" error={fieldErrors.idDocumentNumber}>
+                    <input value={form.idDocumentNumber} onChange={(event) => updateField("idDocumentNumber", event.target.value)} />
                   </FormField> : null}
                 </div>
                 {documentExpired ? <Alert type="error">Das angegebene Ausweisdokument ist bereits abgelaufen.</Alert> : null}
@@ -371,7 +361,7 @@ export function PublicPreRegistrationPage() {
 
         <section className="public-entry-grid public-group-entry-grid">
           <section className="panel public-form-panel group-registration-panel">
-            <form className="pre-registration-form group-pre-registration-form" onSubmit={handleGroupSubmit}>
+            <form className="pre-registration-form group-pre-registration-form" onSubmit={handleGroupSubmit} noValidate>
               <div className="form-section">
                 <div className="section-header">
                   <div>
@@ -385,40 +375,40 @@ export function PublicPreRegistrationPage() {
                   <table className="data-table group-import-table">
                     <thead>
                       <tr>
-                        {shown("visitor_first_name") ? <th><FieldLabel label="Vorname" required={required("visitor_first_name")} /></th> : null}
-                        {shown("visitor_last_name") ? <th><FieldLabel label="Nachname" required={required("visitor_last_name")} /></th> : null}
-                        {shown("visitor_company") ? <th><FieldLabel label="Firma" required={required("visitor_company")} /></th> : null}
-                        {shown("visitor_nationality") ? <th><FieldLabel label="Nationalität" required={required("visitor_nationality")} /></th> : null}
-                        {shown("visitor_birth_date") ? <th><FieldLabel label="Geburtsdatum" required={required("visitor_birth_date")} /></th> : null}
-                        {shown("visitor_street") ? <th><FieldLabel label="Straße" required={required("visitor_street")} /></th> : null}
-                        {shown("visitor_house_number") ? <th><FieldLabel label="Hausnummer" required={required("visitor_house_number")} /></th> : null}
-                        {shown("visitor_postal_code") ? <th><FieldLabel label="PLZ" required={required("visitor_postal_code")} /></th> : null}
-                        {shown("visitor_city") ? <th><FieldLabel label="Ort" required={required("visitor_city")} /></th> : null}
-                        {shown("visitor_phone") ? <th><FieldLabel label="Telefon" required={required("visitor_phone")} /></th> : null}
-                        {shown("visitor_email") ? <th><FieldLabel label="E-Mail" required={required("visitor_email")} /></th> : null}
-                        {shown("id_document_type") ? <th><FieldLabel label="Ausweisart" required={required("id_document_type")} /></th> : null}
-                        {shown("id_document_valid_until") ? <th><FieldLabel label="Ausweis gültig bis" required={required("id_document_valid_until")} /></th> : null}
-                        {shown("id_document_number") ? <th className="group-id-document-number-column"><FieldLabel label="Ausweisnummer" required={required("id_document_number")} /></th> : null}
-                        {shown("visitor_license_plate") ? <th className="group-license-plate-column"><FieldLabel label="Kennzeichen" required={required("visitor_license_plate")} /></th> : null}
+                        {shown("visitor_first_name") ? <th><FieldLabel label="Vorname" /></th> : null}
+                        {shown("visitor_last_name") ? <th><FieldLabel label="Nachname" /></th> : null}
+                        {shown("visitor_company") ? <th><FieldLabel label="Firma" /></th> : null}
+                        {shown("visitor_nationality") ? <th><FieldLabel label="Nationalität" /></th> : null}
+                        {shown("visitor_birth_date") ? <th><FieldLabel label="Geburtsdatum" /></th> : null}
+                        {shown("visitor_street") ? <th><FieldLabel label="Straße" /></th> : null}
+                        {shown("visitor_house_number") ? <th><FieldLabel label="Hausnummer" /></th> : null}
+                        {shown("visitor_postal_code") ? <th><FieldLabel label="PLZ" /></th> : null}
+                        {shown("visitor_city") ? <th><FieldLabel label="Ort" /></th> : null}
+                        {shown("visitor_phone") ? <th><FieldLabel label="Telefon" /></th> : null}
+                        {shown("visitor_email") ? <th><FieldLabel label="E-Mail" /></th> : null}
+                        {shown("id_document_type") ? <th><FieldLabel label="Ausweisart" /></th> : null}
+                        {shown("id_document_valid_until") ? <th><FieldLabel label="Ausweis gültig bis" /></th> : null}
+                        {shown("id_document_number") ? <th className="group-id-document-number-column"><FieldLabel label="Ausweisnummer" /></th> : null}
+                        {shown("visitor_license_plate") ? <th className="group-license-plate-column"><FieldLabel label="Kennzeichen" /></th> : null}
                         <th>Aktion</th>
                       </tr>
                     </thead>
                     <tbody>
                       {groupVisitors.map((visitor, index) => (
                         <tr key={index}>
-                          {shown("visitor_first_name") ? <td><input required={hasGroupVisitorData(visitor) && required("visitor_first_name")} value={visitor.firstName} onChange={(event) => updateGroupVisitor(index, "firstName", event.target.value)} /></td> : null}
-                          {shown("visitor_last_name") ? <td><input required={hasGroupVisitorData(visitor) && required("visitor_last_name")} value={visitor.lastName} onChange={(event) => updateGroupVisitor(index, "lastName", event.target.value)} /></td> : null}
-                          {shown("visitor_company") ? <td><input required={hasGroupVisitorData(visitor) && required("visitor_company")} value={visitor.company} onChange={(event) => updateGroupVisitor(index, "company", event.target.value)} /></td> : null}
-                          {shown("visitor_nationality") ? <td><CountrySelect required={hasGroupVisitorData(visitor) && required("visitor_nationality")} value={visitor.nationalityCode} onChange={(value) => updateGroupVisitor(index, "nationalityCode", value)} /></td> : null}
-                          {shown("visitor_birth_date") ? <td><input required={hasGroupVisitorData(visitor) && required("visitor_birth_date")} type="date" max={toDateInputValue(new Date())} value={visitor.birthDate} onChange={(event) => updateGroupVisitor(index, "birthDate", event.target.value)} /></td> : null}
-                          {shown("visitor_street") ? <td><input required={hasGroupVisitorData(visitor) && required("visitor_street")} value={visitor.visitorStreet} onChange={(event) => updateGroupVisitor(index, "visitorStreet", event.target.value)} /></td> : null}
-                          {shown("visitor_house_number") ? <td><input required={hasGroupVisitorData(visitor) && required("visitor_house_number")} value={visitor.visitorHouseNumber} onChange={(event) => updateGroupVisitor(index, "visitorHouseNumber", event.target.value)} /></td> : null}
-                          {shown("visitor_postal_code") ? <td><input required={hasGroupVisitorData(visitor) && required("visitor_postal_code")} value={visitor.visitorPostalCode} onChange={(event) => updateGroupVisitor(index, "visitorPostalCode", event.target.value)} /></td> : null}
-                          {shown("visitor_city") ? <td><input required={hasGroupVisitorData(visitor) && required("visitor_city")} value={visitor.visitorCity} onChange={(event) => updateGroupVisitor(index, "visitorCity", event.target.value)} /></td> : null}
-                          {shown("visitor_phone") ? <td><input required={hasGroupVisitorData(visitor) && required("visitor_phone")} value={visitor.phone} onChange={(event) => updateGroupVisitor(index, "phone", event.target.value)} /></td> : null}
-                          {shown("visitor_email") ? <td><input required={hasGroupVisitorData(visitor) && required("visitor_email")} type="email" value={visitor.email} onChange={(event) => updateGroupVisitor(index, "email", event.target.value)} /></td> : null}
+                          {shown("visitor_first_name") ? <td><input value={visitor.firstName} onChange={(event) => updateGroupVisitor(index, "firstName", event.target.value)} /></td> : null}
+                          {shown("visitor_last_name") ? <td><input value={visitor.lastName} onChange={(event) => updateGroupVisitor(index, "lastName", event.target.value)} /></td> : null}
+                          {shown("visitor_company") ? <td><input value={visitor.company} onChange={(event) => updateGroupVisitor(index, "company", event.target.value)} /></td> : null}
+                          {shown("visitor_nationality") ? <td><CountrySelect value={visitor.nationalityCode} onChange={(value) => updateGroupVisitor(index, "nationalityCode", value)} /></td> : null}
+                          {shown("visitor_birth_date") ? <td><input type="date" max={toDateInputValue(new Date())} value={visitor.birthDate} onChange={(event) => updateGroupVisitor(index, "birthDate", event.target.value)} /></td> : null}
+                          {shown("visitor_street") ? <td><input value={visitor.visitorStreet} onChange={(event) => updateGroupVisitor(index, "visitorStreet", event.target.value)} /></td> : null}
+                          {shown("visitor_house_number") ? <td><input value={visitor.visitorHouseNumber} onChange={(event) => updateGroupVisitor(index, "visitorHouseNumber", event.target.value)} /></td> : null}
+                          {shown("visitor_postal_code") ? <td><input value={visitor.visitorPostalCode} onChange={(event) => updateGroupVisitor(index, "visitorPostalCode", event.target.value)} /></td> : null}
+                          {shown("visitor_city") ? <td><input value={visitor.visitorCity} onChange={(event) => updateGroupVisitor(index, "visitorCity", event.target.value)} /></td> : null}
+                          {shown("visitor_phone") ? <td><input value={visitor.phone} onChange={(event) => updateGroupVisitor(index, "phone", event.target.value)} /></td> : null}
+                          {shown("visitor_email") ? <td><input type="email" value={visitor.email} onChange={(event) => updateGroupVisitor(index, "email", event.target.value)} /></td> : null}
                           {shown("id_document_type") ? <td>
-                            <select required={hasGroupVisitorData(visitor) && required("id_document_type")} value={visitor.idDocumentType} onChange={(event) => updateGroupVisitor(index, "idDocumentType", event.target.value)}>
+                            <select value={visitor.idDocumentType} onChange={(event) => updateGroupVisitor(index, "idDocumentType", event.target.value)}>
                               <option value="">-</option>
                               <option value="identity_card">Personalausweis</option>
                               <option value="passport">Reisepass</option>
@@ -426,9 +416,9 @@ export function PublicPreRegistrationPage() {
                               <option value="other">Sonstiges</option>
                             </select>
                           </td> : null}
-                          {shown("id_document_valid_until") ? <td><input required={hasGroupVisitorData(visitor) && required("id_document_valid_until")} type="date" className={isPastDate(visitor.idDocumentValidUntil) ? "required-missing" : ""} title={isPastDate(visitor.idDocumentValidUntil) ? "Ausweisdokument ist abgelaufen." : undefined} value={visitor.idDocumentValidUntil} onChange={(event) => updateGroupVisitor(index, "idDocumentValidUntil", event.target.value)} /></td> : null}
-                          {shown("id_document_number") ? <td className="group-id-document-number-column"><input required={hasGroupVisitorData(visitor) && required("id_document_number")} value={visitor.idDocumentNumber} onChange={(event) => updateGroupVisitor(index, "idDocumentNumber", event.target.value)} /></td> : null}
-                          {shown("visitor_license_plate") ? <td className="group-license-plate-column"><input required={hasGroupVisitorData(visitor) && required("visitor_license_plate")} value={visitor.licensePlate} onChange={(event) => updateGroupVisitor(index, "licensePlate", event.target.value)} /></td> : null}
+                          {shown("id_document_valid_until") ? <td><input type="date" className={isPastDate(visitor.idDocumentValidUntil) ? "required-missing" : ""} title={isPastDate(visitor.idDocumentValidUntil) ? "Ausweisdokument ist abgelaufen." : undefined} value={visitor.idDocumentValidUntil} onChange={(event) => updateGroupVisitor(index, "idDocumentValidUntil", event.target.value)} /></td> : null}
+                          {shown("id_document_number") ? <td className="group-id-document-number-column"><input value={visitor.idDocumentNumber} onChange={(event) => updateGroupVisitor(index, "idDocumentNumber", event.target.value)} /></td> : null}
+                          {shown("visitor_license_plate") ? <td className="group-license-plate-column"><input value={visitor.licensePlate} onChange={(event) => updateGroupVisitor(index, "licensePlate", event.target.value)} /></td> : null}
                           <td>
                             <button type="button" className="secondary-button" onClick={() => setGroupVisitors((current) => current.filter((_, visitorIndex) => visitorIndex !== index))}>
                               Entfernen

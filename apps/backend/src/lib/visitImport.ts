@@ -9,7 +9,7 @@ import { notifyNationalitySubscribers } from "./mailRelay";
 import { findActiveGateById, listActiveGates } from "./publicPreRegistrations";
 import { getVisitCompleteness } from "./guardVisits";
 import type { ImportVisitInput, ImportVisitResult, ImportVisitsResult } from "./visitImportDefinitions";
-import { validateImportedPreRegistrationRows, type PublicFieldKey } from "./publicPreRegistrationSchema";
+import { validateImportedPreRegistrationRows } from "./publicPreRegistrationSchema";
 import { VISIT_STATUS, type AuthenticatedUser } from "./visitWorkflow";
 
 export const MISSING_IMPORT_VALUE = "[fehlt]";
@@ -25,7 +25,11 @@ export function isMissingImportValue(value: string | null | undefined): boolean 
 }
 
 function requiredOrPlaceholder(value: string | null | undefined): string {
-  return cleanRequired(value, MISSING_IMPORT_VALUE);
+  return cleanRequired(value, MISSING_IMPORT_VALUE).replace(/\s+/g, " ");
+}
+
+function cleanInlineOptional(value: string | null | undefined): string | null {
+  return cleanOptional(value)?.replace(/\s+/g, " ") ?? null;
 }
 
 export function normalizeImportDateOnly(value: string | null | undefined): string | null {
@@ -103,19 +107,17 @@ export async function createImportedPreRegistrations(
     userAgent?: string | null;
     createdBy?: AuthenticatedUser | null;
     fallbackGateId?: string | null;
-    requiredPublicFieldKeys?: ReadonlySet<PublicFieldKey>;
   }
 ): Promise<ImportVisitsResult> {
-  if (options.requiredPublicFieldKeys) {
-    const validationMessages = validateImportedPreRegistrationRows(rows, options.requiredPublicFieldKeys);
-    if (validationMessages.length > 0) {
-      throw new ImportValidationError(validationMessages);
-    }
+  const validationMessages = validateImportedPreRegistrationRows(rows, new Set());
+  if (validationMessages.length > 0) {
+    throw new ImportValidationError(validationMessages);
   }
 
-  const invalidNationalityRows = rows.flatMap((row, index) =>
-    findCountryCode(row.nationalityCode) ? [] : [row.sourceExcelRowNumber ?? index + 2]
-  );
+  const invalidNationalityRows = rows.flatMap((row, index) => {
+    const value = cleanOptional(row.nationalityCode);
+    return !value || findCountryCode(value) ? [] : [row.sourceExcelRowNumber ?? index + 2];
+  });
   if (invalidNationalityRows.length > 0) {
     const error = new Error("invalid_import_nationalities") as Error & { rows: number[] };
     error.rows = invalidNationalityRows;
@@ -146,7 +148,7 @@ export async function createImportedPreRegistrations(
       const idDocumentType = normalizeIdDocumentType(row.idDocumentType);
       const birthDate = normalizeImportDateOnly(row.birthDate);
       const gateId = await resolveGateId(row, options.fallbackGateId);
-      const nationalityCode = findCountryCode(row.nationalityCode)!;
+      const nationalityCode = findCountryCode(row.nationalityCode);
 
       const visitorInsert = await new sql.Request(transaction)
         .input("firstName", sql.NVarChar(120), requiredOrPlaceholder(row.firstName))
@@ -154,15 +156,15 @@ export async function createImportedPreRegistrations(
         .input("company", sql.NVarChar(255), requiredOrPlaceholder(row.company))
         .input("nationalityCode", sql.NChar(2), nationalityCode)
         .input("birthDate", sql.Date, birthDate)
-        .input("visitorStreet", sql.NVarChar(255), cleanOptional(row.visitorStreet))
-        .input("visitorHouseNumber", sql.NVarChar(40), cleanOptional(row.visitorHouseNumber))
-        .input("visitorPostalCode", sql.NVarChar(20), cleanOptional(row.visitorPostalCode))
-        .input("visitorCity", sql.NVarChar(120), cleanOptional(row.visitorCity))
-        .input("phone", sql.NVarChar(80), cleanOptional(row.phone))
-        .input("email", sql.NVarChar(255), cleanOptional(row.email))
+        .input("visitorStreet", sql.NVarChar(255), cleanInlineOptional(row.visitorStreet))
+        .input("visitorHouseNumber", sql.NVarChar(40), cleanInlineOptional(row.visitorHouseNumber))
+        .input("visitorPostalCode", sql.NVarChar(20), cleanInlineOptional(row.visitorPostalCode))
+        .input("visitorCity", sql.NVarChar(120), cleanInlineOptional(row.visitorCity))
+        .input("phone", sql.NVarChar(80), cleanInlineOptional(row.phone))
+        .input("email", sql.NVarChar(255), cleanInlineOptional(row.email)?.replace(/\s+/g, "").toLowerCase() ?? null)
         .input("idDocumentType", sql.NVarChar(40), idDocumentType)
         .input("idDocumentValidUntil", sql.Date, idDocumentValidUntil)
-        .input("idDocumentNumber", sql.NVarChar(120), cleanOptional(row.idDocumentNumber))
+        .input("idDocumentNumber", sql.NVarChar(120), cleanInlineOptional(row.idDocumentNumber))
         .query<{ id: string }>(`
           INSERT INTO dbo.visitors (
             first_name,
@@ -208,13 +210,13 @@ export async function createImportedPreRegistrations(
         .input("visitorId", sql.UniqueIdentifier, visitorId)
         .input("gateId", sql.UniqueIdentifier, gateId)
         .input("hostName", sql.NVarChar(255), requiredOrPlaceholder(row.hostName))
-        .input("hostEmail", sql.NVarChar(255), cleanOptional(row.hostEmail))
-        .input("hostPhone", sql.NVarChar(80), cleanOptional(row.hostPhone))
-        .input("hostDepartment", sql.NVarChar(255), cleanOptional(row.hostDepartment))
+        .input("hostEmail", sql.NVarChar(255), cleanInlineOptional(row.hostEmail)?.replace(/\s+/g, "").toLowerCase() ?? null)
+        .input("hostPhone", sql.NVarChar(80), cleanInlineOptional(row.hostPhone))
+        .input("hostDepartment", sql.NVarChar(255), cleanInlineOptional(row.hostDepartment))
         .input("purpose", sql.NVarChar(500), requiredOrPlaceholder(row.purpose))
         .input("validFrom", sql.DateTime2, dateOnlyStart(validFrom))
         .input("validUntil", sql.DateTime2, dateOnlyEnd(validUntil))
-        .input("licensePlate", sql.NVarChar(40), cleanOptional(row.licensePlate))
+        .input("licensePlate", sql.NVarChar(40), cleanInlineOptional(row.licensePlate))
         .input("badgeNumber", sql.NVarChar(64), badgeNumber)
         .input("notes", sql.NVarChar(sql.MAX), cleanOptional(row.notes))
         .input("createdBy", sql.UniqueIdentifier, options.createdBy?.id ?? null)
@@ -306,15 +308,17 @@ export async function createImportedPreRegistrations(
       });
 
       const gate = gateId ? await findActiveGateById(gateId) : null;
-      nationalityNotifications.push({
-        visitId: visit.id,
-        nationalityCode,
-        visitorName: `${requiredOrPlaceholder(row.firstName)} ${requiredOrPlaceholder(row.lastName)}`,
-        company: requiredOrPlaceholder(row.company),
-        validFrom,
-        validUntil,
-        gateName: gate?.name ?? null
-      });
+      if (nationalityCode) {
+        nationalityNotifications.push({
+          visitId: visit.id,
+          nationalityCode,
+          visitorName: `${requiredOrPlaceholder(row.firstName)} ${requiredOrPlaceholder(row.lastName)}`,
+          company: requiredOrPlaceholder(row.company),
+          validFrom,
+          validUntil,
+          gateName: gate?.name ?? null
+        });
+      }
     }
 
     await writeAuditLog(

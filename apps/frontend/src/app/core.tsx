@@ -951,8 +951,6 @@ export function toDateInputValue(date: Date): string {
 }
 
 export function buildInitialFormState(): FormState {
-  const today = new Date();
-
   return {
     gateId: "",
     firstName: "",
@@ -962,15 +960,15 @@ export function buildInitialFormState(): FormState {
     visitorHouseNumber: "",
     visitorPostalCode: "",
     visitorCity: "",
-    nationalityCode: "DE",
+    nationalityCode: "",
     birthDate: "",
     hostName: "",
     hostEmail: "",
     hostPhone: "",
     hostDepartment: "",
     purpose: "",
-    validFrom: toDateInputValue(today),
-    validUntil: toDateInputValue(today),
+    validFrom: "",
+    validUntil: "",
     expectedArrivalTime: "",
     phone: "",
     email: "",

@@ -20,21 +20,17 @@ test("excel import preserves German dates as day-month-year", () => {
   assert.equal(normalizeImportDateOnly("31.02.2026"), null);
 });
 
-test("visitor import template marks required and optional fields in headers", () => {
+test("visitor import template marks every pre-registration field as optional", () => {
   const { getVisitorImportTemplateHeaders } = require("./visitImportDefinitions") as typeof import("./visitImportDefinitions");
   const headers = getVisitorImportTemplateHeaders();
 
-  assert.equal(headers.includes("Vorname [Pflicht]"), true);
-  assert.equal(headers.includes("Nachname [Pflicht]"), true);
-  assert.equal(headers.includes("Firma / Organisation [Pflicht]"), true);
-  assert.equal(headers.includes("Nationalität [Pflicht]"), true);
-  assert.equal(headers.includes("Besuchszweck [Pflicht]"), true);
+  assert.equal(headers.some((header) => header.includes("[Pflicht]")), false);
+  assert.equal(headers.includes("Vorname [Optional]"), true);
+  assert.equal(headers.includes("Nationalität [Optional]"), true);
+  assert.equal(headers.includes("Besuchszweck [Optional]"), true);
   assert.equal(headers.includes("Telefon [Optional]"), true);
   assert.equal(headers.includes("Ansprechpartner E-Mail [Optional]"), true);
-  assert.equal(headers.includes("Straße [Pflicht]"), true);
-  assert.equal(headers.includes("Hausnummer [Pflicht]"), true);
-  assert.equal(headers.includes("PLZ [Pflicht]"), true);
-  assert.equal(headers.includes("Ort [Pflicht]"), true);
+  assert.equal(headers.includes("Straße [Optional]"), true);
 });
 
 test("excel template uses simplified grouped headers", () => {
@@ -43,12 +39,12 @@ test("excel template uses simplified grouped headers", () => {
 
   assert.equal(headers.includes("Wache [Optional]"), false);
   assert.equal(headers.includes("GateId [Optional]"), false);
-  assert.equal(headers.includes("Ausweisart [Pflicht]"), true);
-  assert.equal(headers.includes("Ausweisnummer [Pflicht]"), true);
-  assert.equal(headers.includes("Ansprechpartner Telefon [Pflicht]"), true);
+  assert.equal(headers.includes("Ausweisart [Optional]"), true);
+  assert.equal(headers.includes("Ausweisnummer [Optional]"), true);
+  assert.equal(headers.includes("Ansprechpartner Telefon [Optional]"), true);
 });
 
-test("excel template follows visible public fields and their required status", () => {
+test("excel template ignores obsolete public required flags", () => {
   const { getVisitorImportExcelTemplateHeaders } = require("./visitImportDefinitions") as typeof import("./visitImportDefinitions");
   const headers = getVisitorImportExcelTemplateHeaders([
     { fieldKey: "visitor_first_name", requiredPublic: true },
@@ -56,10 +52,10 @@ test("excel template follows visible public fields and their required status", (
     { fieldKey: "visitor_street", requiredPublic: false }
   ]);
 
-  assert.deepEqual(headers, ["Vorname [Pflicht]", "Straße [Optional]", "E-Mail [Pflicht]"]);
+  assert.deepEqual(headers, ["Vorname [Optional]", "Straße [Optional]", "E-Mail [Optional]"]);
 });
 
-test("excel rows use the same required and format validation as the public form", () => {
+test("excel rows only apply format validation to provided values", () => {
   const { validateImportedPreRegistrationRows } = require("./publicPreRegistrationSchema") as typeof import("./publicPreRegistrationSchema");
   const errors = validateImportedPreRegistrationRows([{
     sourceExcelRowNumber: 7,
@@ -83,7 +79,7 @@ test("excel rows use the same required and format validation as the public form"
   }], new Set(["visitor_street", "valid_from", "valid_until"]));
 
   assert.equal(errors.some((message: string) => message.startsWith("Zeile 7:")), true);
-  assert.equal(errors.some((message: string) => message.includes("Dieses Pflichtfeld ist erforderlich.")), true);
+  assert.equal(errors.some((message: string) => message.includes("Pflichtfeld")), false);
   assert.equal(errors.some((message: string) => message.includes("Ungültige E-Mail-Adresse.")), true);
   assert.equal(errors.some((message: string) => message.includes("Gültig bis darf nicht vor Gültig von liegen.")), true);
 });

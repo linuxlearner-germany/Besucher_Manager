@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { findCountryCode, normalizeCountryCode } from "./countries";
-import { bundeswehrEmailSchema } from "./emailPolicy";
+import { findCountryCode } from "./countries";
+import { ALLOWED_HOST_EMAIL_DOMAIN } from "./emailPolicy";
 import type { ImportVisitInput } from "./visitImportDefinitions";
 
 export const PUBLIC_FIELD_INPUT_MAP = {
@@ -31,67 +31,95 @@ export const PUBLIC_FIELD_INPUT_MAP = {
 
 export type PublicFieldKey = keyof typeof PUBLIC_FIELD_INPUT_MAP;
 
-const defaultRequiredFieldKeys = new Set<PublicFieldKey>([
-  "visitor_first_name",
-  "visitor_last_name",
-  "visitor_company",
-  "visitor_nationality",
-  "host_name",
-  "host_phone",
-  "visit_purpose",
-  "valid_from",
-  "valid_until",
-]);
+export function resolvePublicPreRegistrationValidity(
+  validFrom: string | null | undefined,
+  validUntil: string | null | undefined,
+  now: Date = new Date()
+): { validFrom: string; validUntil: string } {
+  const fallbackDate = now.toISOString().slice(0, 10);
+  const normalizedFrom = normalizeText(validFrom) || fallbackDate;
+  return {
+    validFrom: normalizedFrom,
+    validUntil: normalizeText(validUntil) || normalizedFrom
+  };
+}
 
-export function createPublicPreRegistrationSchema(requiredFieldKeys: ReadonlySet<PublicFieldKey> = defaultRequiredFieldKeys) {
+function normalizeText(value: unknown): string {
+  return typeof value === "string" ? value.trim().replace(/\s+/g, " ") : "";
+}
+
+function optionalText(maxLength?: number) {
+  const schema = z.preprocess((value) => value ?? "", z.string()).transform(normalizeText);
+  return maxLength === undefined
+    ? schema
+    : schema.pipe(z.string().max(maxLength));
+}
+
+function optionalEmail(message: string) {
+  return z.preprocess((value) => value ?? "", z.string()).transform((value) => value.replace(/\s+/g, "").toLowerCase()).superRefine((value, context) => {
+    if (!value) return;
+    const parsed = z.string().email().safeParse(value);
+    if (!parsed.success) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message });
+    }
+  });
+}
+
+const optionalHostEmail = optionalEmail("Ungültige E-Mail-Adresse.").superRefine((value, context) => {
+  if (value && !value.endsWith(`@${ALLOWED_HOST_EMAIL_DOMAIN}`)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `Die Anmelder-E-Mail muss auf @${ALLOWED_HOST_EMAIL_DOMAIN} enden.`
+    });
+  }
+});
+
+export function createPublicPreRegistrationSchema(_requiredFieldKeys: ReadonlySet<PublicFieldKey> = new Set()) {
   return z
   .object({
-    gateId: z.string().uuid().optional().or(z.literal("")),
-    firstName: z.string().trim().max(120).optional().default(""),
-    lastName: z.string().trim().max(120).optional().default(""),
-    company: z.string().trim().max(255).optional().default(""),
-    visitorStreet: z.string().trim().max(255).optional().default(""),
-    visitorHouseNumber: z.string().trim().max(40).optional().default(""),
-    visitorPostalCode: z.string().trim().max(20).optional().default(""),
-    visitorCity: z.string().trim().max(120).optional().default(""),
-    nationalityCode: z.string().trim().optional().transform((value, context) => {
+    gateId: optionalText().superRefine((value, context) => {
+      if (value && !z.string().uuid().safeParse(value).success) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "Die ausgewählte Wache ist ungültig." });
+      }
+    }),
+    firstName: optionalText(120),
+    lastName: optionalText(120),
+    company: optionalText(255),
+    visitorStreet: optionalText(255),
+    visitorHouseNumber: optionalText(40),
+    visitorPostalCode: optionalText(20),
+    visitorCity: optionalText(120),
+    nationalityCode: optionalText().transform((value, context) => {
       if (!value) return null;
-      const code = normalizeCountryCode(value);
+      const code = findCountryCode(value);
       if (!code) {
         context.addIssue({ code: z.ZodIssueCode.custom, message: "Bitte eine gültige Nationalität auswählen." });
         return z.NEVER;
       }
       return code;
     }),
-    hostName: z.string().trim().max(255).optional().default(""),
-    hostEmail: bundeswehrEmailSchema.optional().or(z.literal("")),
-    hostPhone: z.string().trim().max(80).optional().default(""),
-    hostDepartment: z.string().trim().optional(),
-    purpose: z.string().trim().max(500).optional().default(""),
-    validFrom: z.string().trim().optional().default(""),
-    validUntil: z.string().trim().optional().default(""),
-    expectedArrivalTime: z.string().trim().regex(/^$|^([01]\d|2[0-3]):[0-5]\d$/, "Bitte eine gültige Ankunftszeit angeben.").optional().default(""),
-    birthDate: z.string().trim().optional().or(z.literal("")),
-    phone: z.string().trim().optional(),
-    email: z.string().trim().email("Ungültige E-Mail-Adresse.").optional().or(z.literal("")),
-    licensePlate: z.string().trim().optional(),
-    idDocumentType: z.enum(["identity_card", "passport", "service_id", "other"]).optional().or(z.literal("")),
-    idDocumentValidUntil: z.string().trim().optional().default(""),
-    idDocumentNumber: z.string().trim().max(120).optional().default(""),
-    notes: z.string().trim().optional()
+    hostName: optionalText(255),
+    hostEmail: optionalHostEmail,
+    hostPhone: optionalText(80),
+    hostDepartment: optionalText(255),
+    purpose: optionalText(500),
+    validFrom: optionalText(),
+    validUntil: optionalText(),
+    expectedArrivalTime: optionalText().superRefine((value, context) => {
+      if (value && !/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: "Bitte eine gültige Ankunftszeit angeben." });
+      }
+    }),
+    birthDate: optionalText(),
+    phone: optionalText(80),
+    email: optionalEmail("Ungültige E-Mail-Adresse."),
+    licensePlate: optionalText(40),
+    idDocumentType: z.enum(["identity_card", "passport", "service_id", "other"]).optional().or(z.literal("")).default(""),
+    idDocumentValidUntil: optionalText(),
+    idDocumentNumber: optionalText(120),
+    notes: optionalText()
   })
   .superRefine((value, context) => {
-    for (const fieldKey of requiredFieldKeys) {
-      const inputKey = PUBLIC_FIELD_INPUT_MAP[fieldKey];
-      if (!String(value[inputKey] ?? "").trim()) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: [inputKey],
-          message: "Dieses Pflichtfeld ist erforderlich."
-        });
-      }
-    }
-
     const validFrom = new Date(value.validFrom);
     const validUntil = new Date(value.validUntil);
 

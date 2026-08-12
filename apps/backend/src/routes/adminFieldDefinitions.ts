@@ -253,7 +253,7 @@ adminFieldDefinitionsRouter.post("/api/admin/field-definitions/import", async (r
           .input("showInGuard", sql.Bit, field.showInGuard)
           .input("showInSibe", sql.Bit, field.showInSibe)
           .input("showOnBadge", sql.Bit, field.showOnBadge)
-          .input("requiredPublic", sql.Bit, field.showInPublic ? field.requiredPublic : false)
+          .input("requiredPublic", sql.Bit, false)
           .input("requiredGuardCheckin", sql.Bit, field.showInGuard ? field.requiredGuardCheckin : false)
           .input("requiredBeforePrint", sql.Bit, field.showInGuard ? field.requiredBeforePrint : false)
           .input("sortOrder", sql.Int, field.sortOrder)

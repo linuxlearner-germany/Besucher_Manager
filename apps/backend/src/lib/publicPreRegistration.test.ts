@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createPublicPreRegistrationSchema, publicPreRegistrationSchema } from "./publicPreRegistrationSchema";
+import {
+  createPublicPreRegistrationSchema,
+  publicPreRegistrationSchema,
+  resolvePublicPreRegistrationValidity
+} from "./publicPreRegistrationSchema";
 
 const idDocumentFields = {
   visitorStreet: "Musterstraße",
@@ -122,21 +126,36 @@ test("public pre-registration only accepts Bundeswehr address for the registrant
   assert.equal(result.success, false);
 });
 
-test("public pre-registration validates required fields without requiring gate", () => {
+test("public pre-registration accepts a completely empty request", () => {
+  const result = publicPreRegistrationSchema.safeParse({});
+
+  assert.equal(result.success, true);
+  if (result.success) {
+    assert.equal(result.data.firstName, "");
+    assert.equal(result.data.gateId, "");
+    assert.equal(result.data.nationalityCode, null);
+    assert.equal(result.data.validFrom, "");
+  }
+});
+
+test("empty validity fields receive a storage-safe same-day fallback", () => {
+  assert.deepEqual(resolvePublicPreRegistrationValidity("", "", new Date("2026-08-12T12:00:00.000Z")), {
+    validFrom: "2026-08-12",
+    validUntil: "2026-08-12"
+  });
+  assert.deepEqual(resolvePublicPreRegistrationValidity(" 2026-08-20 ", ""), {
+    validFrom: "2026-08-20",
+    validUntil: "2026-08-20"
+  });
+});
+
+test("public pre-registration accepts a request with only one field", () => {
   const result = publicPreRegistrationSchema.safeParse({
-    firstName: "Max",
-    lastName: "Mustermann",
-    company: "Test GmbH",
-    hostName: "Sabine Keller",
-    hostPhone: "",
-    hostDepartment: "",
-    purpose: "",
-    validFrom: "2026-05-21T08:00:00.000Z",
-    validUntil: "2026-05-21T10:00:00.000Z",
-    ...idDocumentFields
+    purpose: "  Besprechung  "
   });
 
-  assert.equal(result.success, false);
+  assert.equal(result.success, true);
+  if (result.success) assert.equal(result.data.purpose, "Besprechung");
 });
 
 test("public pre-registration rejects future birth dates", () => {
@@ -157,7 +176,7 @@ test("public pre-registration rejects future birth dates", () => {
   assert.equal(result.success, false);
 });
 
-test("public pre-registration allows empty department but requires host phone", () => {
+test("public pre-registration allows empty department and empty host phone", () => {
   const withoutDepartment = publicPreRegistrationSchema.safeParse({
     firstName: "Max",
     lastName: "Mustermann",
@@ -183,12 +202,12 @@ test("public pre-registration allows empty department but requires host phone", 
     validUntil: "2026-05-21T10:00:00.000Z",
     ...idDocumentFields
   });
-  assert.equal(withoutHostPhone.success, false);
+  assert.equal(withoutHostPhone.success, true);
 });
 
-test("public pre-registration only requires fields selected by field configuration", () => {
+test("public field configuration cannot make a pre-registration field mandatory", () => {
   const schema = createPublicPreRegistrationSchema(new Set(["visitor_nationality"]));
-  const result = schema.safeParse({ nationalityCode: "DE" });
+  const result = schema.safeParse({});
 
   assert.equal(result.success, true);
 });
@@ -209,7 +228,7 @@ test("public pre-registration allows address and document data to be omitted by 
   assert.equal(result.success, true);
 });
 
-test("public pre-registration validates the complete structured address when configured", () => {
+test("public pre-registration keeps structured address fields optional when configured", () => {
   const schema = createPublicPreRegistrationSchema(new Set([
     "visitor_street",
     "visitor_house_number",
@@ -229,7 +248,7 @@ test("public pre-registration validates the complete structured address when con
   });
 
   assert.equal(complete.success, true);
-  assert.equal(missingPostalCode.success, false);
+  assert.equal(missingPostalCode.success, true);
 });
 
 test("public pre-registration allows omitted nationality when it is not configured", () => {
@@ -237,4 +256,22 @@ test("public pre-registration allows omitted nationality when it is not configur
   const result = schema.safeParse({});
 
   assert.equal(result.success, true);
+});
+
+test("public pre-registration normalizes harmless formatting differences", () => {
+  for (const phone of ["01234 567890", "01234-567890", "01234567890", " (01234) 567 890 "]) {
+    const result = publicPreRegistrationSchema.safeParse({
+      firstName: "  Max   Maria  ",
+      phone,
+      hostEmail: " SABINE.KELLER @ BUNDESWEHR.ORG ",
+      nationalityCode: " deutschland "
+    });
+    assert.equal(result.success, true);
+    if (result.success) {
+      assert.equal(result.data.firstName, "Max Maria");
+      assert.equal(result.data.phone, phone.trim().replace(/\s+/g, " "));
+      assert.equal(result.data.hostEmail, "sabine.keller@bundeswehr.org");
+      assert.equal(result.data.nationalityCode, "DE");
+    }
+  }
 });

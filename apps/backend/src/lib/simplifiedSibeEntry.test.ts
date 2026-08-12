@@ -73,7 +73,7 @@ test("only the SiBe role can use simplified entry", () => {
   assert.equal(canCreateSimplifiedSibeEntry(sibe), true);
 });
 
-test("a client flag cannot enable simplified validation for the public schema", () => {
+test("obsolete required configuration cannot make public fields mandatory", () => {
   const publicSchema = createPublicPreRegistrationSchema(new Set(["visitor_first_name", "visitor_last_name"]));
   const parsed = publicSchema.safeParse({
     simplified: true,
@@ -83,5 +83,5 @@ test("a client flag cannot enable simplified validation for the public schema", 
     validUntil: "2026-08-10"
   });
 
-  assert.equal(parsed.success, false);
+  assert.equal(parsed.success, true);
 });

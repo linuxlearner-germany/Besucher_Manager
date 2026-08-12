@@ -5,11 +5,8 @@ import { env } from "../config/env";
 import { clearSessionCookie, setSessionCookie } from "../lib/authSession";
 import { createPreRegistration, findActiveGateById, listActiveGates } from "../lib/publicPreRegistrations";
 import {
-  createPublicPreRegistrationSchema,
-  PUBLIC_FIELD_INPUT_MAP,
-  type PublicFieldKey
+  createPublicPreRegistrationSchema
 } from "../lib/publicPreRegistrationSchema";
-import { listFieldDefinitions } from "../lib/fieldDefinitions";
 import { checkRateLimit } from "../lib/rateLimit";
 import { findUserById, findUserForLogin, hashPassword, verifyPassword } from "../lib/users";
 import { ImportValidationError, createImportedPreRegistrations } from "../lib/visitImport";
@@ -61,10 +58,18 @@ const passwordChangeSchema = z.object({
     });
   }
 });
+const normalizedOptionalHostEmailSchema = z.preprocess(
+  (value) => typeof value === "string" ? value.replace(/\s+/g, "").toLowerCase() : value,
+  bundeswehrEmailSchema.optional().or(z.literal(""))
+);
+const normalizedOptionalEmailSchema = z.preprocess(
+  (value) => typeof value === "string" ? value.replace(/\s+/g, "").toLowerCase() : value,
+  z.string().email("Ungueltige E-Mail-Adresse.").optional().or(z.literal(""))
+);
 const publicGroupPreRegistrationSchema = z.object({
-  gateId: z.string().uuid("Bitte eine Wache auswählen."),
+  gateId: z.string().trim().uuid("Die ausgewählte Wache ist ungültig.").optional().or(z.literal("")),
   hostName: z.string().trim().optional().or(z.literal("")),
-  hostEmail: bundeswehrEmailSchema,
+  hostEmail: normalizedOptionalHostEmailSchema,
   hostPhone: z.string().trim().optional().or(z.literal("")),
   hostDepartment: z.string().trim().optional().or(z.literal("")),
   purpose: z.string().trim().optional().or(z.literal("")),
@@ -75,7 +80,8 @@ const publicGroupPreRegistrationSchema = z.object({
     firstName: z.string().trim().optional().or(z.literal("")),
     lastName: z.string().trim().optional().or(z.literal("")),
     company: z.string().trim().optional().or(z.literal("")),
-    nationalityCode: z.string().trim().transform((value, context) => {
+    nationalityCode: z.string().trim().optional().or(z.literal("")).transform((value, context) => {
+      if (!value) return null;
       const code = normalizeCountryCode(value);
       if (!code) {
         context.addIssue({ code: z.ZodIssueCode.custom, message: "Bitte eine gültige Nationalität auswählen." });
@@ -89,40 +95,13 @@ const publicGroupPreRegistrationSchema = z.object({
     visitorPostalCode: z.string().trim().max(20).optional().or(z.literal("")),
     visitorCity: z.string().trim().max(120).optional().or(z.literal("")),
     phone: z.string().trim().optional().or(z.literal("")),
-    email: z.string().trim().email("Ungueltige E-Mail-Adresse.").optional().or(z.literal("")),
+    email: normalizedOptionalEmailSchema,
     licensePlate: z.string().trim().optional().or(z.literal("")),
     idDocumentType: z.enum(["identity_card", "passport", "service_id", "other"]).optional().or(z.literal("")),
     idDocumentValidUntil: z.string().trim().optional().or(z.literal("")),
     idDocumentNumber: z.string().trim().optional().or(z.literal(""))
   })).min(1).max(50)
 });
-const publicGroupSharedFieldMap = {
-  host_name: "hostName",
-  host_email: "hostEmail",
-  host_phone: "hostPhone",
-  host_department: "hostDepartment",
-  visit_purpose: "purpose",
-  valid_from: "validFrom",
-  valid_until: "validUntil",
-  visit_note: "notes"
-} as const;
-const publicGroupVisitorFieldMap = {
-  visitor_first_name: "firstName",
-  visitor_last_name: "lastName",
-  visitor_company: "company",
-  visitor_street: "visitorStreet",
-  visitor_house_number: "visitorHouseNumber",
-  visitor_postal_code: "visitorPostalCode",
-  visitor_city: "visitorCity",
-  visitor_nationality: "nationalityCode",
-  visitor_birth_date: "birthDate",
-  visitor_phone: "phone",
-  visitor_email: "email",
-  visitor_license_plate: "licensePlate",
-  id_document_type: "idDocumentType",
-  id_document_valid_until: "idDocumentValidUntil",
-  id_document_number: "idDocumentNumber"
-} as const;
 
 export const apiRouter = Router();
 
@@ -279,50 +258,16 @@ apiRouter.post("/api/public/pre-registrations/group", async (request, response) 
   }
 
   try {
-    const gateId = parsed.data.gateId?.trim();
-    if (!gateId) {
-      return sendValidationError(response, { fieldErrors: { gateId: ["Bitte eine Wache auswählen."] } });
-    }
-
-    const gate = await findActiveGateById(gateId);
-    if (!gate) {
+    const gateId = parsed.data.gateId?.trim() || null;
+    const gate = gateId ? await findActiveGateById(gateId) : null;
+    if (gateId && !gate) {
       return sendValidationError(response, { fieldErrors: { gateId: ["Die ausgewählte Wache ist nicht verfügbar."] } });
-    }
-
-    const definitions = await listFieldDefinitions("public");
-    const requiredDefinitions = definitions.filter((field) => field.requiredPublic);
-    const supportedKeys = new Set(Object.keys(PUBLIC_FIELD_INPUT_MAP));
-    const requiredPublicFieldKeys = new Set<PublicFieldKey>(
-      requiredDefinitions
-        .filter((field) => supportedKeys.has(field.fieldKey))
-        .map((field) => field.fieldKey as PublicFieldKey)
-    );
-    const missingFields: string[] = [];
-
-    for (const field of requiredDefinitions) {
-      const sharedInput = publicGroupSharedFieldMap[field.fieldKey as keyof typeof publicGroupSharedFieldMap];
-      if (sharedInput && !String(parsed.data[sharedInput] ?? "").trim()) {
-        missingFields.push(`${field.label} fehlt.`);
-      }
-
-      const visitorInput = publicGroupVisitorFieldMap[field.fieldKey as keyof typeof publicGroupVisitorFieldMap];
-      if (visitorInput) {
-        parsed.data.visitors.forEach((visitor, index) => {
-          if (!String(visitor[visitorInput] ?? "").trim()) {
-            missingFields.push(`Zeile ${index + 1}: ${field.label} fehlt.`);
-          }
-        });
-      }
-    }
-
-    if (missingFields.length > 0) {
-      return sendValidationError(response, { fieldErrors: { visitors: missingFields } });
     }
 
     const created = await createImportedPreRegistrations(
       parsed.data.visitors.map((visitor) => ({
         ...visitor,
-        gateId: parsed.data.gateId,
+        gateId,
         hostName: parsed.data.hostName,
         hostEmail: parsed.data.hostEmail,
         hostPhone: parsed.data.hostPhone,
@@ -336,8 +281,7 @@ apiRouter.post("/api/public/pre-registrations/group", async (request, response) 
         source: "public_group_form",
         submittedIpAddress: request.ip || request.socket.remoteAddress || null,
         userAgent: typeof request.headers["user-agent"] === "string" ? request.headers["user-agent"] : null,
-        fallbackGateId: parsed.data.gateId,
-        requiredPublicFieldKeys
+        fallbackGateId: gateId
       }
     );
     if (parsed.data.hostEmail) {
@@ -469,31 +413,20 @@ apiRouter.post("/api/public/pre-registrations", async (request, response) => {
   }
 
   try {
-    const definitions = await listFieldDefinitions("public");
-    const supportedKeys = new Set(Object.keys(PUBLIC_FIELD_INPUT_MAP));
-    const requiredKeys = new Set<PublicFieldKey>(
-      definitions
-        .filter((field) => field.requiredPublic && supportedKeys.has(field.fieldKey))
-        .map((field) => field.fieldKey as PublicFieldKey)
-    );
-    const parsed = createPublicPreRegistrationSchema(requiredKeys).safeParse(request.body);
+    const parsed = createPublicPreRegistrationSchema().safeParse(request.body ?? {});
     if (!parsed.success) {
       return sendValidationError(response, parsed.error.flatten());
     }
 
-    const gateId = parsed.data.gateId?.trim();
-    if (!gateId) {
-      return sendValidationError(response, { fieldErrors: { gateId: ["Bitte eine Wache auswählen."] } });
-    }
-
-    const gate = await findActiveGateById(gateId);
-    if (!gate) {
+    const gateId = parsed.data.gateId?.trim() || null;
+    const gate = gateId ? await findActiveGateById(gateId) : null;
+    if (gateId && !gate) {
       return sendValidationError(response, { fieldErrors: { gateId: ["Die ausgewählte Wache ist nicht verfügbar."] } });
     }
 
     const created = await createPreRegistration({
       ...parsed.data,
-      gateId,
+      gateId: gateId ?? "",
       submittedIpAddress: request.ip || request.socket.remoteAddress || null,
       userAgent: typeof request.headers["user-agent"] === "string" ? request.headers["user-agent"] : null
     });

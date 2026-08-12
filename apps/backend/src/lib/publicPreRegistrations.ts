@@ -4,7 +4,7 @@ import { writeAuditLog } from "./auditLog";
 import { getPool } from "./db";
 import { generateUniqueBadgeNumber } from "./badgeAllocation";
 import { dateOnlyEnd, dateOnlyStart } from "./dateOnly";
-import type { PublicPreRegistrationInput } from "./publicPreRegistrationSchema";
+import { resolvePublicPreRegistrationValidity, type PublicPreRegistrationInput } from "./publicPreRegistrationSchema";
 import { cleanOptional } from "./textValues";
 import { VISIT_STATUS } from "./visitWorkflow";
 
@@ -69,9 +69,7 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
     const gateId = cleanOptional(input.gateId);
     const gate = gateId ? await findActiveGateById(gateId) : null;
     const badgeNumber = await generateUniqueBadgeNumber(transaction);
-    const fallbackDate = new Date().toISOString().slice(0, 10);
-    const validFrom = input.validFrom || fallbackDate;
-    const validUntil = input.validUntil || validFrom;
+    const { validFrom, validUntil } = resolvePublicPreRegistrationValidity(input.validFrom, input.validUntil);
     const validFromDate = dateOnlyStart(validFrom);
     const validUntilDate = dateOnlyEnd(validUntil);
     const expectedArrivalTime = cleanOptional(input.expectedArrivalTime);
