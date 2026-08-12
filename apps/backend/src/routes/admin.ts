@@ -127,6 +127,14 @@ const userCreateSchema = z.object({
     });
   }
 
+  if (value.role === "guard" && !value.gateId) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["gateId"],
+      message: "Fuer ein Wache-Konto muss eine aktive Wache ausgewaehlt werden."
+    });
+  }
+
   if (value.role !== "custom" && value.permissions) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
@@ -1018,6 +1026,17 @@ adminRouter.post("/api/admin/users", async (request, response) => {
       return sendError(response, 409, "CONFLICT", "Ein Benutzer mit diesem Namen existiert bereits.");
     }
 
+    let gateId: string | null = null;
+    if (data.role === "guard") {
+      const activeGate = await pool.request()
+        .input("gateId", sql.UniqueIdentifier, data.gateId)
+        .query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.gates WHERE id = @gateId AND is_active = 1");
+      if ((activeGate.recordset[0]?.count ?? 0) === 0) {
+        return sendError(response, 400, "VALIDATION_ERROR", "Die ausgewaehlte Wache existiert nicht oder ist inaktiv.");
+      }
+      gateId = data.gateId ?? null;
+    }
+
     const transaction = new sql.Transaction(pool);
     await transaction.begin();
 
@@ -1030,7 +1049,7 @@ adminRouter.post("/api/admin/users", async (request, response) => {
       .input("email", sql.NVarChar(255), data.email?.trim().toLowerCase() || null)
       .input("passwordHash", passwordHash)
       .input("role", data.role)
-      .input("gateId", sql.UniqueIdentifier, null)
+      .input("gateId", sql.UniqueIdentifier, gateId)
       .input("isActive", data.isActive ?? true)
       .input("permissionsJson", sql.NVarChar(sql.MAX), permissionsJson)
       .query<{ id: string }>(`
@@ -1075,7 +1094,20 @@ adminRouter.put("/api/admin/users/:id", async (request, response) => {
 
     const nextRole = data.role ?? currentUser.role;
     const nextActive = data.isActive ?? currentUser.isActive;
-    const nextGateId = null;
+    const requestedGateId = data.gateId !== undefined ? data.gateId : currentUser.gateId;
+    let nextGateId: string | null = null;
+    if (nextRole === "guard") {
+      if (!requestedGateId) {
+        return sendError(response, 400, "VALIDATION_ERROR", "Fuer ein Wache-Konto muss eine aktive Wache ausgewaehlt werden.");
+      }
+      const activeGate = await pool.request()
+        .input("gateId", sql.UniqueIdentifier, requestedGateId)
+        .query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.gates WHERE id = @gateId AND is_active = 1");
+      if ((activeGate.recordset[0]?.count ?? 0) === 0) {
+        return sendError(response, 400, "VALIDATION_ERROR", "Die ausgewaehlte Wache existiert nicht oder ist inaktiv.");
+      }
+      nextGateId = requestedGateId;
+    }
     const nextUsername = data.username ?? currentUser.username;
     const { menuAccessByUserId } = await loadUserGroupsAndMenuAccess([request.params.id]);
     const currentMenuAccess = normalizeMenuAccess(

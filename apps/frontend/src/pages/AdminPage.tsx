@@ -327,7 +327,7 @@ export function AdminPage() {
           email: newUser.email,
           password: newUser.password,
           role: newUser.role,
-          gateId: null,
+          gateId: newUser.role === "guard" ? newUser.gateId || null : null,
           groups: parseGroupText(newUser.groupsText),
           menuAccess: newUser.menuAccess,
           ...(newUser.role === "custom" ? { permissions: newUser.permissions } : {})
@@ -584,6 +584,10 @@ export function AdminPage() {
   async function saveUser(userId: string) {
     const adminUser = editableUsers[userId];
     if (!adminUser) return;
+    if (adminUser.role === "guard" && !adminUser.gateId) {
+      setUserSaveState({ userId, kind: "error", message: "Für ein Wache-Konto muss eine Wache ausgewählt werden." });
+      return;
+    }
     if (adminUser.role === "sibe" && !adminUser.email?.trim()) {
       setUserSaveState({ userId, kind: "error", message: "Für SiBe ist eine E-Mail-Adresse erforderlich." });
       return;
@@ -597,7 +601,7 @@ export function AdminPage() {
           displayName: adminUser.displayName,
           email: adminUser.email || "",
           role: adminUser.role,
-          gateId: null,
+          gateId: adminUser.role === "guard" ? adminUser.gateId || null : null,
           isActive: adminUser.isActive,
           groups: parseGroupText(adminUser.groupsText),
           menuAccess: adminUser.menuAccess,
@@ -1030,6 +1034,7 @@ export function AdminPage() {
           <AdminUsersSection
             newUser={newUser}
             setNewUser={setNewUser}
+            gates={gates}
             menuOptions={menuOptions}
             permissionGroups={permissionGroups}
             createUser={createUser}

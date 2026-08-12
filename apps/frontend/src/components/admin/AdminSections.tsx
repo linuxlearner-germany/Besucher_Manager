@@ -173,6 +173,7 @@ export function AdminGatesSection({
 export function AdminUsersSection({
   newUser,
   setNewUser,
+  gates,
   menuOptions,
   permissionGroups,
   createUser,
@@ -224,6 +225,7 @@ export function AdminUsersSection({
     menuAccess: AppMenuKey[];
     permissions: UserPermissions;
   }>>;
+  gates: AdminGate[];
   menuOptions: Array<{ key: AppMenuKey; label: string }>;
   permissionGroups: Array<{ title: string; items: Array<{ key: AppPermission; label: string }> }>;
   createUser: (event: FormEvent<HTMLFormElement>) => Promise<void>;
@@ -329,6 +331,14 @@ export function AdminUsersSection({
               <option value="custom">Benutzerdefiniert</option>
             </select>
           </FormField>
+          {newUser.role === "guard" ? (
+            <FormField label="Zugeordnete Wache" required>
+              <select required value={newUser.gateId} onChange={(event) => setNewUser((current) => ({ ...current, gateId: event.target.value }))}>
+                <option value="">Wache auswählen</option>
+                {gates.filter((gate) => gate.isActive).map((gate) => <option key={gate.id} value={gate.id}>{gate.name}</option>)}
+              </select>
+            </FormField>
+          ) : null}
           <FormField label="Gruppen">
             <textarea rows={3} placeholder="z. B. Werkschutz, Schicht A" value={newUser.groupsText} onChange={(event) => setNewUser((current) => ({ ...current, groupsText: event.target.value }))} />
           </FormField>
@@ -456,7 +466,7 @@ export function AdminUsersSection({
         </div>
         <div className="table-wrap">
           <table className="data-table admin-table-compact admin-users-table">
-          <thead><tr><th>Benutzername</th><th>Anzeigename</th><th>E-Mail</th><th>Rolle</th><th>Status</th><th>Menüzugriffe</th><th>Rechte</th><th>Aktion</th></tr></thead>
+          <thead><tr><th>Benutzername</th><th>Anzeigename</th><th>E-Mail</th><th>Rolle</th><th>Wache</th><th>Status</th><th>Menüzugriffe</th><th>Rechte</th><th>Aktion</th></tr></thead>
           <tbody>
             {users.map((entry) => (
               <tr key={entry.id}>
@@ -464,6 +474,7 @@ export function AdminUsersSection({
                 <td>{entry.displayName}</td>
                 <td>{entry.email || "—"}</td>
                 <td>{formatRoleLabel(entry.role)}</td>
+                <td>{gates.find((gate) => gate.id === entry.gateId)?.name || "—"}</td>
                 <td><span className={entry.isActive ? "badge status-active" : "badge status-cancelled"}>{entry.isActive ? "Aktiv" : "Inaktiv"}</span></td>
                 <td className="truncate-cell" title={summarizeMenuAccess(entry.menuAccess)}>{summarizeMenuAccess(entry.menuAccess)}</td>
                 <td className="truncate-cell" title={summarizePermissions(editableUsers[entry.id] || entry as EditableAdminUser)}>{summarizePermissions(editableUsers[entry.id] || entry as EditableAdminUser)}</td>
@@ -511,6 +522,14 @@ export function AdminUsersSection({
                 <option value="custom">Benutzerdefiniert</option>
               </select>
             </FormField>
+            {selectedUser.role === "guard" ? (
+              <FormField label="Zugeordnete Wache" required>
+                <select required value={selectedUser.gateId || ""} onChange={(event) => setEditableUsers((current) => ({ ...current, [selectedUser.id]: { ...selectedUser, gateId: event.target.value || null } }))}>
+                  <option value="">Wache auswählen</option>
+                  {gates.filter((gate) => gate.isActive || gate.id === selectedUser.gateId).map((gate) => <option key={gate.id} value={gate.id}>{gate.name}{gate.isActive ? "" : " (inaktiv)"}</option>)}
+                </select>
+              </FormField>
+            ) : null}
             <FormField label="Gruppen">
               <textarea rows={3} value={selectedUser.groupsText} onChange={(event) => updateEditableUserGroups(selectedUser.id, event.target.value)} />
             </FormField>
