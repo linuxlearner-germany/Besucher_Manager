@@ -173,6 +173,7 @@ export function AdminGatesSection({
 export function AdminUsersSection({
   newUser,
   setNewUser,
+  gates,
   menuOptions,
   permissionGroups,
   createUser,
@@ -200,6 +201,7 @@ export function AdminUsersSection({
   saveUser,
   userSaveState,
   toggleUserActive,
+  deleteUser,
   currentUserId
 }: {
   newUser: {
@@ -208,6 +210,7 @@ export function AdminUsersSection({
     email: string;
     password: string;
     role: AdminUser["role"];
+    roles: AdminUser["roles"];
     gateId: string;
     groupsText: string;
     menuAccess: AppMenuKey[];
@@ -219,11 +222,13 @@ export function AdminUsersSection({
     email: string;
     password: string;
     role: AdminUser["role"];
+    roles: AdminUser["roles"];
     gateId: string;
     groupsText: string;
     menuAccess: AppMenuKey[];
     permissions: UserPermissions;
   }>>;
+  gates: AdminGate[];
   menuOptions: Array<{ key: AppMenuKey; label: string }>;
   permissionGroups: Array<{ title: string; items: Array<{ key: AppPermission; label: string }> }>;
   createUser: (event: FormEvent<HTMLFormElement>) => Promise<void>;
@@ -255,6 +260,7 @@ export function AdminUsersSection({
     message: string;
   } | null;
   toggleUserActive: (userId: string, active: boolean) => Promise<void>;
+  deleteUser: (userId: string) => Promise<void>;
   currentUserId?: string;
 }) {
   const selectedUser = selectedUserId ? editableUsers[selectedUserId] : null;
@@ -300,8 +306,8 @@ export function AdminUsersSection({
           <FormField label="Anzeigename">
             <input placeholder="Anzeigename" value={newUser.displayName} onChange={(event) => setNewUser((current) => ({ ...current, displayName: event.target.value }))} />
           </FormField>
-          <FormField label={newUser.role === "sibe" ? "E-Mail" : "E-Mail (optional)"} required={newUser.role === "sibe"}>
-            <input required={newUser.role === "sibe"} type="email" placeholder="name@firma.de" value={newUser.email} onChange={(event) => setNewUser((current) => ({ ...current, email: event.target.value }))} />
+          <FormField label={newUser.roles.includes("sibe") ? "E-Mail" : "E-Mail (optional)"} required={newUser.roles.includes("sibe")}>
+            <input required={newUser.roles.includes("sibe")} type="email" placeholder="name@firma.de" value={newUser.email} onChange={(event) => setNewUser((current) => ({ ...current, email: event.target.value }))} />
           </FormField>
           <FormField label="Passwort" required>
             <input required type="password" placeholder="Mindestens 8 Zeichen" value={newUser.password} onChange={(event) => setNewUser((current) => ({ ...current, password: event.target.value }))} />
@@ -314,6 +320,7 @@ export function AdminUsersSection({
                 setNewUser((current) => ({
                   ...current,
                   role,
+                  roles: [role],
                   gateId: "",
                   menuAccess: getAllowedMenuAccessForRole(role),
                   permissions: role === "custom"
@@ -329,6 +336,7 @@ export function AdminUsersSection({
               <option value="custom">Benutzerdefiniert</option>
             </select>
           </FormField>
+          {newUser.role === "sibe" || newUser.role === "kaskdt" ? <label className="checkbox-row"><input type="checkbox" checked={newUser.roles.length === 2} onChange={(event) => setNewUser((current) => ({ ...current, roles: event.target.checked ? ["sibe", "kaskdt"] : [current.role], menuAccess: event.target.checked ? Array.from(new Set([...getAllowedMenuAccessForRole("sibe"), ...getAllowedMenuAccessForRole("kaskdt")])) : getAllowedMenuAccessForRole(current.role) }))} /> Doppelrolle SiBe + KasKdt</label> : null}
           <FormField label="Gruppen">
             <textarea rows={3} placeholder="z. B. Werkschutz, Schicht A" value={newUser.groupsText} onChange={(event) => setNewUser((current) => ({ ...current, groupsText: event.target.value }))} />
           </FormField>
@@ -456,14 +464,15 @@ export function AdminUsersSection({
         </div>
         <div className="table-wrap">
           <table className="data-table admin-table-compact admin-users-table">
-          <thead><tr><th>Benutzername</th><th>Anzeigename</th><th>E-Mail</th><th>Rolle</th><th>Status</th><th>Menüzugriffe</th><th>Rechte</th><th>Aktion</th></tr></thead>
+          <thead><tr><th>Benutzername</th><th>Anzeigename</th><th>E-Mail</th><th>Rolle</th><th>Wache</th><th>Status</th><th>Menüzugriffe</th><th>Rechte</th><th>Aktion</th></tr></thead>
           <tbody>
             {users.map((entry) => (
               <tr key={entry.id}>
                 <td>{entry.username}</td>
                 <td>{entry.displayName}</td>
                 <td>{entry.email || "—"}</td>
-                <td>{formatRoleLabel(entry.role)}</td>
+                <td>{(entry.roles?.length ? entry.roles : [entry.role]).map(formatRoleLabel).join(" + ")}</td>
+                <td>Wird bei Anmeldung gewählt</td>
                 <td><span className={entry.isActive ? "badge status-active" : "badge status-cancelled"}>{entry.isActive ? "Aktiv" : "Inaktiv"}</span></td>
                 <td className="truncate-cell" title={summarizeMenuAccess(entry.menuAccess)}>{summarizeMenuAccess(entry.menuAccess)}</td>
                 <td className="truncate-cell" title={summarizePermissions(editableUsers[entry.id] || entry as EditableAdminUser)}>{summarizePermissions(editableUsers[entry.id] || entry as EditableAdminUser)}</td>
@@ -473,6 +482,7 @@ export function AdminUsersSection({
                     <button className={entry.isActive ? "danger-button" : "secondary-button"} type="button" onClick={() => void toggleUserActive(entry.id, entry.isActive)} disabled={currentUserId === entry.id}>
                       {entry.isActive ? "Zugang sperren" : "Zugang freigeben"}
                     </button>
+                    <button className="danger-button" type="button" onClick={() => void deleteUser(entry.id)} disabled={currentUserId === entry.id}>Löschen</button>
                   </div>
                 </td>
               </tr>
@@ -496,8 +506,8 @@ export function AdminUsersSection({
             <FormField label="Anzeigename">
               <input value={selectedUser.displayName} onChange={(event) => setEditableUsers((current) => ({ ...current, [selectedUser.id]: { ...selectedUser, displayName: event.target.value } }))} />
             </FormField>
-            <FormField label={selectedUser.role === "sibe" ? "E-Mail" : "E-Mail (optional)"} required={selectedUser.role === "sibe"}>
-              <input required={selectedUser.role === "sibe"} type="email" value={selectedUser.email || ""} onChange={(event) => setEditableUsers((current) => ({ ...current, [selectedUser.id]: { ...selectedUser, email: event.target.value } }))} />
+            <FormField label={selectedUser.roles.includes("sibe") ? "E-Mail" : "E-Mail (optional)"} required={selectedUser.roles.includes("sibe")}>
+              <input required={selectedUser.roles.includes("sibe")} type="email" value={selectedUser.email || ""} onChange={(event) => setEditableUsers((current) => ({ ...current, [selectedUser.id]: { ...selectedUser, email: event.target.value } }))} />
             </FormField>
             <FormField label="Neues Passwort">
               <input type="password" placeholder="Leer lassen für unverändert" value={selectedUser.password || ""} onChange={(event) => setEditableUsers((current) => ({ ...current, [selectedUser.id]: { ...selectedUser, password: event.target.value } }))} />
@@ -511,6 +521,7 @@ export function AdminUsersSection({
                 <option value="custom">Benutzerdefiniert</option>
               </select>
             </FormField>
+            {selectedUser.role === "sibe" || selectedUser.role === "kaskdt" ? <label className="checkbox-row"><input type="checkbox" checked={selectedUser.roles.length === 2} onChange={(event) => setEditableUsers((current) => ({ ...current, [selectedUser.id]: { ...selectedUser, roles: event.target.checked ? ["sibe", "kaskdt"] : [selectedUser.role] } }))} /> Doppelrolle SiBe + KasKdt</label> : null}
             <FormField label="Gruppen">
               <textarea rows={3} value={selectedUser.groupsText} onChange={(event) => updateEditableUserGroups(selectedUser.id, event.target.value)} />
             </FormField>
@@ -800,7 +811,9 @@ export function AdminSystemSection({
   setWorkflowTestKind,
   saveWorkflowSettings,
   saveSecurityNumber,
-  sendWorkflowTestMail
+  sendWorkflowTestMail,
+  maintenanceMode,
+  saveMaintenanceMode
 }: {
   systemStatus: {
     app: string;
@@ -826,10 +839,13 @@ export function AdminSystemSection({
   saveWorkflowSettings: () => Promise<void>;
   saveSecurityNumber: () => Promise<void>;
   sendWorkflowTestMail: () => Promise<void>;
+  maintenanceMode: boolean;
+  saveMaintenanceMode: (value: boolean) => Promise<void>;
 }) {
   return (
     <Card>
       <h3>Systemstatus</h3>
+      <div className="panel"><h3>Wartungsmodus</h3><p>Normale und öffentliche Zugriffe werden mit einer Wartungsseite bzw. HTTP 503 gesperrt; Admins behalten Zugriff.</p><label className="checkbox-row"><input type="checkbox" checked={maintenanceMode} onChange={(event) => void saveMaintenanceMode(event.target.checked)} /> Wartungsmodus aktiv</label></div>
       <div className="card-grid stat-grid">
         <article className="panel mini-card"><h3>App</h3><p>{systemStatus?.app || "Lade..."}</p></article>
         <article className="panel mini-card"><h3>Aktive Wachen</h3><p>{systemStatus?.activeGates ?? "-"}</p></article>

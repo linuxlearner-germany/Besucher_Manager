@@ -6,7 +6,7 @@ import { clearSessionCookie, getSessionCookieName, readSessionToken } from "../l
 import { writeErrorLog } from "../lib/errorLogs";
 import { findActiveGateById } from "../lib/publicPreRegistrations";
 import { findUserById } from "../lib/users";
-import { hasPermission, type AppPermission, type AuthenticatedUser } from "../lib/visitWorkflow";
+import { hasPermission, hasRole, type AppPermission, type AuthenticatedUser } from "../lib/visitWorkflow";
 
 export const csrfCookieName = "visitor_manager_csrf";
 
@@ -42,9 +42,12 @@ export function sendError(
   message: string,
   details?: unknown
 ) {
+  response.locals.errorCode = error;
   return response.status(status).json({
+    status,
     error,
     message,
+    requestId: response.req?.requestId,
     ...(details !== undefined ? { details } : {})
   });
 }
@@ -88,7 +91,8 @@ export function handleUnexpectedError(
     userAgent: request ? getRequestUserAgent(request) : null,
     userName,
     stackTrace,
-    metadataJson
+    metadataJson,
+    requestId: request?.requestId ?? null
   }).catch((loggingError) => {
     console.error("error log write failed", loggingError);
   });
@@ -132,7 +136,7 @@ export async function resolveAuthenticatedUser(request: Request): Promise<Authen
     return null;
   }
 
-  const activeGateId = currentUser.role === "guard" ? sessionUser.gateId : currentUser.gateId;
+  const activeGateId = sessionUser.gateId;
   const activeGate = activeGateId ? await findActiveGateById(activeGateId) : null;
   const resolvedUser: AuthenticatedUser = {
     ...currentUser,
@@ -166,7 +170,7 @@ export async function requireRole(
     return null;
   }
 
-  if (!allowedRoles.includes(user.role)) {
+  if (!allowedRoles.some((role) => hasRole(user, role))) {
     sendForbidden(response);
     return null;
   }
@@ -226,7 +230,8 @@ export async function countUserReferences(pool: sql.ConnectionPool, userId: stri
     { label: "Benutzer deaktiviert", query: "SELECT COUNT(*) AS count FROM dbo.users WHERE deactivated_by = @id" },
     { label: "Hinweistexte bearbeitet", query: "SELECT COUNT(*) AS count FROM dbo.badge_text_templates WHERE updated_by = @id OR deactivated_by = @id" },
     { label: "Gelaendeplaene hochgeladen", query: "SELECT COUNT(*) AS count FROM dbo.site_maps WHERE uploaded_by = @id OR deactivated_by = @id" },
-    { label: "Auditlog-Aktionen", query: "SELECT COUNT(*) AS count FROM dbo.audit_logs WHERE user_id = @id" }
+    { label: "Auditlog-Aktionen", query: "SELECT COUNT(*) AS count FROM dbo.audit_logs WHERE user_id = @id" },
+    { label: "Nationalitaetsbenachrichtigungen", query: "SELECT COUNT(*) AS count FROM dbo.nationality_notification_deliveries WHERE user_id = @id" }
   ];
 
   const references: Array<{ label: string; count: number }> = [];

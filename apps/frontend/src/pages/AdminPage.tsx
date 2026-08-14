@@ -114,6 +114,7 @@ export function AdminPage() {
     dbName?: string;
   } | null>(null);
   const [workflowSettings, setWorkflowSettings] = useState<AdminWorkflowSettings | null>(null);
+  const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [uiBackgrounds, setUiBackgrounds] = useState<AdminUiBackground[]>([]);
   const [uiBackgroundSaving, setUiBackgroundSaving] = useState(false);
   const [workflowPassword, setWorkflowPassword] = useState("");
@@ -154,6 +155,7 @@ export function AdminPage() {
     email: string;
     password: string;
     role: AdminUser["role"];
+    roles: AdminUser["roles"];
     gateId: string;
     groupsText: string;
     menuAccess: AppMenuKey[];
@@ -164,6 +166,7 @@ export function AdminPage() {
     email: "",
     password: "",
     role: "guard",
+    roles: ["guard"],
     gateId: "",
     groupsText: "",
     menuAccess: getAllowedMenuAccessForRole("guard"),
@@ -217,7 +220,7 @@ export function AdminPage() {
   const loadAll = useCallback(async () => {
     setError(null);
     try {
-      const [gatePayload, userPayload, textPayload, statusPayload, workflowPayload, backgroundPayload, siteMapPayload, siteMapsPayload, fieldDefinitionsPayload, retentionPayload] = await Promise.all([
+      const [gatePayload, userPayload, textPayload, statusPayload, workflowPayload, backgroundPayload, siteMapPayload, siteMapsPayload, fieldDefinitionsPayload, retentionPayload, maintenancePayload] = await Promise.all([
         fetchJson<{ gates: AdminGate[] }>("/api/admin/gates", { method: "GET", headers: {} }),
         fetchJson<{ users: AdminUser[] }>("/api/admin/users", { method: "GET", headers: {} }),
         fetchJson<{ texts: AdminBadgeText[] }>("/api/texts", { method: "GET", headers: {} }),
@@ -227,7 +230,8 @@ export function AdminPage() {
         fetchJson<{ siteMap: AdminSiteMap | null }>("/api/admin/site-map", { method: "GET", headers: {} }),
         fetchJson<{ siteMaps: AdminSiteMap[] }>("/api/admin/site-maps", { method: "GET", headers: {} }),
         fetchJson<{ definitions: AdminFieldDefinition[] }>("/api/admin/field-definitions", { method: "GET", headers: {} }),
-        fetchJson<AdminRetentionSettings>("/api/admin/data-retention", { method: "GET", headers: {} })
+        fetchJson<AdminRetentionSettings>("/api/admin/data-retention", { method: "GET", headers: {} }),
+        fetchJson<{ maintenanceMode: boolean }>("/api/admin/system-settings/maintenance", { method: "GET", headers: {} })
       ]);
 
       setGates(gatePayload.gates);
@@ -243,6 +247,7 @@ export function AdminPage() {
       setSiteMaps(siteMapsPayload.siteMaps);
       setFieldDefinitions(fieldDefinitionsPayload.definitions);
       setRetentionSettings(retentionPayload);
+      setMaintenanceMode(maintenancePayload.maintenanceMode);
       setEditableGates(Object.fromEntries(gatePayload.gates.map((gate) => [gate.id, { ...gate }])));
       setEditableUsers(Object.fromEntries(userPayload.users.map((entry) => [entry.id, {
         ...entry,
@@ -276,6 +281,12 @@ export function AdminPage() {
     setMessage(payload.message);
     const refreshed = await fetchJson<AdminRetentionSettings>("/api/admin/data-retention", { method: "GET", headers: {} });
     setRetentionSettings(refreshed);
+  }
+
+  async function saveMaintenanceMode(value: boolean) {
+    await fetchJson("/api/admin/system-settings/maintenance", { method: "PUT", body: JSON.stringify({ maintenanceMode: value }) });
+    setMaintenanceMode(value);
+    setMessage(value ? "Wartungsmodus aktiviert." : "Wartungsmodus deaktiviert.");
   }
 
   useEffect(() => {
@@ -327,6 +338,7 @@ export function AdminPage() {
           email: newUser.email,
           password: newUser.password,
           role: newUser.role,
+          roles: newUser.roles,
           gateId: null,
           groups: parseGroupText(newUser.groupsText),
           menuAccess: newUser.menuAccess,
@@ -339,6 +351,7 @@ export function AdminPage() {
         email: "",
         password: "",
         role: "guard",
+        roles: ["guard"],
         gateId: "",
         groupsText: "",
         menuAccess: getAllowedMenuAccessForRole("guard"),
@@ -481,6 +494,7 @@ export function AdminPage() {
         [userId]: {
           ...currentEntry,
           role,
+          roles: [role],
           gateId: null,
           menuAccess: nextMenuAccess.length ? nextMenuAccess : allowedAccess,
           permissions: getDefaultPermissionsForRole(role)
@@ -584,7 +598,7 @@ export function AdminPage() {
   async function saveUser(userId: string) {
     const adminUser = editableUsers[userId];
     if (!adminUser) return;
-    if (adminUser.role === "sibe" && !adminUser.email?.trim()) {
+    if (adminUser.roles.includes("sibe") && !adminUser.email?.trim()) {
       setUserSaveState({ userId, kind: "error", message: "Für SiBe ist eine E-Mail-Adresse erforderlich." });
       return;
     }
@@ -597,6 +611,7 @@ export function AdminPage() {
           displayName: adminUser.displayName,
           email: adminUser.email || "",
           role: adminUser.role,
+          roles: adminUser.roles,
           gateId: null,
           isActive: adminUser.isActive,
           groups: parseGroupText(adminUser.groupsText),
@@ -800,6 +815,18 @@ export function AdminPage() {
     } catch (apiError) {
       const payload = apiError as ApiError;
       setError(payload.message || "Benutzer konnte nicht aktualisiert werden.");
+    }
+  }
+
+  async function deleteUser(userId: string) {
+    if (!window.confirm("Benutzer wirklich dauerhaft löschen? Historisch referenzierte Konten werden pseudonymisiert.")) return;
+    try {
+      const payload = await fetchJson<{ message: string }>(`/api/admin/users/${userId}`, { method: "DELETE" });
+      setMessage(payload.message);
+      setSelectedUserId(null);
+      await loadAll();
+    } catch (apiError) {
+      setError((apiError as ApiError).message || "Benutzer konnte nicht gelöscht werden.");
     }
   }
 
@@ -1030,6 +1057,7 @@ export function AdminPage() {
           <AdminUsersSection
             newUser={newUser}
             setNewUser={setNewUser}
+            gates={gates}
             menuOptions={menuOptions}
             permissionGroups={permissionGroups}
             createUser={createUser}
@@ -1057,6 +1085,7 @@ export function AdminPage() {
             saveUser={saveUser}
             userSaveState={userSaveState}
             toggleUserActive={toggleUserActive}
+            deleteUser={deleteUser}
             currentUserId={currentUser?.id}
           />
         ) : null}
@@ -1118,6 +1147,8 @@ export function AdminPage() {
             saveWorkflowSettings={saveWorkflowSettings}
             saveSecurityNumber={saveSecurityNumber}
             sendWorkflowTestMail={sendWorkflowTestMail}
+            maintenanceMode={maintenanceMode}
+            saveMaintenanceMode={saveMaintenanceMode}
           />
         ) : null}
 

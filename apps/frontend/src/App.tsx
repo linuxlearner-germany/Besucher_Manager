@@ -1,5 +1,5 @@
-import { type ChangeEvent, type DragEvent, type FormEvent, type PropsWithChildren } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { type ChangeEvent, type DragEvent, type FormEvent, type PropsWithChildren, useEffect, useState } from "react";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { AdminPage } from "./pages/AdminPage";
 import { GuardDashboardPage } from "./pages/GuardDashboardPage";
 import { ImportPage } from "./pages/ImportPage";
@@ -7,9 +7,11 @@ import { LoginPage } from "./pages/LoginPage";
 import { PrintViewPage } from "./pages/PrintViewPage";
 import { PublicPreRegistrationPage } from "./pages/PublicPreRegistrationPage";
 import { CommanderDashboardPage } from "./pages/CommanderDashboardPage";
+import { CommanderSimplifiedVisitsPage } from "./pages/CommanderSimplifiedVisitsPage";
 import { SibeDashboardPage } from "./pages/SibeDashboardPage";
 import { SibeNationalityNotificationsPage } from "./pages/SibeNationalityNotificationsPage";
 import { SibeRejectionsPage } from "./pages/SibeRejectionsPage";
+import { SibeSimplifiedEntryPage } from "./pages/SibeSimplifiedEntryPage";
 import { SibeUsersPage } from "./pages/SibeUsersPage";
 import { SibeVisitDetailPage } from "./pages/SibeVisitDetailPage";
 import { SibeVisitorsPage } from "./pages/SibeVisitorsPage";
@@ -29,9 +31,23 @@ import {
   type GuardVisitEditState,
   ThemeProvider,
   useAuth,
+  hasRole,
   type VisitRow,
   RequireRoles
 } from "./app/core";
+
+function MaintenanceBoundary({ children }: PropsWithChildren) {
+  const { user } = useAuth();
+  const location = useLocation();
+  const [maintenance, setMaintenance] = useState(false);
+  useEffect(() => {
+    void fetchJson<{ maintenanceMode: boolean }>("/api/maintenance/status").then((payload) => setMaintenance(payload.maintenanceMode)).catch(() => undefined);
+  }, [user]);
+  if (maintenance && !hasRole(user, "admin") && location.pathname !== "/login") {
+    return <main className="public-page"><section className="public-card"><h1>Wartungsarbeiten</h1><p>Die Besucherverwaltung ist vorübergehend nicht verfügbar. Bitte versuchen Sie es später erneut.</p><a href="/login">Admin-Anmeldung</a></section></main>;
+  }
+  return <>{children}</>;
+}
 
 function AppRoutes() {
   return (
@@ -132,6 +148,14 @@ function AppRoutes() {
         }
       />
       <Route
+        path="/sibe/besucher/vereinfacht"
+        element={
+          <RequireRoles allowedRoles={["sibe"]} redirectTo="/" >
+            <SibeSimplifiedEntryPage />
+          </RequireRoles>
+        }
+      />
+      <Route
         path="/sibe/besucher/:id"
         element={
           <RequireRoles allowedRoles={["admin", "sibe"]} requiredMenuKey="sibe" requiredPermissions={["visits.read"]} redirectTo="/" >
@@ -143,7 +167,7 @@ function AppRoutes() {
         path="/kaskdt/besucher"
         element={
           <RequireRoles allowedRoles={["admin", "kaskdt"]} requiredMenuKey="kaskdt" requiredPermissions={["visits.read"]} redirectTo="/" >
-            <SibeVisitorsPage />
+            <CommanderSimplifiedVisitsPage />
           </RequireRoles>
         }
       />
@@ -151,7 +175,7 @@ function AppRoutes() {
         path="/kasernenkommandant/besucher"
         element={
           <RequireRoles allowedRoles={["admin", "kaskdt"]} requiredMenuKey="kaskdt" requiredPermissions={["visits.read"]} redirectTo="/" >
-            <SibeVisitorsPage />
+            <CommanderSimplifiedVisitsPage />
           </RequireRoles>
         }
       />
@@ -196,7 +220,7 @@ function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <AppRoutes />
+        <MaintenanceBoundary><AppRoutes /></MaintenanceBoundary>
       </AuthProvider>
     </ThemeProvider>
   );

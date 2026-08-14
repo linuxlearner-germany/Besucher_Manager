@@ -174,18 +174,12 @@ apiRouter.post("/api/auth/login", async (request, response) => {
   try {
     const candidate = await findUserForLogin(parsed.data.username);
     if (!candidate || !candidate.isActive) {
-      return response.status(401).json({
-        error: "INVALID_CREDENTIALS",
-        message: "Benutzername oder Passwort ist ungueltig."
-      });
+      return sendError(response, 401, "INVALID_CREDENTIALS", "Benutzername oder Passwort ist ungueltig.");
     }
 
     const passwordMatches = await verifyPassword(parsed.data.password, candidate.passwordHash);
     if (!passwordMatches) {
-      return response.status(401).json({
-        error: "INVALID_CREDENTIALS",
-        message: "Benutzername oder Passwort ist ungueltig."
-      });
+      return sendError(response, 401, "INVALID_CREDENTIALS", "Benutzername oder Passwort ist ungueltig.");
     }
 
     let activeGateId = candidate.gateId;
@@ -205,10 +199,7 @@ apiRouter.post("/api/auth/login", async (request, response) => {
       const selectedGate = await findActiveGateById(requestedGateId);
 
       if (!selectedGate) {
-        return response.status(400).json({
-          error: "INVALID_GATE",
-          message: "Die ausgewaehlte Wache ist nicht verfuegbar."
-        });
+        return sendError(response, 400, "INVALID_GATE", "Die ausgewaehlte Wache ist nicht verfuegbar.");
       }
 
       activeGateId = selectedGate.id;
@@ -229,6 +220,7 @@ apiRouter.post("/api/auth/login", async (request, response) => {
       id: candidate.id,
       username: candidate.username,
       role: candidate.role,
+      roles: candidate.roles,
       gateId: activeGateId
     });
 
@@ -250,16 +242,29 @@ apiRouter.post("/api/auth/login", async (request, response) => {
         username: candidate.username,
         displayName: candidate.username,
         role: candidate.role,
+        roles: fullUser?.roles ?? candidate.roles,
         gateId: activeGateId,
         gateName: activeGateName,
         groups: fullUser?.groups ?? [],
-        menuAccess
+        menuAccess,
+        permissions: fullUser?.permissions
       },
       redirectTo: redirectTarget || redirectTo
     });
   } catch (error) {
     return handleUnexpectedError(response, error, "DATABASE_ERROR", "Anmeldung fehlgeschlagen.");
   }
+});
+
+apiRouter.post("/api/auth/gate", async (request, response) => {
+  const user = await requireAuthenticatedUser(request, response);
+  if (!user) return;
+  const parsed = z.object({ gateId: z.string().uuid() }).safeParse(request.body);
+  if (!parsed.success) return sendValidationError(response, parsed.error.flatten());
+  const gate = await findActiveGateById(parsed.data.gateId);
+  if (!gate) return sendError(response, 400, "INVALID_GATE", "Die ausgewählte Wache ist nicht verfügbar.");
+  setSessionCookie(response, { id: user.id, username: user.username, role: user.role, roles: user.roles, gateId: gate.id });
+  return response.json({ success: true, gateId: gate.id, gateName: gate.name });
 });
 
 apiRouter.post("/api/public/pre-registrations/group", async (request, response) => {

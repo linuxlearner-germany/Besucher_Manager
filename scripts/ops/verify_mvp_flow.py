@@ -93,6 +93,7 @@ class HttpClient:
         filename: str,
         content: bytes,
         content_type: str,
+        fields: dict[str, str] | None = None,
         headers: dict[str, str] | None = None,
     ) -> Any:
         boundary = f"----UploadBoundary{uuid.uuid4().hex}"
@@ -101,7 +102,15 @@ class HttpClient:
             "Content-Type": f"multipart/form-data; boundary={boundary}",
             **(headers or {}),
         }
-        body = b"".join([
+        field_parts: list[bytes] = []
+        for name, value in (fields or {}).items():
+            field_parts.extend([
+                f"--{boundary}\r\n".encode("utf-8"),
+                f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode("utf-8"),
+                value.encode("utf-8"),
+                b"\r\n",
+            ])
+        body = b"".join([*field_parts,
             f"--{boundary}\r\n".encode("utf-8"),
             f'Content-Disposition: form-data; name="{field_name}"; filename="{filename}"\r\n'.encode("utf-8"),
             f"Content-Type: {content_type}\r\n\r\n".encode("utf-8"),
@@ -128,11 +137,12 @@ class HttpClient:
             raise ApiError(error.code, error_payload) from error
 
 
-def make_public_payload(suffix: str) -> dict[str, Any]:
+def make_public_payload(suffix: str, gate_id: str) -> dict[str, Any]:
     now = dt.datetime.now().astimezone().replace(microsecond=0)
     valid_from = now - dt.timedelta(minutes=30)
     valid_until = now + dt.timedelta(hours=2)
     return {
+        "gateId": gate_id,
         "firstName": "MVP",
         "lastName": f"Flow-{suffix}",
         "birthDate": "1990-05-10",
@@ -362,7 +372,7 @@ def main() -> int:
     sibe_client = HttpClient(args.base_url)
     admin_client = HttpClient(args.base_url)
 
-    print("1/11 Lade aktive Wachen und CSRF-Token...")
+    print("1/16 Lade aktive Wachen und CSRF-Token...")
     gates_payload = public_client.request("GET", "/api/public/gates")
     gates = gates_payload.get("gates", [])
     csrf_token = gates_payload.get("csrfToken")
@@ -374,7 +384,7 @@ def main() -> int:
     if gate is None:
         gate = gates[0]
 
-    print("2/11 Pruefe vollstaendigen oeffentlichen Excel-Import...")
+    print("2/16 Pruefe vollstaendigen oeffentlichen Excel-Import...")
     import_result = public_client.upload_file(
         "/api/public/visits/import",
         field_name="file",
@@ -391,17 +401,17 @@ def main() -> int:
         raise RuntimeError("Import-Ergebnis enthaelt keinen Besuch.")
     imported_visit_id = imported_rows[0]["visitId"]
 
-    print("3/11 Lege oeffentliche Voranmeldung an...")
+    print("3/16 Lege oeffentliche Voranmeldung an...")
     pre_registration = public_client.request(
         "POST",
         "/api/public/pre-registrations",
-        payload=make_public_payload(suffix),
+        payload=make_public_payload(suffix, gate["id"]),
         headers={"X-CSRF-Token": csrf_token, "User-Agent": "MVP-Flow-Check/1.0"},
     )
     visit_id = pre_registration["visitId"]
     visitor_id = pre_registration["visitorId"]
 
-    print("4/11 Guard meldet sich an und findet den Besuch...")
+    print("4/16 Guard meldet sich an und findet den Besuch...")
     guard_login = login(guard_client, args.guard_user, args.guard_password, gate["name"])
     visits_payload = guard_client.request("GET", "/api/guard/visits/today?status=all")
     visits = visits_payload.get("visits", [])
@@ -411,15 +421,15 @@ def main() -> int:
     if pending_visit.get("hostSignatureStatus") != "pending":
         raise RuntimeError("Wache zeigt vor Check-out keinen offenen Unterschriftsstatus.")
 
-    print("5/11 Guard aktualisiert Voranmeldedaten...")
+    print("5/16 Guard aktualisiert Voranmeldedaten...")
     detail_before = guard_client.request("GET", f"/api/guard/visits/{visit_id}")["visit"]
     guard_client.request("PUT", f"/api/guard/visits/{visit_id}", payload=make_guard_update_payload(detail_before))
 
-    print("6/11 SiBe prueft den Besuch...")
+    print("6/16 SiBe prueft den Besuch...")
     login(sibe_client, args.sibe_user, args.sibe_password)
     sibe_client.request("GET", f"/api/sibe/visits/{visit_id}")
 
-    print("7/11 SiBe sieht den vollstaendig importierten Datensatz...")
+    print("7/16 SiBe sieht den vollstaendig importierten Datensatz...")
     imported_sibe_visit = require_visit(
         sibe_client.request("GET", "/api/sibe/visits?status=all")["visits"],
         imported_visit_id,
@@ -428,12 +438,53 @@ def main() -> int:
     if imported_sibe_visit.get("status") != "pre_registered":
         raise RuntimeError("Importierter Besuch ist in SiBe nicht vorangemeldet.")
 
-    print("8/11 Guard checkt den Besucher ein...")
+    print("8/16 SiBe legt einen Besuch ohne Personendaten an...")
+    today = dt.date.today().isoformat()
+    simplified_visit = sibe_client.request(
+        "POST",
+        "/api/sibe/visits/simplified",
+        payload={"gateId": gate["id"], "validFrom": today, "validUntil": today},
+    )
+    simplified_visit_id = simplified_visit["visitId"]
+    require_visit(
+        sibe_client.request("GET", "/api/sibe/visits?status=all")["visits"],
+        simplified_visit_id,
+        "Vereinfachter Besuch in SiBe-Liste",
+    )
+    require_visit(
+        guard_client.request("GET", "/api/guard/visits/today?status=all")["visits"],
+        simplified_visit_id,
+        "Vereinfachter Besuch in Wachenliste",
+    )
+
+    print("9/16 SiBe prueft Vorschau und serverseitig neu geparsten XLSX-Import...")
+    simplified_workbook = build_import_workbook(gate["name"], f"S{suffix}")
+    preview = sibe_client.upload_file(
+        "/api/sibe/visits/simplified-rule/preview",
+        field_name="file",
+        filename="vereinfachte-erfassung.xlsx",
+        content=simplified_workbook,
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    if not preview.get("visitors") or preview.get("errors"):
+        raise RuntimeError(f"Vereinfachte XLSX-Vorschau unerwartet ungueltig: {preview.get('errors')}")
+    simplified_import = sibe_client.upload_file(
+        "/api/sibe/visits/simplified-rule/import",
+        field_name="file",
+        filename="vereinfachte-erfassung.xlsx",
+        content=simplified_workbook,
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        fields={"gateId": gate["id"]},
+    )
+    if int(simplified_import.get("imported", 0)) != 1:
+        raise RuntimeError("Vereinfachter XLSX-Import hat nicht genau einen Datensatz verarbeitet.")
+
+    print("10/16 Guard checkt den Besucher ein...")
     check_in = guard_client.request("POST", f"/api/guard/visits/{visit_id}/check-in", payload={})
     if check_in.get("status") != "checked_in":
         raise RuntimeError("Check-in hat nicht den erwarteten Status geliefert.")
 
-    print("9/11 Guard schreibt Druck-Audit...")
+    print("11/16 Guard schreibt Druck-Audit...")
     guard_client.request("POST", f"/api/guard/visits/{visit_id}/print-log", payload={"paperSize": "A5"})
 
     signature_payload: dict[str, Any] = {
@@ -448,7 +499,7 @@ def main() -> int:
     elif args.signature_status == "not_required":
         signature_payload["host_signature_note"] = "Fachlich nicht erforderlich"
 
-    print("10/11 Guard erfasst den Unterschriftsstatus waehrend des laufenden Besuchs...")
+    print("12/16 Guard erfasst den Unterschriftsstatus waehrend des laufenden Besuchs...")
     guard_client.request(
         "PUT",
         f"/api/guard/visits/{visit_id}/signature",
@@ -468,7 +519,7 @@ def main() -> int:
     if not signature_captured_at or not signature_captured_by:
         raise RuntimeError("Signaturerfassung hat keinen bestaetigenden Benutzer oder Zeitstempel hinterlegt.")
 
-    print("11/11 Guard checkt mit Unterschriftsstatus aus und SiBe/Admin pruefen Nachvollziehbarkeit...")
+    print("13/16 Guard checkt mit Unterschriftsstatus aus und SiBe/Admin pruefen Nachvollziehbarkeit...")
     check_out = guard_client.request(
         "POST",
         f"/api/guard/visits/{visit_id}/check-out",
@@ -514,14 +565,16 @@ def main() -> int:
     admin_system = admin_client.request("GET", "/api/admin/system-status")
     visit_logs = admin_client.request("GET", f"/api/admin/audit-logs?search={visit_id}")["logs"]
     visitor_logs = admin_client.request("GET", f"/api/admin/audit-logs?search={visitor_id}")["logs"]
+    simplified_logs = admin_client.request("GET", f"/api/admin/audit-logs?search={simplified_visit_id}")["logs"]
     import_logs = admin_client.request("GET", "/api/admin/audit-logs?action=VISITS_IMPORTED_FROM_FILE")["logs"]
-    audit_logs_by_id = {entry["id"]: entry for entry in [*visit_logs, *visitor_logs, *import_logs]}
+    audit_logs_by_id = {entry["id"]: entry for entry in [*visit_logs, *visitor_logs, *import_logs, *simplified_logs]}
     audit_logs = list(audit_logs_by_id.values())
     require_actions(
         audit_logs,
         {
             "PUBLIC_PRE_REGISTRATION_CREATED",
             "VISITS_IMPORTED_FROM_FILE",
+            "SIBE_SIMPLIFIED_VISIT_CREATED",
             "VISITOR_UPDATED_BY_GUARD",
             "VISIT_UPDATED_BY_GUARD",
             "VISIT_CHECKED_IN",
@@ -532,6 +585,61 @@ def main() -> int:
     )
     if summary_key and int(admin_system.get(summary_key, 0)) < 1:
         raise RuntimeError(f"Admin-Systemstatus meldet keinen Wert fuer {summary_key}.")
+
+    print("14/16 Pruefe Doppelrolle und Tombstone-Loeschung...")
+    dual_username = f"dual.e2e.{suffix}"
+    dual_password = "Test1234!"
+    dual_created = admin_client.request("POST", "/api/admin/users", payload={
+        "username": dual_username,
+        "displayName": "Doppelrolle E2E",
+        "email": f"{dual_username}@example.com",
+        "password": dual_password,
+        "role": "sibe",
+        "roles": ["sibe", "kaskdt"],
+    })
+    dual_client = HttpClient(args.base_url)
+    dual_login = login(dual_client, dual_username, dual_password)
+    if set(dual_login.get("user", {}).get("roles", [])) != {"sibe", "kaskdt"}:
+        raise RuntimeError("Login liefert die Doppelrolle nicht vollstaendig aus.")
+    dual_client.request("GET", "/api/sibe/summary")
+    dual_client.request("GET", "/api/kaskdt/simplified-visits?page=1&pageSize=5")
+    dual_visit = dual_client.request("POST", "/api/sibe/visits/simplified", payload={
+        "gateId": gate["id"], "validFrom": today, "validUntil": today,
+    })
+    if not dual_visit.get("visitId"):
+        raise RuntimeError("Doppelrollen-Benutzer konnte keinen vereinfachten Besuch anlegen.")
+    tombstone = admin_client.request("DELETE", f"/api/admin/users/{dual_created['id']}")
+    if tombstone.get("deletionMode") != "tombstoned":
+        raise RuntimeError("Historisch referenzierter Benutzer wurde nicht als Tombstone geloescht.")
+
+    print("15/16 Pruefe physische Loeschung eines referenzfreien Benutzers...")
+    disposable = admin_client.request("POST", "/api/admin/users", payload={
+        "username": f"delete.e2e.{suffix}",
+        "displayName": "Loeschtest E2E",
+        "password": "Test1234!",
+        "role": "guard",
+        "roles": ["guard"],
+    })
+    hard_delete = admin_client.request("DELETE", f"/api/admin/users/{disposable['id']}")
+    if hard_delete.get("deletionMode") != "hard_deleted":
+        raise RuntimeError("Referenzfreier Benutzer wurde nicht physisch geloescht.")
+
+    print("16/16 Pruefe Wartungsmodus, Admin-Bypass und erreichbaren Login...")
+    admin_client.request("PUT", "/api/admin/system-settings/maintenance", payload={"maintenanceMode": True})
+    try:
+        status = public_client.request("GET", "/api/maintenance/status")
+        if status.get("maintenanceMode") is not True:
+            raise RuntimeError("Oeffentliche Wartungsstatus-Abfrage meldet den Modus nicht.")
+        try:
+            public_client.request("GET", "/api/public/gates")
+            raise RuntimeError("Fachliche API blieb im Wartungsmodus erreichbar.")
+        except ApiError as error:
+            if error.status != 503 or error.payload.get("error") != "MAINTENANCE_MODE":
+                raise
+        admin_client.request("GET", "/api/admin/system-status")
+        login(HttpClient(args.base_url), args.sibe_user, args.sibe_password)
+    finally:
+        admin_client.request("PUT", "/api/admin/system-settings/maintenance", payload={"maintenanceMode": False})
 
     print(json.dumps({
         "success": True,

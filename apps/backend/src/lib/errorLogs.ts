@@ -12,6 +12,7 @@ export type ErrorLogEntry = {
   userName?: string | null;
   stackTrace?: string | null;
   metadataJson?: string | null;
+  requestId?: string | null;
 };
 
 export async function writeErrorLog(entry: ErrorLogEntry): Promise<void> {
@@ -27,6 +28,7 @@ export async function writeErrorLog(entry: ErrorLogEntry): Promise<void> {
     .input("userName", sql.NVarChar(255), entry.userName ?? null)
     .input("stackTrace", sql.NVarChar(sql.MAX), entry.stackTrace ?? null)
     .input("metadataJson", sql.NVarChar(sql.MAX), entry.metadataJson ?? null)
+    .input("requestId", sql.UniqueIdentifier, entry.requestId ?? null)
     .query(`
       INSERT INTO dbo.error_logs (
         [level],
@@ -38,7 +40,8 @@ export async function writeErrorLog(entry: ErrorLogEntry): Promise<void> {
         user_agent,
         user_name,
         stack_trace,
-        metadata_json
+        metadata_json,
+        request_id
       )
       VALUES (
         @level,
@@ -50,7 +53,8 @@ export async function writeErrorLog(entry: ErrorLogEntry): Promise<void> {
         @userAgent,
         @userName,
         @stackTrace,
-        @metadataJson
+        @metadataJson,
+        @requestId
       )
     `);
 }

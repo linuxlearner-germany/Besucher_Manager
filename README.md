@@ -49,6 +49,8 @@ Die Anwendung bildet den vollständigen Ablauf vom Erfassen eines Besuchs über 
 - Tagesliste und Kalenderansicht
 - Suche und Statusfilter
 - Spontane Besucheraufnahme
+- Aktive Wache als Sitzungskontext; Konten speichern keine dauerhafte Wachen-Zuordnung
+- Spontanerfassung ohne personenbezogene Pflichtangaben, Zeitraum automatisch am lokalen Kalendertag
 - Nachbearbeitung von Voranmeldungen
 - Check-in anhand konfigurierter Pflichtfelder
 - Besucherscheindruck in A5 oder A4
@@ -65,6 +67,7 @@ Die Anwendung bildet den vollständigen Ablauf vom Erfassen eines Besuchs über 
 - „Alle auswählen“ und „Alle abwählen“
 - E-Mail-Benachrichtigung für abonnierte Nationalitäten
 - Höchstens eine Länder-E-Mail je Besuch und SiBe-Benutzer
+- Vereinfachte Web-Erfassung und manipulationssicher erneut geprüfter XLSX-Import
 
 ### KasKdt und Textverwaltung
 
@@ -73,6 +76,7 @@ Die Anwendung bildet den vollständigen Ablauf vom Erfassen eines Besuchs über 
 - Aktivieren und Deaktivieren
 - Vorschau und Druckvorschau
 - Zugriff für Admin und KasKdt über `texts.manage`
+- Lesende, filter- und sortierbare Liste ausschließlich vereinfachter Web-/XLSX-Erfassungen
 
 ### Administration
 
@@ -86,6 +90,8 @@ Die Anwendung bildet den vollständigen Ablauf vom Erfassen eines Besuchs über 
 - SMTP-Konfiguration und Testmails
 - Audit- und Fehlerlog
 - Systemstatus
+- Bestätigte Benutzerlöschung (physisch oder pseudonymisierter Tombstone) und Wartungsmodus
+- Unterstützte Doppelrolle `sibe|kaskdt`; alle anderen Rollen bleiben exklusiv
 
 ## Besuchsworkflow
 
@@ -113,7 +119,7 @@ Nationalitätsmeldungen laufen unabhängig vom operativen Ablauf. Ein SMTP-Fehle
 |---|---|---|
 | Nicht angemeldet | Voranmeldung, Gruppenanmeldung, öffentlicher Excel-Import, Login | Öffentliche Endpunkte sind CSRF- und rate-limit-geschützt |
 | `guard` | Wache, Import | Wählt beim Login eine aktive Wache; Zugriff auf den eigenen Wachenbereich |
-| `sibe` | SiBe, Import | Kann Länder abonnieren und Besucher recherchieren |
+| `sibe` | SiBe, Import | Kann Länder abonnieren, Besucher recherchieren und Besuche mit optionalen Personendaten vereinfacht erfassen |
 | `kaskdt` | KasKdt, Texte | Darf die vollständige Textverwaltung nutzen |
 | `admin` | Alle Bereiche | Benutzer-, System-, Feld-, Text- und Betriebsverwaltung |
 | `custom` | Individuell | Menüs und fachliche Berechtigungen werden explizit gesetzt |
@@ -400,6 +406,7 @@ Die letzte Formatwahl wird im Browser gespeichert. Das gewählte Format wird im 
 | `/import` | Besucherimport |
 | `/sibe` | SiBe-Dashboard und Länderabonnements |
 | `/sibe/besucher` | Besucher- und Besuchsrecherche |
+| `/sibe/besucher/vereinfacht` | Manuelle vereinfachte Besuchserfassung ausschließlich für SiBe |
 | `/sibe/benutzer` | Benutzerrecherche |
 | `/kaskdt` | KasKdt-Dashboard |
 | `/kaskdt/texte` | Textverwaltung |
@@ -415,6 +422,7 @@ Die letzte Formatwahl wird im Browser gespeichert. Das gewählte Format wird im 
 | `GET /api/field-definitions?context=public` | aktive Felddefinitionen |
 | `GET /api/sibe/nationality-subscriptions` | eigenes Länderabonnement |
 | `PUT /api/sibe/nationality-subscriptions` | Länderabonnement speichern |
+| `POST /api/sibe/visits/simplified` | SiBe-Besuch mit Wache und Gültigkeitszeitraum erfassen |
 | `POST /api/guard/visits/:id/print-log` | Druckaudit mit Papierformat |
 | `GET /api/admin/users/export.csv` | Benutzerexport |
 | `GET /api/admin/users/import-template.csv` | Benutzerimportvorlage |
