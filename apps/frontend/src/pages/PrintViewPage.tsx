@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
-import { AppLayout, BRANDING, type ApiError, fetchJson, formatDateOnly, formatIdDocumentType, type VisitDetail, useThemeMode } from "../app/core";
+import { AppLayout, BRANDING, type ApiError, fetchJson, formatDateOnly, formatIdDocumentType, formatPersonName, type VisitDetail, useThemeMode } from "../app/core";
 
 function formatVisitorAddress(visit: VisitDetail): string {
   const streetLine = [visit.visitorStreet, visit.visitorHouseNumber].filter(Boolean).join(" ");
@@ -189,7 +189,7 @@ export function PrintViewPage() {
                 <article className="print-info-card">
                   <h3>Besucher</h3>
                   <dl className="print-info-list">
-                    <div><dt>Name</dt><dd>{visit.firstName} {visit.lastName}</dd></div>
+                    <div><dt>Name</dt><dd>{formatPersonName(visit.firstName, visit.lastName)}</dd></div>
                     <div><dt>Geburtsdatum</dt><dd>{formatDateOnly(visit.birthDate)}</dd></div>
                     <div><dt>Firma</dt><dd>{visit.company}</dd></div>
                     <div><dt>Nationalität</dt><dd>{visit.nationalityName || visit.nationalityCode || "-"}</dd></div>

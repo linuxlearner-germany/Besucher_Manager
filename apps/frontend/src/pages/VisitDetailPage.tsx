@@ -13,6 +13,7 @@ import {
   formatDateOnly,
   formatDateTime,
   formatIdDocumentType,
+  formatPersonName,
   formatStatus,
   type Gate,
   getNextStepHint,
@@ -168,7 +169,7 @@ export function VisitDetailPage() {
                     <span className={statusClassName(visit.status)}>{formatStatus(visit.status)}</span>
                     <span className="detail-hero-label">Besuchsnummer</span>
                   </div>
-                  <div className="detail-hero-name">{visit.firstName} {visit.lastName}</div>
+                  <div className="detail-hero-name">{formatPersonName(visit.firstName, visit.lastName)}</div>
                   <div className="detail-hero-company">{visit.company}</div>
                   <div className="detail-hero-purpose">Zweck: {visit.purpose}</div>
                 </div>
@@ -339,7 +340,7 @@ export function VisitDetailPage() {
                 <Card>
                   <h3>Besucher</h3>
                   <div className="detail-grid">
-                    <div><span className="detail-label">Name</span><strong>{visit.firstName} {visit.lastName}</strong></div>
+                    <div><span className="detail-label">Name</span><strong>{formatPersonName(visit.firstName, visit.lastName)}</strong></div>
                     <div><span className="detail-label">Firma / Organisation</span><strong>{visit.company}</strong></div>
                     <div><span className="detail-label">Nationalität</span><strong>{visit.nationalityName || visit.nationalityCode || "-"}</strong></div>
                     {visit.birthDate ? <div><span className="detail-label">Geburtsdatum</span><strong>{formatDateOnly(visit.birthDate)}</strong></div> : null}
