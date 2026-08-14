@@ -33,6 +33,7 @@ import {
   ThemeProvider,
   useAuth,
   hasRole,
+  RoleAwareRootRoute,
   type VisitRow,
   RequireRoles
 } from "./app/core";
@@ -53,7 +54,7 @@ function MaintenanceBoundary({ children }: PropsWithChildren) {
 function AppRoutes() {
   return (
     <Routes>
-      <Route path="/" element={<PublicPreRegistrationPage />} />
+      <Route path="/" element={<RoleAwareRootRoute><PublicPreRegistrationPage /></RoleAwareRootRoute>} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/visit/confirmation" element={<PublicPreRegistrationConfirmationPage />} />
       <Route

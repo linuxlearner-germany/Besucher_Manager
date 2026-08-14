@@ -44,7 +44,7 @@ export function LoginPage() {
       }
 
       setUser(payload.user);
-      navigate((location.state as { from?: string } | null)?.from || payload.redirectTo || getDefaultRouteForUser(payload.user), { replace: true });
+      navigate((location.state as { from?: string } | null)?.from || getDefaultRouteForUser(payload.user), { replace: true });
     } catch (apiError) {
       const errorPayload = apiError as ApiError;
       setError(errorPayload.message || "Benutzername oder Passwort ist falsch.");
@@ -85,7 +85,7 @@ export function LoginPage() {
       setPendingLogin(null);
       setAvailableGates([]);
       setSelectedGateId("");
-      navigate((location.state as { from?: string } | null)?.from || payload.redirectTo || getDefaultRouteForUser(payload.user), { replace: true });
+      navigate((location.state as { from?: string } | null)?.from || getDefaultRouteForUser(payload.user), { replace: true });
     } catch (apiError) {
       const errorPayload = apiError as ApiError;
       setError(errorPayload.message || "Die Wache konnte nicht gesetzt werden.");

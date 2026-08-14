@@ -952,6 +952,15 @@ export function getDefaultRouteForUser(user: User): string {
   return "/";
 }
 
+export function getRootRedirectForUser(user: User | null | undefined): string | null {
+  if (!user || !hasRole(user, "guard")) {
+    return null;
+  }
+
+  const defaultRoute = getDefaultRouteForUser(user);
+  return defaultRoute === "/wache" ? defaultRoute : null;
+}
+
 export function extractFieldErrors(error: ApiError): Record<string, string> {
   const details = error.details as { fieldErrors?: Record<string, string[]> } | undefined;
   const nextFieldErrors: Record<string, string> = {};
@@ -1260,6 +1269,17 @@ export function LoadingScreen() {
       </div>
     </div>
   );
+}
+
+export function RoleAwareRootRoute({ children }: PropsWithChildren) {
+  const { loading, user } = useAuth();
+
+  if (loading) {
+    return <LoadingScreen />;
+  }
+
+  const redirectTo = getRootRedirectForUser(user);
+  return redirectTo ? <Navigate to={redirectTo} replace /> : <>{children}</>;
 }
 
 export function AppLayout({ children }: PropsWithChildren) {

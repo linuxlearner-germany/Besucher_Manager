@@ -3,6 +3,8 @@ import {
   formatDateOnly,
   formatPersonName,
   formatStatus,
+  getDefaultRouteForUser,
+  getRootRedirectForUser,
   hasPermission,
   hasRole,
   type User
@@ -48,5 +50,61 @@ describe("frontend core helpers", () => {
     expect(hasRole(dual as User, "sibe")).toBe(true);
     expect(hasRole(dual as User, "kaskdt")).toBe(true);
     expect(hasRole(dual as User, "admin")).toBe(false);
+  });
+
+  it("uses the guard view as the default and root target for a guard session", () => {
+    expect(getDefaultRouteForUser(user)).toBe("/wache");
+    expect(getRootRedirectForUser(user)).toBe("/wache");
+  });
+
+  it("preserves the existing start-route priority for all other roles", () => {
+    const admin = {
+      ...user,
+      role: "admin" as const,
+      roles: ["admin"] as const,
+      menuAccess: ["admin", "wache"] as User["menuAccess"],
+      permissions: {
+        ...user.permissions,
+        admin: { ...user.permissions.admin, users: true }
+      }
+    } as User;
+    const sibe = {
+      ...user,
+      role: "sibe" as const,
+      roles: ["sibe"] as const,
+      menuAccess: ["sibe"] as User["menuAccess"],
+      permissions: {
+        ...user.permissions,
+        dashboards: { ...user.permissions.dashboards, sibe: true }
+      }
+    } as User;
+    const kaskdt = {
+      ...user,
+      role: "kaskdt" as const,
+      roles: ["kaskdt"] as const,
+      menuAccess: ["kaskdt"] as User["menuAccess"],
+      permissions: {
+        ...user.permissions,
+        dashboards: { ...user.permissions.dashboards, commander: true }
+      }
+    } as User;
+    const dual = {
+      ...sibe,
+      roles: ["sibe", "kaskdt"] as User["roles"],
+      menuAccess: ["sibe", "kaskdt"] as User["menuAccess"],
+      permissions: {
+        ...sibe.permissions,
+        dashboards: { sibe: true, commander: true }
+      }
+    };
+
+    expect(getDefaultRouteForUser(admin)).toBe("/admin");
+    expect(getDefaultRouteForUser(sibe)).toBe("/sibe");
+    expect(getDefaultRouteForUser(kaskdt)).toBe("/kaskdt");
+    expect(getDefaultRouteForUser(dual)).toBe("/sibe");
+    expect(getRootRedirectForUser(admin)).toBeNull();
+    expect(getRootRedirectForUser(sibe)).toBeNull();
+    expect(getRootRedirectForUser(kaskdt)).toBeNull();
+    expect(getRootRedirectForUser(dual)).toBeNull();
   });
 });
