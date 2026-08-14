@@ -1,4 +1,6 @@
 import ExcelJS from "exceljs";
+import path from "node:path";
+import JSZip from "jszip";
 import {
   getVisitorImportTemplateSampleRowsForHeaders,
   type ImportVisitInput
@@ -107,6 +109,63 @@ export type ParsedExcelImport = {
   ignoredSampleRows: number;
 };
 
+const COMMENTS_RELATIONSHIP_TYPE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments";
+const WORKSHEET_RELATIONSHIPS_PATTERN = /^xl\/worksheets\/_rels\/[^/]+\.xml\.rels$/;
+const RELATIONSHIP_ELEMENT_PATTERN = /<Relationship\b[^>]*\/>/gi;
+
+function readRelationshipAttribute(element: string, attribute: string): string | null {
+  const match = element.match(new RegExp(`${attribute}\\s*=\\s*(["'])(.*?)\\1`, "i"));
+  return match?.[2] ?? null;
+}
+
+function resolveRelationshipTarget(relationshipsPath: string, target: string): string {
+  if (target.startsWith("/")) {
+    return path.posix.normalize(target).replace(/^\/+/, "");
+  }
+
+  const worksheetPath = relationshipsPath.replace(/\/_rels\/([^/]+)\.rels$/, "/$1");
+  return path.posix.normalize(path.posix.join(path.posix.dirname(worksheetPath), target));
+}
+
+async function removeDanglingCommentRelationships(buffer: Buffer): Promise<Buffer> {
+  const archive = await JSZip.loadAsync(buffer);
+  let changed = false;
+
+  await Promise.all(Object.keys(archive.files)
+    .filter((fileName) => WORKSHEET_RELATIONSHIPS_PATTERN.test(fileName))
+    .map(async (fileName) => {
+      const relationshipFile = archive.file(fileName);
+      if (!relationshipFile) return;
+
+      const xml = await relationshipFile.async("string");
+      const sanitizedXml = xml.replace(RELATIONSHIP_ELEMENT_PATTERN, (element) => {
+        const type = readRelationshipAttribute(element, "Type");
+        const target = readRelationshipAttribute(element, "Target");
+        if (type !== COMMENTS_RELATIONSHIP_TYPE || !target) {
+          return element;
+        }
+
+        const targetPath = resolveRelationshipTarget(fileName, target);
+        if (archive.file(targetPath)) {
+          return element;
+        }
+
+        changed = true;
+        return "";
+      });
+
+      if (sanitizedXml !== xml) {
+        archive.file(fileName, sanitizedXml);
+      }
+    }));
+
+  if (!changed) {
+    return buffer;
+  }
+
+  return archive.generateAsync({ type: "nodebuffer" });
+}
+
 function isEmptyRow(row: unknown[]): boolean {
   return !row.some((value) => cleanCellValue(value));
 }
@@ -168,7 +227,8 @@ export async function parseExcelBuffer(buffer: Buffer): Promise<ImportVisitInput
 
 export async function parseExcelBufferWithMetadata(buffer: Buffer): Promise<ParsedExcelImport> {
   const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(buffer as never);
+  const readableBuffer = await removeDanglingCommentRelationships(buffer);
+  await workbook.xlsx.load(readableBuffer as never);
   const worksheet = workbook.worksheets[0];
   if (!worksheet) {
     return { rows: [], ignoredSampleRows: 0 };

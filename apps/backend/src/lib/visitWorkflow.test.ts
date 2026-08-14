@@ -9,6 +9,8 @@ import {
   assertCanUpdateHostSignature,
   canAccessGate,
   canManageGuardScopedVisit,
+  normalizeRoles,
+  hasRole,
   HOST_SIGNATURE_STATUS,
   VISIT_STATUS,
   type AuthenticatedUser
@@ -123,4 +125,13 @@ test("default menu access gives KasKdt text management and import", () => {
   assert.equal(getDefaultMenuAccessForRole("kaskdt").includes("texte"), true);
   assert.equal(getDefaultPermissionsForRole("kaskdt").texts.manage, true);
   assert.equal(getDefaultPermissionsForRole("kaskdt").imports.execute, true);
+});
+
+test("only SiBe plus KasKdt forms a supported multi-role identity", () => {
+  assert.deepEqual(normalizeRoles(["sibe", "kaskdt"], "sibe"), ["sibe", "kaskdt"]);
+  assert.deepEqual(normalizeRoles(["admin", "sibe"], "admin"), ["admin"]);
+  const dual: AuthenticatedUser = { ...makeUser("sibe", null), roles: ["sibe", "kaskdt"] };
+  assert.equal(hasRole(dual, "sibe"), true);
+  assert.equal(hasRole(dual, "kaskdt"), true);
+  assert.equal(hasRole(dual, "admin"), false);
 });

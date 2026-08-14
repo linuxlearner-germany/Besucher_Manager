@@ -20,6 +20,23 @@ export class ImportValidationError extends Error {
   }
 }
 
+export function validateSimplifiedImportRows(rows: ImportVisitInput[]): string[] {
+  const messages: string[] = [];
+  rows.forEach((row, index) => {
+    const line = row.sourceExcelRowNumber ?? index + 2;
+    if (cleanOptional(row.nationalityCode) && !findCountryCode(row.nationalityCode)) {
+      messages.push(`Excel-Zeile ${line}: Nationalität ist ungültig.`);
+    }
+    for (const [value, label] of [[row.validFrom, "Gültig von"], [row.validUntil, "Gültig bis"], [row.birthDate, "Geburtsdatum"], [row.idDocumentValidUntil, "Ausweis gültig bis"]] as const) {
+      if (cleanOptional(value) && !normalizeImportDateOnly(value)) messages.push(`Excel-Zeile ${line}: ${label} ist ungültig.`);
+    }
+    for (const [value, label] of [[row.email, "E-Mail"], [row.hostEmail, "Ansprechpartner-E-Mail"]] as const) {
+      if (cleanOptional(value) && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value!)) messages.push(`Excel-Zeile ${line}: ${label} ist ungültig.`);
+    }
+  });
+  return messages;
+}
+
 export function isMissingImportValue(value: string | null | undefined): boolean {
   return isBlankOrPlaceholder(value, MISSING_IMPORT_VALUE);
 }
@@ -32,6 +49,11 @@ export function normalizeImportDateOnly(value: string | null | undefined): strin
   const cleaned = cleanOptional(value);
   if (!cleaned) {
     return null;
+  }
+  if (/^\d{5}(?:\.\d+)?$/.test(cleaned)) {
+    const serial = Number(cleaned);
+    const excelEpoch = Date.UTC(1899, 11, 30);
+    return new Date(excelEpoch + serial * 86400000).toISOString().slice(0, 10);
   }
 
   const germanDate = cleaned.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
@@ -98,7 +120,7 @@ async function resolveGateId(row: ImportVisitInput, fallbackGateId?: string | nu
 export async function createImportedPreRegistrations(
   rows: ImportVisitInput[],
   options: {
-    source: "public_group_form" | "file_import";
+    source: "public_group_form" | "file_import" | "simplified_excel";
     submittedIpAddress?: string | null;
     userAgent?: string | null;
     createdBy?: AuthenticatedUser | null;
@@ -106,6 +128,10 @@ export async function createImportedPreRegistrations(
     requiredPublicFieldKeys?: ReadonlySet<PublicFieldKey>;
   }
 ): Promise<ImportVisitsResult> {
+  if (options.source === "simplified_excel") {
+    const messages = validateSimplifiedImportRows(rows);
+    if (messages.length) throw new ImportValidationError(messages);
+  }
   if (options.requiredPublicFieldKeys) {
     const validationMessages = validateImportedPreRegistrationRows(rows, options.requiredPublicFieldKeys);
     if (validationMessages.length > 0) {
@@ -114,7 +140,9 @@ export async function createImportedPreRegistrations(
   }
 
   const invalidNationalityRows = rows.flatMap((row, index) =>
-    findCountryCode(row.nationalityCode) ? [] : [row.sourceExcelRowNumber ?? index + 2]
+    options.source === "simplified_excel" && !cleanOptional(row.nationalityCode)
+      ? []
+      : findCountryCode(row.nationalityCode) ? [] : [row.sourceExcelRowNumber ?? index + 2]
   );
   if (invalidNationalityRows.length > 0) {
     const error = new Error("invalid_import_nationalities") as Error & { rows: number[] };
@@ -146,12 +174,16 @@ export async function createImportedPreRegistrations(
       const idDocumentType = normalizeIdDocumentType(row.idDocumentType);
       const birthDate = normalizeImportDateOnly(row.birthDate);
       const gateId = await resolveGateId(row, options.fallbackGateId);
-      const nationalityCode = findCountryCode(row.nationalityCode)!;
+      const nationalityCode = findCountryCode(row.nationalityCode);
+      const simplified = options.source === "simplified_excel";
+      if (simplified && !gateId) {
+        throw new ImportValidationError([`Excel-Zeile ${row.sourceExcelRowNumber ?? index + 2}: Bitte eine aktive Wache auswählen.`]);
+      }
 
       const visitorInsert = await new sql.Request(transaction)
-        .input("firstName", sql.NVarChar(120), requiredOrPlaceholder(row.firstName))
-        .input("lastName", sql.NVarChar(120), requiredOrPlaceholder(row.lastName))
-        .input("company", sql.NVarChar(255), requiredOrPlaceholder(row.company))
+        .input("firstName", sql.NVarChar(120), simplified ? cleanOptional(row.firstName) : requiredOrPlaceholder(row.firstName))
+        .input("lastName", sql.NVarChar(120), simplified ? cleanOptional(row.lastName) : requiredOrPlaceholder(row.lastName))
+        .input("company", sql.NVarChar(255), simplified ? cleanOptional(row.company) : requiredOrPlaceholder(row.company))
         .input("nationalityCode", sql.NChar(2), nationalityCode)
         .input("birthDate", sql.Date, birthDate)
         .input("visitorStreet", sql.NVarChar(255), cleanOptional(row.visitorStreet))
@@ -207,11 +239,11 @@ export async function createImportedPreRegistrations(
       const visitInsert = await new sql.Request(transaction)
         .input("visitorId", sql.UniqueIdentifier, visitorId)
         .input("gateId", sql.UniqueIdentifier, gateId)
-        .input("hostName", sql.NVarChar(255), requiredOrPlaceholder(row.hostName))
+        .input("hostName", sql.NVarChar(255), simplified ? cleanOptional(row.hostName) : requiredOrPlaceholder(row.hostName))
         .input("hostEmail", sql.NVarChar(255), cleanOptional(row.hostEmail))
         .input("hostPhone", sql.NVarChar(80), cleanOptional(row.hostPhone))
         .input("hostDepartment", sql.NVarChar(255), cleanOptional(row.hostDepartment))
-        .input("purpose", sql.NVarChar(500), requiredOrPlaceholder(row.purpose))
+        .input("purpose", sql.NVarChar(500), simplified ? cleanOptional(row.purpose) : requiredOrPlaceholder(row.purpose))
         .input("validFrom", sql.DateTime2, dateOnlyStart(validFrom))
         .input("validUntil", sql.DateTime2, dateOnlyEnd(validUntil))
         .input("licensePlate", sql.NVarChar(40), cleanOptional(row.licensePlate))
@@ -219,6 +251,7 @@ export async function createImportedPreRegistrations(
         .input("notes", sql.NVarChar(sql.MAX), cleanOptional(row.notes))
         .input("createdBy", sql.UniqueIdentifier, options.createdBy?.id ?? null)
         .input("submittedIpAddress", sql.NVarChar(64), cleanOptional(options.submittedIpAddress))
+        .input("source", sql.NVarChar(40), options.source)
         .query<{ id: string; status: string }>(`
           INSERT INTO dbo.visits (
             visitor_id,
@@ -236,7 +269,8 @@ export async function createImportedPreRegistrations(
             created_by,
             created_via_public_form,
             submitted_ip_address,
-            notes
+            notes,
+            source
           )
           OUTPUT inserted.id, inserted.status
           VALUES (
@@ -255,7 +289,8 @@ export async function createImportedPreRegistrations(
             @createdBy,
             ${options.source === "public_group_form" ? "1" : "0"},
             @submittedIpAddress,
-            @notes
+            @notes,
+            @source
           )
         `);
 
@@ -266,13 +301,13 @@ export async function createImportedPreRegistrations(
 
       const completeness = getVisitCompleteness({
         status: VISIT_STATUS.PRE_REGISTERED,
-        firstName: requiredOrPlaceholder(row.firstName),
-        lastName: requiredOrPlaceholder(row.lastName),
-        company: requiredOrPlaceholder(row.company),
+        firstName: simplified ? cleanOptional(row.firstName) ?? "" : requiredOrPlaceholder(row.firstName),
+        lastName: simplified ? cleanOptional(row.lastName) ?? "" : requiredOrPlaceholder(row.lastName),
+        company: simplified ? cleanOptional(row.company) ?? "" : requiredOrPlaceholder(row.company),
         nationalityCode,
-        hostName: requiredOrPlaceholder(row.hostName),
+        hostName: simplified ? cleanOptional(row.hostName) ?? "" : requiredOrPlaceholder(row.hostName),
         hostPhone: cleanOptional(row.hostPhone),
-        purpose: requiredOrPlaceholder(row.purpose),
+        purpose: simplified ? cleanOptional(row.purpose) ?? "" : requiredOrPlaceholder(row.purpose),
         validFrom,
         validUntil,
         gateId,
@@ -298,19 +333,19 @@ export async function createImportedPreRegistrations(
         visitId: visit.id,
         visitorId,
         badgeNumber,
-        visitorName: `${requiredOrPlaceholder(row.firstName)} ${requiredOrPlaceholder(row.lastName)}`,
-        company: requiredOrPlaceholder(row.company),
+        visitorName: [cleanOptional(row.firstName), cleanOptional(row.lastName)].filter(Boolean).join(" ") || "Keine Angabe",
+        company: cleanOptional(row.company) ?? "Keine Angabe",
         missingFields: completeness.errors.map((issue) => issue.message),
         warnings: completeness.warnings.map((issue) => issue.message),
         needsReview: completeness.errors.length > 0 || completeness.warnings.length > 0
       });
 
       const gate = gateId ? await findActiveGateById(gateId) : null;
-      nationalityNotifications.push({
+      if (nationalityCode) nationalityNotifications.push({
         visitId: visit.id,
         nationalityCode,
-        visitorName: `${requiredOrPlaceholder(row.firstName)} ${requiredOrPlaceholder(row.lastName)}`,
-        company: requiredOrPlaceholder(row.company),
+        visitorName: [cleanOptional(row.firstName), cleanOptional(row.lastName)].filter(Boolean).join(" ") || "Keine Angabe",
+        company: cleanOptional(row.company) ?? "Keine Angabe",
         validFrom,
         validUntil,
         gateName: gate?.name ?? null

@@ -4,7 +4,7 @@ import { ImportResultCard } from "../components/import/ImportResultCard";
 import { ImportTemplateCard } from "../components/import/ImportTemplateCard";
 import type { ImportResult } from "../components/import/importTypes";
 import { Alert } from "../components/ui";
-import { AppLayout, type ApiError, fetchJson, type Gate, useAuth } from "../app/core";
+import { AppLayout, type ApiError, canUseSimplifiedVisitPolicy, fetchJson, type Gate, useAuth } from "../app/core";
 
 type SimplifiedRuleVisitor = {
   sourceExcelRowNumber?: number;
@@ -21,17 +21,9 @@ type SimplifiedRuleVisitor = {
 };
 
 type SimplifiedRulePreview = {
-  documentType: "event" | "construction";
-  title: string;
-  organization: string;
-  location: string;
-  validFrom: string;
-  validUntil: string;
-  hostName: string;
-  hostPhone: string;
-  notes: string;
   visitors: SimplifiedRuleVisitor[];
   warnings: string[];
+  errors: string[];
 };
 
 export function ImportPage() {
@@ -50,7 +42,7 @@ export function ImportPage() {
   const [gates, setGates] = useState<Gate[]>([]);
 
   useEffect(() => {
-    if (!user || user.role === "guard") return;
+    if (!canUseSimplifiedVisitPolicy(user)) return;
     void fetchJson<{ gates: Gate[] }>("/api/public/gates", { method: "GET", headers: {} })
       .then((payload) => setGates(payload.gates))
       .catch(() => setGates([]));
@@ -91,8 +83,8 @@ export function ImportPage() {
   }
 
   async function previewSimplifiedRule() {
-    if (!simplifiedRuleFile || !user) {
-      setError(user ? "Bitte eine PDF-Datei auswählen." : "Bitte melden Sie sich für den PDF-Import an.");
+    if (!simplifiedRuleFile || !canUseSimplifiedVisitPolicy(user)) {
+      setError(user ? "Nur Sicherheitsbeauftragte dürfen XLSX-Dateien importieren." : "Bitte melden Sie sich für den XLSX-Import an.");
       return;
     }
     setSimplifiedRuleLoading(true);
@@ -105,15 +97,15 @@ export function ImportPage() {
       setSimplifiedRulePreview(preview);
     } catch (apiError) {
       const errorPayload = apiError as ApiError;
-      setError(errorPayload.message || "Die PDF-Datei konnte nicht gelesen werden.");
+      setError(errorPayload.message || "Die XLSX-Datei konnte nicht gelesen werden.");
     } finally {
       setSimplifiedRuleLoading(false);
     }
   }
 
   async function importSimplifiedRule() {
-    if (!simplifiedRulePreview || !user) return;
-    if (user.role !== "guard" && !simplifiedRuleGateId) {
+    if (!simplifiedRulePreview || !simplifiedRuleFile || !canUseSimplifiedVisitPolicy(user)) return;
+    if (!simplifiedRuleGateId) {
       setError("Bitte zuerst eine Wache auswählen.");
       return;
     }
@@ -121,9 +113,12 @@ export function ImportPage() {
     setError(null);
     setMessage(null);
     try {
+      const body = new FormData();
+      body.set("file", simplifiedRuleFile);
+      body.set("gateId", simplifiedRuleGateId);
       const payload = await fetchJson<ImportResult>("/api/sibe/visits/simplified-rule/import", {
         method: "POST",
-        body: JSON.stringify({ gateId: simplifiedRuleGateId, visitors: simplifiedRulePreview.visitors })
+        body
       });
       setImportResult(payload);
       setMessage(payload.message);
@@ -163,49 +158,42 @@ export function ImportPage() {
             onImport={() => void handleImport()}
             importDisabledHint="Bitte zuerst eine Excel-Datei auswählen."
           />
-          <section className="panel import-card">
-            <div className="card-header-row"><h3>Vereinfachte Besucherregelung (PDF)</h3></div>
-            <p className="section-copy">PDF der Veranstaltung oder Baumaßnahme auswählen. Namen, Firmen, Zeitraum und Ansprechpartner werden ausgelesen und vor dem Speichern angezeigt.</p>
+          {canUseSimplifiedVisitPolicy(user) ? <section className="panel import-card">
+            <div className="card-header-row"><h3>Vereinfachte Erfassung (XLSX)</h3><a href="/api/sibe/visits/simplified-rule/template.xlsx">Vorlage herunterladen</a></div>
+            <p className="section-copy">XLSX-Datei auswählen, prüfen und anschließend serverseitig erneut validiert importieren.</p>
             <label className="dropzone compact-dropzone">
               <input
                 className="visually-hidden"
                 type="file"
-                accept=".pdf,application/pdf"
-                disabled={!user}
+                accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 onChange={(event) => {
                   setSimplifiedRuleFile(event.target.files?.[0] ?? null);
                   setSimplifiedRulePreview(null);
                   event.target.value = "";
                 }}
               />
-              <div className="dropzone-copy"><strong>PDF-Datei auswählen</strong><span>PDF</span></div>
+              <div className="dropzone-copy"><strong>XLSX-Datei auswählen</strong><span>XLSX</span></div>
               {simplifiedRuleFile ? <div className="dropzone-selected"><span>Datei: {simplifiedRuleFile.name}</span></div> : null}
             </label>
             <div className="row-actions import-dropzone-actions import-actions-inline">
-              <button type="button" onClick={() => void previewSimplifiedRule()} disabled={!user || !simplifiedRuleFile || simplifiedRuleLoading}>
-                {simplifiedRuleLoading ? "PDF wird gelesen..." : "PDF prüfen"}
+              <button type="button" onClick={() => void previewSimplifiedRule()} disabled={!simplifiedRuleFile || simplifiedRuleLoading}>
+                {simplifiedRuleLoading ? "XLSX wird gelesen..." : "XLSX prüfen"}
               </button>
-              {!user ? <span className="inline-note">Anmeldung mit Importberechtigung erforderlich.</span> : null}
             </div>
 
             {simplifiedRulePreview ? (
               <div className="import-pdf-preview">
                 <h4>Erkannte Angaben</h4>
                 <div className="form-grid two-columns">
-                  <div><strong>Art</strong><br />{simplifiedRulePreview.documentType === "construction" ? "Baumaßnahme" : "Veranstaltung"}</div>
-                  <div><strong>Bezeichnung</strong><br />{simplifiedRulePreview.title || "-"}</div>
-                  <div><strong>Firma / Organisation</strong><br />{simplifiedRulePreview.organization || "-"}</div>
-                  <div><strong>Ort</strong><br />{simplifiedRulePreview.location || "-"}</div>
-                  <div><strong>Zeitraum</strong><br />{simplifiedRulePreview.validFrom || "-"} bis {simplifiedRulePreview.validUntil || "-"}</div>
-                  <div><strong>Ansprechperson</strong><br />{simplifiedRulePreview.hostName || "-"}{simplifiedRulePreview.hostPhone ? ` · ${simplifiedRulePreview.hostPhone}` : ""}</div>
-                  {user && user.role !== "guard" ? <label><strong>Wache</strong><select value={simplifiedRuleGateId} onChange={(event) => setSimplifiedRuleGateId(event.target.value)}><option value="">Wache auswählen</option>{gates.map((gate) => <option key={gate.id} value={gate.id}>{gate.name}</option>)}</select></label> : null}
+                  <label><strong>Wache</strong><select value={simplifiedRuleGateId} onChange={(event) => setSimplifiedRuleGateId(event.target.value)}><option value="">Wache auswählen</option>{gates.map((gate) => <option key={gate.id} value={gate.id}>{gate.name}</option>)}</select></label>
                 </div>
                 {simplifiedRulePreview.warnings.map((warning) => <Alert key={warning} type="warning">{warning}</Alert>)}
+                {simplifiedRulePreview.errors.map((entry) => <Alert key={entry} type="error">{entry}</Alert>)}
                 <div className="table-wrap"><table className="data-table compact-table"><thead><tr><th>Nr.</th><th>Nachname</th><th>Vorname</th><th>Firma / Organisation</th></tr></thead><tbody>{simplifiedRulePreview.visitors.map((visitor, index) => <tr key={`${visitor.sourceExcelRowNumber}-${index}`}><td>{visitor.sourceExcelRowNumber ?? index + 1}</td><td>{visitor.lastName || "-"}</td><td>{visitor.firstName || "-"}</td><td>{visitor.company || "-"}</td></tr>)}</tbody></table></div>
-                <div className="row-actions"><button type="button" onClick={() => void importSimplifiedRule()} disabled={simplifiedRuleImporting || simplifiedRulePreview.visitors.length === 0}>{simplifiedRuleImporting ? "Importiert..." : `${simplifiedRulePreview.visitors.length} Besucher importieren`}</button></div>
+                <div className="row-actions"><button type="button" onClick={() => void importSimplifiedRule()} disabled={simplifiedRuleImporting || simplifiedRulePreview.visitors.length === 0 || simplifiedRulePreview.errors.length > 0}>{simplifiedRuleImporting ? "Importiert..." : `${simplifiedRulePreview.visitors.length} Besucher importieren`}</button></div>
               </div>
             ) : null}
-          </section>
+          </section> : null}
         </section>
         {importResult ? (
           <ImportResultCard

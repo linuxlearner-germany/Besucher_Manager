@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import ExcelJS from "exceljs";
+import JSZip from "jszip";
 
 function loadVisitImportModule() {
   process.env.APP_SECRET = process.env.APP_SECRET || "test-secret";
@@ -17,6 +18,15 @@ test("excel import preserves German dates as day-month-year", () => {
   assert.equal(normalizeImportDateOnly("05.08.2026"), "2026-08-05");
   assert.equal(normalizeImportDateOnly("31.12.2030"), "2030-12-31");
   assert.equal(normalizeImportDateOnly("31.02.2026"), null);
+  assert.equal(normalizeImportDateOnly("46247"), "2026-08-13");
+});
+
+test("simplified XLSX validates only populated formatted values with Excel row numbers", () => {
+  const { validateSimplifiedImportRows } = loadVisitImportModule();
+  assert.deepEqual(validateSimplifiedImportRows([{ sourceExcelRowNumber: 4, firstName: "", email: "" }]), []);
+  const messages = validateSimplifiedImportRows([{ sourceExcelRowNumber: 7, email: "ungueltig", validFrom: "31.02.2026" }]);
+  assert.equal(messages.length, 2);
+  assert.equal(messages.every((message) => message.includes("Excel-Zeile 7")), true);
 });
 
 test("visitor import template marks required and optional fields in headers", () => {
@@ -105,6 +115,40 @@ async function buildWorkbookBuffer(rows: unknown[][]): Promise<Buffer> {
   rows.forEach((row) => worksheet.addRow(row));
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }
+
+async function addDanglingCommentRelationship(buffer: Buffer): Promise<Buffer> {
+  const archive = await JSZip.loadAsync(buffer);
+  archive.file(
+    "xl/worksheets/_rels/sheet1.xml.rels",
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdDanglingComment" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="../comments-missing.xml"/>
+</Relationships>`
+  );
+  return archive.generateAsync({ type: "nodebuffer" });
+}
+
+test("excel import ignores a dangling comment relationship", async () => {
+  const { parseExcelBufferWithMetadata } = require("./visitImportParsing") as typeof import("./visitImportParsing");
+  const brokenWorkbook = await addDanglingCommentRelationship(await buildWorkbookBuffer([
+    ["Vorname", "Nachname", "Firma", "Nationalität"],
+    ["Max", "Muster", "Beispiel GmbH", "Deutschland"]
+  ]));
+
+  const unprotectedWorkbook = new ExcelJS.Workbook();
+  await assert.rejects(
+    () => unprotectedWorkbook.xlsx.load(brokenWorkbook as never),
+    /reading 'comments'/
+  );
+
+  const parsed = await parseExcelBufferWithMetadata(brokenWorkbook);
+
+  assert.equal(parsed.rows.length, 1);
+  assert.equal(parsed.rows[0]?.firstName, "Max");
+  assert.equal(parsed.rows[0]?.lastName, "Muster");
+  assert.equal(parsed.rows[0]?.company, "Beispiel GmbH");
+  assert.equal(parsed.rows[0]?.nationalityCode, "Deutschland");
+});
 
 test("excel import ignores both unchanged template sample rows", async () => {
   const {

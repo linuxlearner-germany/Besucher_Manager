@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   formatDateOnly,
+  formatPersonName,
   formatStatus,
   hasPermission,
+  hasRole,
   type User
 } from "./core";
 
@@ -10,6 +12,7 @@ const user: User = {
   id: "user-1",
   username: "wache",
   role: "guard",
+  roles: ["guard"],
   gateId: "gate-1",
   groups: [],
   menuAccess: ["wache"],
@@ -30,8 +33,20 @@ describe("frontend core helpers", () => {
     expect(formatStatus("checked_in")).toBe("Eingecheckt");
   });
 
+  it("formats missing visitor names without leaking undefined", () => {
+    expect(formatPersonName("", "")).toBe("Ohne Namensangabe");
+    expect(formatPersonName("Erika", "Muster")).toBe("Erika Muster");
+  });
+
   it("uses the explicit permission model", () => {
     expect(hasPermission(user, "visits.checkIn")).toBe(true);
     expect(hasPermission(user, "visits.checkOut")).toBe(false);
+  });
+
+  it("recognizes both roles of the supported dual-role account", () => {
+    const dual = { ...user, role: "sibe" as const, roles: ["sibe", "kaskdt"] as const };
+    expect(hasRole(dual as User, "sibe")).toBe(true);
+    expect(hasRole(dual as User, "kaskdt")).toBe(true);
+    expect(hasRole(dual as User, "admin")).toBe(false);
   });
 });
