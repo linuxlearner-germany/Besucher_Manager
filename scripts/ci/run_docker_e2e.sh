@@ -4,8 +4,14 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ENV_FILE="${ROOT_DIR}/.env.ci"
 export BESUCHER_MANAGER_ENV_FILE="${ENV_FILE}"
+E2E_PROJECT_NAME="${E2E_PROJECT_NAME:-besucher_manager_e2e_$$}"
+if [[ "${E2E_PROJECT_NAME}" == "besucher_manager" ]]; then
+  echo "Refusing to run E2E with the production Compose project name." >&2
+  exit 2
+fi
+export COMPOSE_PROJECT_NAME="${E2E_PROJECT_NAME}"
 DEFAULT_ENV_FILE="${ROOT_DIR}/.env"
-BASE_URL="${BASE_URL:-http://127.0.0.1:3030}"
+BASE_URL="${BASE_URL:-http://127.0.0.1:13030}"
 CREATED_DEFAULT_ENV=0
 
 cleanup() {
@@ -23,9 +29,11 @@ cat >"${ENV_FILE}" <<'EOF'
 NODE_ENV=production
 APP_HOST=0.0.0.0
 PORT=3030
-PUBLIC_BASE_URL=http://127.0.0.1:3030
+HOST_PORT=13030
+PUBLIC_BASE_URL=http://127.0.0.1:13030
 MSSQL_HOST=sqlserver
 MSSQL_PORT=1433
+SQLSERVER_HOST_PORT=0
 MSSQL_DATABASE=Besuchermngmt
 MSSQL_USER=dockerBesuchermngmt
 MSSQL_PASSWORD=CiPassword_123!
