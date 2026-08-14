@@ -18,6 +18,7 @@ import { SibeVisitorsPage } from "./pages/SibeVisitorsPage";
 import { TextManagementPage } from "./pages/TextManagementPage";
 import { VisitDetailPage } from "./pages/VisitDetailPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { PublicPreRegistrationConfirmationPage } from "./pages/PublicPreRegistrationConfirmationPage";
 import {
   AuthProvider,
   buildCheckoutStateFromVisit,
@@ -54,6 +55,7 @@ function AppRoutes() {
     <Routes>
       <Route path="/" element={<PublicPreRegistrationPage />} />
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/visit/confirmation" element={<PublicPreRegistrationConfirmationPage />} />
       <Route
         path="/einstellungen"
         element={

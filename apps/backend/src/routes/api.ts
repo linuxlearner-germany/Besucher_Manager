@@ -34,6 +34,14 @@ import { guardRouter } from "./guard";
 import { sibeRouter } from "./sibe";
 import { bundeswehrEmailSchema } from "../lib/emailPolicy";
 import { sendGroupPreRegistrationConfirmation } from "../lib/mailRelay";
+import {
+  getPublicPreRegistration,
+  hashPublicAccessToken,
+  isPlausiblePublicAccessToken,
+  PublicAccessError,
+  publicPreRegistrationUpdateSchema,
+  updatePublicPreRegistration
+} from "../lib/publicPreRegistrationAccess";
 
 const loginSchema = z.object({
   username: z.string().trim().min(1),
@@ -126,6 +134,38 @@ const publicGroupVisitorFieldMap = {
 
 export const apiRouter = Router();
 
+function setPublicConfirmationSecurityHeaders(response: import("express").Response) {
+  response.setHeader("Cache-Control", "no-store, max-age=0");
+  response.setHeader("Pragma", "no-cache");
+  response.setHeader("Referrer-Policy", "no-referrer");
+}
+
+function getPublicConfirmationToken(request: import("express").Request): string {
+  const value = request.get("x-confirmation-token");
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function sendPublicAccessError(response: import("express").Response, error: PublicAccessError) {
+  if (error.reason === "not_found") {
+    return sendError(response, 404, "PUBLIC_CONFIRMATION_NOT_FOUND", "Dieser Bestätigungslink ist ungültig.");
+  }
+  if (error.reason === "expired") {
+    return sendError(response, 410, "PUBLIC_CONFIRMATION_EXPIRED", "Dieser Bestätigungslink ist nicht mehr gültig.");
+  }
+  if (error.reason === "revoked") {
+    return sendError(response, 410, "PUBLIC_CONFIRMATION_REVOKED", "Diese Voranmeldung wurde widerrufen oder ist nicht mehr verfügbar.");
+  }
+  if (error.reason === "conflict") {
+    return sendError(response, 409, "PUBLIC_CONFIRMATION_CONFLICT", "Die Voranmeldung wurde zwischenzeitlich geändert. Bitte laden Sie die Seite neu.");
+  }
+  return sendError(response, 409, "PUBLIC_CONFIRMATION_NOT_EDITABLE", "Diese Voranmeldung kann nicht mehr geändert werden.");
+}
+
+function publicConfirmationRateLimitKey(request: import("express").Request, token: string, operation: "read" | "update") {
+  const fingerprint = isPlausiblePublicAccessToken(token) ? hashPublicAccessToken(token).slice(0, 16) : "invalid";
+  return `public-confirmation:${operation}:${getRequestIp(request)}:${fingerprint}`;
+}
+
 apiRouter.get("/api/meta", (_request, response) => {
   response.json({
     version: APP_VERSION,
@@ -148,6 +188,45 @@ apiRouter.get("/api/ui-settings", async (_request, response) => {
     });
   } catch (error) {
     return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Oberflaecheneinstellungen konnten nicht geladen werden.");
+  }
+});
+
+apiRouter.get("/api/public/pre-registration-confirmation", async (request, response) => {
+  setPublicConfirmationSecurityHeaders(response);
+  const token = getPublicConfirmationToken(request);
+  const decision = checkRateLimit(publicConfirmationRateLimitKey(request, token, "read"), 60, 60);
+  if (!decision.allowed) {
+    response.setHeader("Retry-After", String(decision.retryAfterSeconds));
+    return sendError(response, 429, "RATE_LIMITED", "Zu viele Zugriffsversuche. Bitte warten Sie einen Moment.");
+  }
+  try {
+    const preRegistration = await getPublicPreRegistration(token);
+    return response.json({ preRegistration });
+  } catch (error) {
+    if (error instanceof PublicAccessError) return sendPublicAccessError(response, error);
+    return handleUnexpectedError(response, error, "PUBLIC_CONFIRMATION_READ_FAILED", "Die Voranmeldung konnte nicht geladen werden.");
+  }
+});
+
+apiRouter.patch("/api/public/pre-registration-confirmation", async (request, response) => {
+  setPublicConfirmationSecurityHeaders(response);
+  const token = getPublicConfirmationToken(request);
+  const decision = checkRateLimit(publicConfirmationRateLimitKey(request, token, "update"), 15, 60);
+  if (!decision.allowed) {
+    response.setHeader("Retry-After", String(decision.retryAfterSeconds));
+    return sendError(response, 429, "RATE_LIMITED", "Zu viele Änderungsversuche. Bitte warten Sie einen Moment.");
+  }
+  const parsed = publicPreRegistrationUpdateSchema.safeParse(request.body ?? {});
+  if (!parsed.success) return sendValidationError(response, parsed.error.flatten());
+  try {
+    const preRegistration = await updatePublicPreRegistration(token, parsed.data, {
+      ipAddress: getRequestIp(request),
+      userAgent: getRequestUserAgent(request)
+    });
+    return response.json({ message: "Ihre Änderungen wurden erfolgreich gespeichert.", preRegistration });
+  } catch (error) {
+    if (error instanceof PublicAccessError) return sendPublicAccessError(response, error);
+    return handleUnexpectedError(response, error, "PUBLIC_CONFIRMATION_UPDATE_FAILED", "Ihre Änderungen konnten nicht gespeichert werden.");
   }
 });
 

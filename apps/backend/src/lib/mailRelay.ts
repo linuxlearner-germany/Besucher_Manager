@@ -6,6 +6,7 @@ import sql from "mssql";
 import { getCountryName, normalizeCountryCode } from "./countries";
 import { getPool } from "./db";
 import { normalizeUserEmail } from "./users";
+import { getGermanVisitDayEnd, issuePublicVisitAccessToken, revokeOtherPublicVisitAccessTokens, revokePublicVisitAccessToken } from "./publicPreRegistrationAccess";
 
 type MailRequest = {
   to: string[];
@@ -30,8 +31,12 @@ export type MailRelayTestKind =
   | "pre_registration"
   | "reminder";
 
-function buildVisitDetailUrl(visitId: string): string {
+function buildInternalVisitDetailUrl(visitId: string): string {
   return `${env.PUBLIC_BASE_URL.replace(/\/+$/, "")}/sibe/besucher/${visitId}`;
+}
+
+export function buildPublicConfirmationUrl(token: string): string {
+  return `${env.PUBLIC_BASE_URL.replace(/\/+$/, "")}/visit/confirmation#${token}`;
 }
 
 type MailDetail = { label: string; value: string | null | undefined };
@@ -51,13 +56,14 @@ export function buildMailHtml(payload: {
   introduction: string;
   details?: MailDetail[];
   detailUrl?: string;
+  detailLinkLabel?: string;
   footer?: string;
 }): string {
   const rows = (payload.details ?? []).map(({ label, value }) =>
     `<tr><td style="padding:8px 12px;color:#52606d;font-weight:600;vertical-align:top;width:38%">${escapeMailHtml(label)}</td><td style="padding:8px 12px;color:#172b4d">${escapeMailHtml(value)}</td></tr>`
   ).join("");
   const link = payload.detailUrl
-    ? `<p style="margin:24px 0 0"><a href="${escapeMailHtml(payload.detailUrl)}" style="color:#075a9c;word-break:break-all">Zur Detailansicht</a></p>`
+    ? `<p style="margin:24px 0 0"><a href="${escapeMailHtml(payload.detailUrl)}" rel="noreferrer" style="color:#075a9c;word-break:break-all">${escapeMailHtml(payload.detailLinkLabel ?? "Zur Detailansicht")}</a></p>`
     : "";
   return `<!doctype html><html lang="de"><body style="margin:0;padding:24px;background:#f4f6f8;font-family:Arial,sans-serif;color:#172b4d"><main style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #dfe3e8;border-radius:6px;overflow:hidden"><header style="background:#075a9c;color:#ffffff;padding:20px 28px"><strong style="font-size:18px">Besucher Manager</strong></header><section style="padding:28px"><h1 style="font-size:22px;margin:0 0 16px">${escapeMailHtml(payload.heading)}</h1><p style="margin:0 0 20px;line-height:1.5">${escapeMailHtml(payload.introduction)}</p>${rows ? `<table role="presentation" style="width:100%;border-collapse:collapse;background:#f8fafc;border:1px solid #dfe3e8"><tbody>${rows}</tbody></table>` : ""}${link}</section><footer style="padding:16px 28px;background:#f8fafc;color:#52606d;font-size:12px;line-height:1.4">${escapeMailHtml(payload.footer ?? "Diese E-Mail wurde automatisch vom Besucher Manager versendet.")}</footer></main></body></html>`;
 }
@@ -150,9 +156,13 @@ async function sendVisitMail(payload: {
   validUntil: Date | string;
   gateName: string | null;
   visitId: string;
+  confirmationToken: string;
   reminder: boolean;
 }): Promise<boolean> {
-  const introduction = payload.reminder ? "Erinnerung an einen bevorstehenden Besuch." : "Ihre Voranmeldung wurde gespeichert.";
+  const introduction = payload.reminder
+    ? "Erinnerung an einen bevorstehenden Besuch. Über den folgenden Link können Sie Ihre Voranmeldung einsehen und freigegebene Angaben bei Bedarf aktualisieren."
+    : "Ihre Voranmeldung wurde gespeichert. Über den folgenden Link können Sie Ihre Voranmeldung einsehen und freigegebene Angaben bei Bedarf aktualisieren.";
+  const confirmationUrl = buildPublicConfirmationUrl(payload.confirmationToken);
   const details: MailDetail[] = [
     { label: "Besucher", value: payload.visitorName },
     { label: "Firma", value: payload.company || "-" },
@@ -160,8 +170,7 @@ async function sendVisitMail(payload: {
     { label: "Besuchszweck", value: payload.purpose || "-" },
     { label: "Wache", value: payload.gateName || "-" },
     { label: "Gültig von", value: formatVisitDate(payload.validFrom) },
-    { label: "Gültig bis", value: formatVisitDate(payload.validUntil) },
-    { label: "Besuchs-ID", value: payload.visitId }
+    { label: "Gültig bis", value: formatVisitDate(payload.validUntil) }
   ];
   return sendMail({
     to: [payload.to],
@@ -176,7 +185,9 @@ async function sendVisitMail(payload: {
       `Wache: ${payload.gateName || "-"}`,
       `Gültig von: ${formatVisitDate(payload.validFrom)}`,
       `Gültig bis: ${formatVisitDate(payload.validUntil)}`,
-      `Besuchs-ID: ${payload.visitId}`,
+      "",
+      "Voranmeldung ansehen und Angaben korrigieren:",
+      confirmationUrl,
       "",
       "Diese E-Mail wurde automatisch vom Besucher Manager versendet."
     ].join("\n"),
@@ -184,7 +195,8 @@ async function sendVisitMail(payload: {
       heading: payload.reminder ? "Erinnerung an Ihren Besuch" : "Voranmeldung bestätigt",
       introduction,
       details,
-      detailUrl: buildVisitDetailUrl(payload.visitId)
+      detailUrl: confirmationUrl,
+      detailLinkLabel: "Voranmeldung ansehen und bearbeiten"
     })
   });
 }
@@ -258,12 +270,19 @@ export async function sendDueVisitReminders(): Promise<number> {
 
   let sent = 0;
   for (const visit of result.recordset) {
+    let confirmationToken: string | null = null;
     try {
-      const delivered = await sendVisitReminder({ ...visit, to: visit.hostEmail, visitId: visit.id });
-      if (!delivered) continue;
+      confirmationToken = await issuePublicVisitAccessToken(visit.id, getGermanVisitDayEnd(visit.validUntil));
+      const delivered = await sendVisitReminder({ ...visit, to: visit.hostEmail, visitId: visit.id, confirmationToken });
+      if (!delivered) {
+        await revokePublicVisitAccessToken(confirmationToken);
+        continue;
+      }
+      await revokeOtherPublicVisitAccessTokens(visit.id, confirmationToken);
       await pool.request().input("id", sql.UniqueIdentifier, visit.id).query("UPDATE dbo.visits SET reminder_sent_at = SYSUTCDATETIME(), updated_at = SYSUTCDATETIME() WHERE id = @id AND reminder_sent_at IS NULL");
       sent += 1;
     } catch (error) {
+      if (confirmationToken) await revokePublicVisitAccessToken(confirmationToken).catch(() => undefined);
       await writeErrorLog({ errorCode: "VISIT_REMINDER_SEND_FAILED", message: error instanceof Error ? error.message : "unknown", requestPath: "scheduler" }).catch(() => undefined);
     }
   }
@@ -286,7 +305,8 @@ export async function verifyMailRelayConnection(testRecipient?: string): Promise
 }
 
 export function buildMailRelayPreviewContent(kind: MailRelayTestKind) {
-  const detailUrl = buildVisitDetailUrl("00000000-0000-0000-0000-000000000000");
+  const internalDetailUrl = buildInternalVisitDetailUrl("00000000-0000-0000-0000-000000000000");
+  const publicDetailUrl = buildPublicConfirmationUrl("preview-token-is-not-a-real-access-token");
 
   if (kind === "pre_registration" || kind === "reminder") {
     const reminder = kind === "reminder";
@@ -298,8 +318,7 @@ export function buildMailRelayPreviewContent(kind: MailRelayTestKind) {
       { label: "Besuchszweck", value: "Testversand Besucher Manager" },
       { label: "Wache", value: "Hauptwache" },
       { label: "Gültig von", value: "07.08.2026, 08:00" },
-      { label: "Gültig bis", value: "07.08.2026, 17:00" },
-      { label: "Besuchs-ID", value: "00000000-0000-0000-0000-000000000000" }
+      { label: "Gültig bis", value: "07.08.2026, 17:00" }
     ];
     return {
       subject: reminder ? "Besucher Manager: Erinnerung an Ihren Besuch" : "Besucher Manager: Voranmeldung bestätigt",
@@ -313,7 +332,9 @@ export function buildMailRelayPreviewContent(kind: MailRelayTestKind) {
         "Wache: Hauptwache",
         "Gültig von: 07.08.2026, 08:00",
         "Gültig bis: 07.08.2026, 17:00",
-        "Besuchs-ID: 00000000-0000-0000-0000-000000000000",
+        "",
+        "Voranmeldung ansehen und Angaben korrigieren:",
+        publicDetailUrl,
         "",
         "Diese E-Mail wurde automatisch vom Besucher Manager versendet."
       ].join("\n"),
@@ -321,7 +342,8 @@ export function buildMailRelayPreviewContent(kind: MailRelayTestKind) {
         heading: reminder ? "Erinnerung an Ihren Besuch" : "Voranmeldung bestätigt",
         introduction,
         details,
-        detailUrl
+        detailUrl: publicDetailUrl,
+        detailLinkLabel: "Voranmeldung ansehen und bearbeiten"
       })
     };
   }
@@ -339,13 +361,13 @@ export function buildMailRelayPreviewContent(kind: MailRelayTestKind) {
         "Gültig von: 07.07.2026, 08:00",
         "Gültig bis: 07.07.2026, 17:00",
         "",
-        `Details: ${detailUrl}`
+        `Details: ${internalDetailUrl}`
       ].join("\n"),
       html: buildMailHtml({
         heading: "Nationalitätsmeldung",
         introduction: "Für ein abonniertes Land wurde ein Besuch angemeldet.",
         details: [{ label: "Nationalität", value: "Deutschland (DE)" }, { label: "Besucher", value: "Max Mustermann" }, { label: "Firma", value: "Musterfirma GmbH" }, { label: "Wache", value: "Hauptwache" }, { label: "Gültig von", value: "07.07.2026, 08:00" }, { label: "Gültig bis", value: "07.07.2026, 17:00" }],
-        detailUrl
+        detailUrl: internalDetailUrl
       })
     };
   }
@@ -433,9 +455,9 @@ export async function notifyNationalitySubscribers(payload: {
             `Firma: ${payload.company}`,
             `Besuchszeitraum: ${payload.validFrom} bis ${payload.validUntil}`,
             `Wache: ${payload.gateName || "Noch nicht zugeordnet"}`, "",
-            `Details: ${buildVisitDetailUrl(payload.visitId)}`
+            `Details: ${buildInternalVisitDetailUrl(payload.visitId)}`
           ].join("\n"),
-          html: buildMailHtml({ heading: "Nationalitätsmeldung", introduction, details, detailUrl: buildVisitDetailUrl(payload.visitId) })
+          html: buildMailHtml({ heading: "Nationalitätsmeldung", introduction, details, detailUrl: buildInternalVisitDetailUrl(payload.visitId) })
         });
         await pool.request()
           .input("visitId", sql.UniqueIdentifier, payload.visitId)

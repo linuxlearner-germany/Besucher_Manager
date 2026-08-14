@@ -75,6 +75,7 @@ done
 curl -fsS "${BASE_URL}/health" >/dev/null
 
 docker compose --env-file "${ENV_FILE}" --project-name "${E2E_PROJECT_NAME}" --profile local-db exec -T app npm run seed:sample:compiled --workspace @besucher-manager/backend
+docker compose --env-file "${ENV_FILE}" --project-name "${E2E_PROJECT_NAME}" --profile local-db exec -T app npm run verify:public-confirmation:compiled --workspace @besucher-manager/backend
 
 python3 scripts/ops/verify_role_access.py \
   --base-url "${BASE_URL}" \

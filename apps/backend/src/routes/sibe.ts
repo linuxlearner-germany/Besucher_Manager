@@ -748,7 +748,8 @@ sibeRouter.get("/api/sibe/visits/:id", async (request, response) => {
           vt.badge_number AS badgeNumber,
           vt.rejection_note AS rejectionNote,
           CONVERT(NVARCHAR(30), vt.rejected_at, 127) AS rejectedAt,
-          rejecter.username AS rejectedBy
+          rejecter.username AS rejectedBy,
+          CONVERT(NVARCHAR(30), vt.public_recipient_updated_at, 127) AS publicRecipientUpdatedAt
         FROM dbo.visits vt
         INNER JOIN dbo.visitors vis ON vis.id = vt.visitor_id
         LEFT JOIN dbo.gates g ON g.id = vt.gate_id

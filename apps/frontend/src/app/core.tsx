@@ -267,6 +267,7 @@ export type VisitRow = {
   rejectionNote?: string | null;
   rejectedAt?: string | null;
   rejectedBy?: string | null;
+  publicRecipientUpdatedAt?: string | null;
   visitorAddress: string | null;
   idDocumentType: string | null;
   idDocumentValidUntil: string | null;
