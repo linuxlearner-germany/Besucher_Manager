@@ -537,9 +537,10 @@ Für den lokalen Compose-SQL-Server:
 
 ```bash
 npm run ops:backup
+npm run ops:backup:restore-test
 ```
 
-Backups werden standardmäßig nach `archive/backups/` geschrieben.
+Backups werden standardmäßig nach `archive/backups/` außerhalb des SQL-Docker-Volumes geschrieben. Das Backup gilt erst nach SQL-Server-`RESTORE VERIFYONLY`, SQL-Checksum-Prüfung und identischem SHA-256-Wert der kopierten Datei als erfolgreich. Die automatische Retention behält die sieben neuesten Sicherungen sowie Tagesstände für 14 Tage und Wochenstände für acht Wochen; unverifizierte Altdateien werden niemals automatisch entfernt. Der Restore-Test verwendet einen kurzlebigen, markierten SQL-Container mit eigenem Volume und überschreibt keine Betriebsdatenbank.
 
 ### Häufige Ursachen
 

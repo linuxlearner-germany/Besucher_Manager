@@ -14,6 +14,8 @@
     "test:frontend": "npm run test --workspace @besucher-manager/frontend",
     "typecheck": "npm run typecheck --workspace @besucher-manager/backend && npm run typecheck --workspace @besucher-manager/frontend",
     "ops:backup": "bash scripts/ops/backup_sqlserver.sh",
+    "ops:backup:restore-test": "bash scripts/ops/restore_test_sqlserver.sh",
+    "ops:backup:retention-check": "python3 scripts/ops/prune_sql_backups.py --backup-dir archive/backups --database BesucherManager",
     "ops:update": "bash scripts/ops/update_stack.sh",
     "verify:mvp": "python3 scripts/ops/verify_mvp_flow.py --base-url http://localhost:3030",
     "verify:roles": "python3 scripts/ops/verify_role_access.py --base-url http://localhost:3030",
