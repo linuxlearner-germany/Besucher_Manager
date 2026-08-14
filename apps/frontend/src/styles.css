@@ -1599,10 +1599,12 @@ body:has(.public-pre-registration-shell) {
   place-items: start center;
   padding: clamp(1rem, 4vw, 3rem);
   background: #f4f6f8;
+  color: var(--text);
 }
 
 .public-confirmation-card {
   width: min(900px, 100%);
+  min-width: 0;
   padding: clamp(1.25rem, 3vw, 2.25rem);
   background: var(--surface, #fff);
   border: 1px solid var(--border, #dfe3e8);
@@ -1612,9 +1614,9 @@ body:has(.public-pre-registration-shell) {
 
 .public-confirmation-header {
   display: flex;
-  align-items: center;
-  gap: 1rem;
-  margin-bottom: 1.5rem;
+  align-items: flex-start;
+  gap: 1.25rem;
+  margin-bottom: 1.75rem;
 }
 
 .public-confirmation-header img {
@@ -1622,17 +1624,274 @@ body:has(.public-pre-registration-shell) {
   height: auto;
 }
 
-.public-confirmation-header h1 { margin: 0; }
+.public-confirmation-header h1 {
+  margin: 0;
+  font-size: clamp(1.55rem, 4vw, 2.15rem);
+  line-height: 1.15;
+}
 .public-confirmation-header .eyebrow { margin: 0 0 .25rem; color: #52606d; }
-.public-confirmation-summary { margin-bottom: 1.25rem; }
-.public-confirmation-summary p { color: #52606d; }
-.public-confirmation-details { margin-bottom: 1.5rem; }
-.public-confirmation-form { margin-top: 1.5rem; }
+.public-confirmation-intro {
+  margin: .6rem 0 0;
+  color: var(--text-secondary, #52606d);
+}
 
-@media (max-width: 640px) {
+.public-confirmation-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  min-height: 180px;
+  color: var(--text-secondary, #52606d);
+}
+
+.public-confirmation-loading .loading-spinner {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+}
+
+.public-confirmation-feedback {
+  margin-bottom: 18px;
+}
+
+.public-confirmation-feedback .feedback {
+  display: grid;
+  gap: 10px;
+  overflow-wrap: anywhere;
+}
+
+.public-confirmation-feedback p { margin: 0; }
+.public-confirmation-feedback small { font-weight: 400; }
+.public-confirmation-feedback button { justify-self: start; min-height: 42px; }
+
+.public-confirmation-overview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  margin-bottom: 18px;
+  overflow: hidden;
+  border: 1px solid var(--panel-border, #dfe3e8);
+  border-radius: 10px;
+  background: var(--panel-border, #dfe3e8);
+}
+
+.public-confirmation-overview > div {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  min-width: 0;
+  padding: 16px;
+  background: var(--panel-bg, #fff);
+}
+
+.public-confirmation-overview span {
+  color: var(--text-secondary, #52606d);
+  font-size: .8rem;
+  font-weight: 600;
+}
+
+.public-confirmation-overview strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.public-confirmation-overview .badge {
+  justify-self: start;
+  font-size: .78rem;
+  font-weight: 700;
+}
+
+.public-confirmation-overview .badge.pre_registered { background: var(--status-pending-bg); color: var(--status-pending-text); }
+.public-confirmation-overview .badge.checked_in { background: var(--status-active-bg); color: var(--status-active-text); }
+.public-confirmation-overview .badge.checked_out { background: var(--status-done-bg); color: var(--status-done-text); }
+.public-confirmation-overview .badge.cancelled,
+.public-confirmation-overview .badge.rejected { background: var(--status-cancelled-bg); color: var(--status-cancelled-text); }
+
+.public-editability {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  margin-bottom: 24px;
+  padding: 16px;
+  border: 1px solid var(--panel-border, #dfe3e8);
+  border-radius: 10px;
+}
+
+.public-editability.is-editable { background: var(--success-bg, #edf9f0); }
+.public-editability.is-locked { background: var(--surface-subtle, #f7f8fa); }
+.public-editability-icon { font-size: 1.2rem; line-height: 1.3; }
+.public-editability h2 { margin: 0; font-size: 1rem; line-height: 1.4; }
+.public-editability p { margin: 5px 0 0; color: var(--text-secondary, #52606d); }
+
+.public-detail-sections {
+  display: grid;
+  gap: 18px;
+}
+
+.public-detail-sections > section,
+.public-fixed-details,
+.public-editable-details fieldset {
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--panel-border, #dfe3e8);
+  border-radius: 10px;
+  background: var(--panel-bg, #fff);
+}
+
+.public-detail-sections h2,
+.public-fixed-details h2,
+.public-form-heading h2,
+.public-visit-hint h2 {
+  margin: 0 0 14px;
+  font-size: 1.1rem;
+}
+
+.public-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 22px;
+  margin: 0;
+}
+
+.public-detail-grid > div { min-width: 0; }
+.public-detail-grid dt { color: var(--text-secondary, #52606d); font-size: .8rem; font-weight: 600; }
+.public-detail-grid dd {
+  margin: 4px 0 0;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.public-detail-grid .public-detail-wide { grid-column: 1 / -1; }
+
+.public-last-updated {
+  margin: 16px 0 0;
+  color: var(--text-secondary, #52606d);
+  font-size: .9rem;
+}
+
+.public-confirmation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.public-confirmation-actions button {
+  min-width: 190px;
+  min-height: 46px;
+}
+
+.public-confirmation-form {
+  display: grid;
+  gap: 22px;
+}
+
+.public-fixed-details > p,
+.public-form-heading > p {
+  margin: -6px 0 16px;
+  color: var(--text-secondary, #52606d);
+}
+
+.public-editable-details {
+  display: grid;
+  gap: 18px;
+}
+
+.public-editable-details fieldset { margin: 0; }
+.public-editable-details legend {
+  padding: 0 8px;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.public-confirmation-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 20px;
+}
+
+.public-confirmation-form .form-field {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.public-confirmation-form input,
+.public-confirmation-form textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  background: var(--surface-subtle);
+  color: var(--text);
+  font: inherit;
+}
+
+.public-confirmation-form textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+
+.public-confirmation-form input:focus-visible,
+.public-confirmation-form textarea:focus-visible,
+.public-confirmation-page button:focus-visible {
+  outline: 3px solid rgba(24, 126, 204, .3);
+  outline-offset: 2px;
+  border-color: var(--accent);
+}
+
+.public-confirmation-form .has-error input,
+.public-confirmation-form .has-error textarea {
+  border-color: var(--danger-text);
+  background: var(--required-missing-bg);
+}
+
+.public-edit-actions {
+  padding-top: 18px;
+  border-top: 1px solid var(--panel-border, #dfe3e8);
+}
+
+.public-visit-hint {
+  margin-top: 24px;
+  padding: 18px;
+  border-radius: 10px;
+  background: var(--surface-subtle, #f7f8fa);
+}
+
+.public-visit-hint ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+@media (max-width: 700px) {
   .public-confirmation-page { padding: .75rem; }
-  .public-confirmation-card { padding: 1rem; }
+  .public-confirmation-card { padding: 1rem; border-radius: 8px; }
+  .public-confirmation-header { gap: .8rem; margin-bottom: 1.25rem; }
   .public-confirmation-header img { width: 56px; }
+  .public-confirmation-overview,
+  .public-detail-grid,
+  .public-confirmation-form-grid { grid-template-columns: 1fr; }
+  .public-confirmation-overview { gap: 1px; }
+  .public-detail-grid .public-detail-wide { grid-column: auto; }
+  .public-detail-sections > section,
+  .public-fixed-details,
+  .public-editable-details fieldset { padding: 15px; }
+  .public-confirmation-actions { flex-direction: column; }
+  .public-confirmation-actions button { width: 100%; min-width: 0; }
+  .public-edit-actions .primary-button { order: 1; }
+  .public-edit-actions .secondary-button { order: 2; }
+}
+
+@media (max-width: 430px) {
+  .public-confirmation-header img { width: 46px; }
+  .public-confirmation-header h1 { font-size: 1.4rem; }
+  .public-confirmation-intro { font-size: .92rem; }
+  .public-editability { padding: 13px; }
 }
 
 .public-inline-status {

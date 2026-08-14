@@ -33,13 +33,14 @@ export function FormField({
   label,
   required,
   error,
+  errorId,
   children
-}: PropsWithChildren<{ label: string; required?: boolean; error?: string }>) {
+}: PropsWithChildren<{ label: string; required?: boolean; error?: string; errorId?: string }>) {
   return (
     <label className={`form-field${error ? " has-error" : ""}`}>
       <FieldLabel label={label} required={required} />
       {children}
-      {error ? <span className="field-error" role="alert">{error}</span> : null}
+      {error ? <span id={errorId} className="field-error" role="alert">{error}</span> : null}
     </label>
   );
 }
