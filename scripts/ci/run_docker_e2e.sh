@@ -86,3 +86,5 @@ python3 scripts/ops/verify_mvp_flow.py \
   --base-url "${BASE_URL}" \
   --admin-user admin \
   --admin-password Admin123!
+
+python3 scripts/ops/verify_public_xlsx_application.py --base-url "${BASE_URL}"

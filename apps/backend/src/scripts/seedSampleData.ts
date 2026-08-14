@@ -12,7 +12,7 @@ type SeedGate = {
 type SeedUser = {
   username: string;
   password: string;
-  role: "guard" | "sibe";
+  role: "guard" | "sibe" | "kaskdt";
   gateName?: string;
   email?: string;
 };
@@ -54,7 +54,8 @@ const sampleGates: SeedGate[] = [
 const sampleUsers: SeedUser[] = [
   { username: "guard.demo", password: "Test1234!", role: "guard", gateName: "Hauptwache" },
   { username: "guard.nord", password: "Test1234!", role: "guard", gateName: "Nordtor" },
-  { username: "sibe.demo", password: "Test1234!", role: "sibe", email: "sibe.demo@wiweb.test" }
+  { username: "sibe.demo", password: "Test1234!", role: "sibe", email: "sibe.demo@wiweb.test" },
+  { username: "kaskdt.demo", password: "Test1234!", role: "kaskdt", email: "kaskdt.demo@wiweb.test" }
 ];
 
 const sampleVisitors: SeedVisitor[] = [

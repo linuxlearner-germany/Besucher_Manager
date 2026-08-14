@@ -4789,3 +4789,13 @@ input[type="checkbox"] {
     page-break-after: auto !important;
   }
 }
+
+.application-steps { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:.75rem; padding:0; list-style:none; counter-reset:application-step; }
+.application-steps li { counter-increment:application-step; padding:.85rem; border:1px solid var(--border-color,#d8dee8); border-radius:.6rem; background:var(--surface,#fff); }
+.application-steps li::before { content:counter(application-step) ". "; font-weight:700; }
+.public-xlsx-page .panel { margin-bottom:1rem; }
+.warning-text { color:#8a5a00; }
+.break-anywhere { overflow-wrap:anywhere; word-break:break-word; }
+.decision-actions,.finalize-panel { margin-top:1rem; padding-top:1rem; border-top:1px solid var(--border-color,#d8dee8); }
+.decision-actions .form-actions { display:flex; flex-wrap:wrap; gap:.6rem; }
+@media (max-width:760px){.application-steps{grid-template-columns:1fr}.public-xlsx-page input[type="file"]{max-width:100%}.decision-actions .form-actions button{width:100%}.data-table{min-width:760px}}

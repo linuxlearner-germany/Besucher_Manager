@@ -133,6 +133,14 @@ async function sendMail(request: MailRequest): Promise<boolean> {
   return true;
 }
 
+export async function sendWorkflowMail(request: MailRequest): Promise<boolean> {
+  return sendMail(request);
+}
+
+export function buildPublicSimplifiedVerificationUrl(token: string): string {
+  return `${env.PUBLIC_BASE_URL.replace(/\/+$/, "")}/visit/simplified/verify#${token}`;
+}
+
 export function formatVisitDate(value: Date | string): string {
   return new Intl.DateTimeFormat("de-DE", {
     day: "2-digit",

@@ -80,7 +80,7 @@ export function createApp() {
   app.use(apiRouter);
   app.use("/uploads", express.static(env.uploadDir));
 
-  app.use("/visit/confirmation", (_request, response, next) => {
+  app.use(["/visit/confirmation", "/visit/simplified"], (_request, response, next) => {
     response.setHeader("Cache-Control", "no-store, max-age=0");
     response.setHeader("Referrer-Policy", "no-referrer");
     next();

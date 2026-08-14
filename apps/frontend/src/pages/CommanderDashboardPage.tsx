@@ -81,6 +81,8 @@ export function CommanderDashboardPage() {
 
         {error ? <Alert type="error">{error}</Alert> : null}
 
+        <Card><div className="section-header"><div><h3>Öffentliche XLSX-Anträge</h3><p>Neue Anträge prüfen, Personen entscheiden und eine zusammenfassende Entscheidung versenden.</p></div><Link className="button-link" to="/kaskdt/antraege">Anträge öffnen</Link></div></Card>
+
         <div className="split-card-grid">
           <Card>
             <div className="section-header">

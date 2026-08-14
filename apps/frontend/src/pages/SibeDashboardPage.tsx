@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { AppLayout, type ApiError, fetchJson, formatDateTime, formatStatus, statusClassName, type SibeSummary, type SibeVisitRow } from "../app/core";
-import { Alert, Card, DataTable } from "../components/ui";
+import { AppLayout, type ApiError, fetchJson, formatDateTime, formatStatus, hasRole, statusClassName, type SibeSummary, type SibeVisitRow, useAuth } from "../app/core";
+import { Alert, Button, Card, DataTable } from "../components/ui";
 
 export function SibeDashboardPage() {
+  const { user } = useAuth();
   const [summary, setSummary] = useState<SibeSummary | null>(null);
   const [recentVisits, setRecentVisits] = useState<SibeVisitRow[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -79,6 +80,8 @@ export function SibeDashboardPage() {
         </section>
 
         {error ? <Alert type="error">{error}</Alert> : null}
+
+        {hasRole(user, "sibe") ? <PublicXlsxSettings /> : null}
 
         <div className="split-card-grid">
           <Card>
@@ -203,4 +206,13 @@ export function SibeDashboardPage() {
       </main>
     </AppLayout>
   );
+}
+
+function PublicXlsxSettings() {
+  const [required, setRequired] = useState<boolean | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  useEffect(() => { void fetchJson<{ requireEmailVerification: boolean }>("/api/sibe/settings/public-xlsx-applications", { headers: {} }).then((value) => setRequired(value.requireEmailVerification)).catch(() => setMessage("Die Einstellung konnte nicht geladen werden.")); }, []);
+  async function toggle() { if (required === null) return; setSaving(true); setMessage(null); try { const value = await fetchJson<{ requireEmailVerification: boolean }>("/api/sibe/settings/public-xlsx-applications", { method: "PATCH", body: JSON.stringify({ requireEmailVerification: !required }) }); setRequired(value.requireEmailVerification); setMessage("Einstellung gespeichert."); } catch (error) { setMessage((error as ApiError).message || "Die Einstellung konnte nicht gespeichert werden."); } finally { setSaving(false); } }
+  return <Card><div className="section-header"><div><h3>Öffentliche XLSX-Anträge</h3><p>Wenn aktiviert, wird ein öffentlicher XLSX-Antrag erst nach Bestätigung der angegebenen E-Mail-Adresse an KSKdt zur Genehmigung weitergeleitet.</p></div><span className={`badge ${required ? "checked_in" : "checked_out"}`}>{required === null ? "Wird geladen" : required ? "Aktiviert" : "Deaktiviert"}</span></div><Button type="button" disabled={saving || required === null} onClick={() => void toggle()}>{saving ? "Wird gespeichert …" : required ? "Bestätigung deaktivieren" : "Bestätigung aktivieren"}</Button>{message ? <p aria-live="polite">{message}</p> : null}</Card>;
 }

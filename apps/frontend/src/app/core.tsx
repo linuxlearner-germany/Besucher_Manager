@@ -1291,6 +1291,7 @@ export function AppLayout({ children }: PropsWithChildren) {
   const [openRoleMenu, setOpenRoleMenu] = useState<"wache" | "sibe" | "kaskdt" | null>(null);
   const menuItems: Array<{ to: string; label: string; visible: boolean }> = [
     { to: "/", label: "Voranmeldung", visible: !user || Boolean(user && hasMenuAccess(user, "voranmeldung")) },
+    { to: "/visit/simplified/application", label: "XLSX-Antrag", visible: !user },
     { to: "/wache", label: "Wache", visible: Boolean(user && hasMenuAccess(user, "wache") && hasPermission(user, "visits.read")) },
     { to: "/import", label: "Import", visible: Boolean(!user || (user && hasMenuAccess(user, "import") && hasPermission(user, "imports.execute"))) },
     { to: "/admin", label: "Admin", visible: Boolean(user && hasMenuAccess(user, "admin") && (hasPermission(user, "admin.users") || hasPermission(user, "admin.guards") || hasPermission(user, "admin.fields") || hasPermission(user, "admin.map") || hasPermission(user, "admin.system") || hasPermission(user, "logs.audit") || hasPermission(user, "logs.errors"))) },
@@ -1299,6 +1300,7 @@ export function AppLayout({ children }: PropsWithChildren) {
     { to: "/sibe/ablehnungen", label: "Ablehnungen", visible: Boolean(user && hasMenuAccess(user, "sibe") && hasPermission(user, "visits.read")) },
     { to: "/sibe/benachrichtigungen", label: "Länderbenachrichtigungen", visible: Boolean(user && hasMenuAccess(user, "laenderbenachrichtigungen") && hasPermission(user, "dashboards.sibe")) },
     { to: "/kaskdt", label: "KasKdt", visible: Boolean(user && hasMenuAccess(user, "kaskdt") && hasPermission(user, "dashboards.commander")) },
+    { to: "/kaskdt/antraege", label: "Anträge", visible: Boolean(user && hasRole(user, "kaskdt")) },
     { to: "/texte", label: "Texte", visible: Boolean(user && hasMenuAccess(user, "texte") && hasPermission(user, "texts.manage")) },
     { to: "/login", label: "Login", visible: !user }
   ];
@@ -1306,7 +1308,7 @@ export function AppLayout({ children }: PropsWithChildren) {
   const adminRoleMenus: Array<{ key: "wache" | "sibe" | "kaskdt"; label: string; paths: string[] }> = [
     { key: "wache", label: "Wache", paths: ["/wache", "/import"] },
     { key: "sibe", label: "SiBe", paths: ["/sibe", "/sibe/besucher/vereinfacht", "/sibe/ablehnungen", "/sibe/benachrichtigungen"] },
-    { key: "kaskdt", label: "KasKdt", paths: ["/kaskdt", "/texte"] }
+    { key: "kaskdt", label: "KasKdt", paths: ["/kaskdt", "/kaskdt/antraege", "/texte"] }
   ];
   const isAdminNavigation = user?.role === "admin";
 

@@ -18,13 +18,15 @@ export const WORKFLOW_SETTING_KEYS = {
   uiBackgroundImageName: "ui_background_image_name",
   uiBackgroundImageOriginalFileName: "ui_background_image_original_file_name",
   securityNumber: "security_number",
-  maintenanceMode: "maintenance_mode"
+  maintenanceMode: "maintenance_mode",
+  publicXlsxRequireEmailVerification: "public_xlsx_require_email_verification"
 } as const;
 
 export const SITE_MAP_SETTING_KEY = "site_map_file_name";
 
 export type WorkflowSettings = {
   maintenanceMode: boolean;
+  publicXlsxRequireEmailVerification: boolean;
   mailFormat: "text" | "html";
   securityNumber: string;
   backgroundMode: "image" | "subtle" | "plain";
@@ -175,6 +177,7 @@ export async function loadWorkflowSettings(options?: {
     return {
       ...backgroundState,
       maintenanceMode: toBoolean(settingMap.get(WORKFLOW_SETTING_KEYS.maintenanceMode), false),
+      publicXlsxRequireEmailVerification: toBoolean(settingMap.get(WORKFLOW_SETTING_KEYS.publicXlsxRequireEmailVerification), true),
       mailFormat: toMailFormat(settingMap.get(WORKFLOW_SETTING_KEYS.mailFormat)),
       securityNumber: settingMap.get(WORKFLOW_SETTING_KEYS.securityNumber)?.trim() || "BM2026",
       emailRelay: {
@@ -196,6 +199,7 @@ export async function loadWorkflowSettings(options?: {
   return {
     ...backgroundState,
     maintenanceMode: toBoolean(settingMap.get(WORKFLOW_SETTING_KEYS.maintenanceMode), false),
+    publicXlsxRequireEmailVerification: toBoolean(settingMap.get(WORKFLOW_SETTING_KEYS.publicXlsxRequireEmailVerification), true),
     mailFormat: toMailFormat(settingMap.get(WORKFLOW_SETTING_KEYS.mailFormat)),
     securityNumber: settingMap.get(WORKFLOW_SETTING_KEYS.securityNumber)?.trim() || "BM2026",
     emailRelay: {

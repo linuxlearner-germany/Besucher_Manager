@@ -19,6 +19,10 @@ import { TextManagementPage } from "./pages/TextManagementPage";
 import { VisitDetailPage } from "./pages/VisitDetailPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { PublicPreRegistrationConfirmationPage } from "./pages/PublicPreRegistrationConfirmationPage";
+import { PublicSimplifiedApplicationPage } from "./pages/PublicSimplifiedApplicationPage";
+import { PublicSimplifiedVerificationPage } from "./pages/PublicSimplifiedVerificationPage";
+import { KaskdtApplicationsPage } from "./pages/KaskdtApplicationsPage";
+import { KaskdtApplicationDetailPage } from "./pages/KaskdtApplicationDetailPage";
 import {
   AuthProvider,
   buildCheckoutStateFromVisit,
@@ -57,6 +61,8 @@ function AppRoutes() {
       <Route path="/" element={<RoleAwareRootRoute><PublicPreRegistrationPage /></RoleAwareRootRoute>} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/visit/confirmation" element={<PublicPreRegistrationConfirmationPage />} />
+      <Route path="/visit/simplified/application" element={<PublicSimplifiedApplicationPage />} />
+      <Route path="/visit/simplified/verify" element={<PublicSimplifiedVerificationPage />} />
       <Route
         path="/einstellungen"
         element={
@@ -121,6 +127,8 @@ function AppRoutes() {
           </RequireRoles>
         }
       />
+      <Route path="/kaskdt/antraege" element={<RequireRoles allowedRoles={["kaskdt"]} redirectTo="/"><KaskdtApplicationsPage /></RequireRoles>} />
+      <Route path="/kaskdt/antraege/:id" element={<RequireRoles allowedRoles={["kaskdt"]} redirectTo="/"><KaskdtApplicationDetailPage /></RequireRoles>} />
       <Route
         path="/kasernenkommandant"
         element={

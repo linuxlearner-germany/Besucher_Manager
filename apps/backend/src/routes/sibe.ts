@@ -475,7 +475,7 @@ sibeRouter.get("/api/kaskdt/simplified-visits", async (request, response) => {
   const sortColumns: Record<string, string> = { createdAt: "vt.created_at", validFrom: "vt.valid_from", name: "vis.last_name", gate: "g.name", status: "vt.status" };
   const sortBy = sortColumns[String(request.query.sortBy ?? "createdAt")] ?? sortColumns.createdAt;
   const sortDirection = String(request.query.sortDirection).toLowerCase() === "asc" ? "ASC" : "DESC";
-  const conditions = ["vt.source IN (N'simplified_web', N'simplified_excel')"];
+  const conditions = ["vt.source IN (N'simplified_web', N'simplified_excel', N'public_simplified_excel')"];
   const dbRequest = (await getPool()).request();
   const search = typeof request.query.search === "string" ? request.query.search.trim() : "";
   const gateId = typeof request.query.gateId === "string" ? request.query.gateId.trim() : "";
