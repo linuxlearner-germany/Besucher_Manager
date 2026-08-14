@@ -142,7 +142,6 @@ export type AdminAuditLog = {
   objectId: string;
   ipAddress: string | null;
   userAgent: string | null;
-  metadataJson: string | null;
   timestamp: string;
 };
 
@@ -156,9 +155,32 @@ export type AdminErrorLog = {
   ipAddress: string | null;
   userAgent: string | null;
   userName: string | null;
-  stackTrace: string | null;
-  metadataJson: string | null;
   timestamp: string;
+};
+
+export type AdminLogDetail = {
+  kind: "audit" | "error";
+  id: string;
+  timestamp: string | null;
+  username: string | null;
+  userId: string | null;
+  roles: User["roles"];
+  action: string | null;
+  category: string | null;
+  result: string | null;
+  requestId: string | null;
+  httpMethod: string | null;
+  endpoint: string | null;
+  httpStatus: number | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  source: string | null;
+  entityType: string | null;
+  entityId: string | null;
+  ipAddress: string | null;
+  userAgent: string | null;
+  metadata: unknown | null;
+  technicalContext: unknown | null;
 };
 
 export type AdminFieldDefinition = {
@@ -319,9 +341,11 @@ export type FormState = {
 };
 
 export type ApiError = {
+  status?: number;
   error: string;
   message?: string;
   details?: unknown;
+  requestId?: string;
   retryAfterSeconds?: number;
 };
 

@@ -1,5 +1,6 @@
 import sql from "mssql";
 import { getPool } from "./db";
+import { redactLogValue } from "./logRedaction";
 
 type AuditLogEntry = {
   user: string;
@@ -23,7 +24,7 @@ export async function writeAuditLog(entry: AuditLogEntry, transaction?: sql.Tran
     .input("userId", sql.UniqueIdentifier, entry.userId ?? null)
     .input("ipAddress", sql.NVarChar(64), entry.ipAddress ?? null)
     .input("userAgent", sql.NVarChar(500), entry.userAgent ?? null)
-    .input("metadataJson", sql.NVarChar(sql.MAX), entry.metadata ? JSON.stringify(entry.metadata) : null)
+    .input("metadataJson", sql.NVarChar(sql.MAX), entry.metadata ? JSON.stringify(redactLogValue(entry.metadata)) : null)
     .query(`
       INSERT INTO dbo.audit_logs (
         [user],

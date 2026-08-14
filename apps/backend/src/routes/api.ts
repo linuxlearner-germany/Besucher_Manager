@@ -236,6 +236,26 @@ apiRouter.post("/api/auth/login", async (request, response) => {
             ? "/kaskdt"
             : "/";
 
+    await writeAuditLog({
+      user: candidate.username,
+      userId: candidate.id,
+      action: "USER_LOGIN_SUCCEEDED",
+      objectType: "user",
+      objectId: candidate.id,
+      ipAddress: getRequestIp(request),
+      userAgent: getRequestUserAgent(request),
+      metadata: {
+        requestId: request.requestId ?? null,
+        httpMethod: request.method,
+        endpoint: request.originalUrl,
+        httpStatus: 200,
+        result: "success",
+        source: "authentication",
+        roles: fullUser?.roles ?? candidate.roles,
+        gateId: activeGateId
+      }
+    });
+
     return response.json({
       user: {
         id: candidate.id,

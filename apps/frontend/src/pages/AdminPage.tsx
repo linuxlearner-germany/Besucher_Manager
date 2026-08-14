@@ -5,6 +5,7 @@ import {
   useState,
   type FormEvent
 } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   AdminAuditSection,
   AdminBackgroundSection,
@@ -28,6 +29,7 @@ import {
   type AdminAuditLog,
   type AdminBadgeText,
   type AdminErrorLog,
+  type AdminLogDetail,
   type AdminFieldDefinition,
   type AdminGate,
   type AdminSiteMap,
@@ -94,7 +96,8 @@ export function AdminPage() {
       ]
     }
   ];
-  const [activeSection, setActiveSection] = useState<AdminSectionKey>("dashboard");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [activeSection, setActiveSection] = useState<AdminSectionKey>(() => (searchParams.get("section") as AdminSectionKey) || "dashboard");
   const [gates, setGates] = useState<AdminGate[]>([]);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [texts, setTexts] = useState<AdminBadgeText[]>([]);
@@ -130,8 +133,14 @@ export function AdminPage() {
   const [retentionSettings, setRetentionSettings] = useState<AdminRetentionSettings | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [selectedAuditLogId, setSelectedAuditLogId] = useState<string | null>(null);
-  const [selectedErrorLogId, setSelectedErrorLogId] = useState<string | null>(null);
+  const [selectedAuditLogId, setSelectedAuditLogId] = useState<string | null>(() => searchParams.get("auditId"));
+  const [selectedErrorLogId, setSelectedErrorLogId] = useState<string | null>(() => searchParams.get("errorId"));
+  const [selectedAuditLog, setSelectedAuditLog] = useState<AdminLogDetail | null>(null);
+  const [selectedErrorLog, setSelectedErrorLog] = useState<AdminLogDetail | null>(null);
+  const [auditDetailLoading, setAuditDetailLoading] = useState(false);
+  const [errorDetailLoading, setErrorDetailLoading] = useState(false);
+  const [auditDetailError, setAuditDetailError] = useState<string | null>(null);
+  const [errorDetailError, setErrorDetailError] = useState<string | null>(null);
   const [auditFilters, setAuditFilters] = useState({
     search: "",
     action: "",
@@ -201,7 +210,6 @@ export function AdminPage() {
 
     const payload = await fetchJson<{ logs: AdminAuditLog[] }>(`/api/admin/audit-logs?${params.toString()}`, { method: "GET", headers: {} });
     setLogs(payload.logs);
-    setSelectedAuditLogId((current) => payload.logs.some((log) => log.id === current) ? current : null);
   }, [auditFilters]);
 
   const loadErrorLogs = useCallback(async (filters = errorLogFilters) => {
@@ -214,8 +222,117 @@ export function AdminPage() {
 
     const payload = await fetchJson<{ logs: AdminErrorLog[] }>(`/api/admin/error-logs?${params.toString()}`, { method: "GET", headers: {} });
     setErrorLogs(payload.logs);
-    setSelectedErrorLogId((current) => payload.logs.some((log) => log.id === current) ? current : null);
   }, [errorLogFilters]);
+
+  const describeLogDetailError = useCallback((apiError: unknown): string => {
+    const payload = apiError as ApiError;
+    if (payload?.error === "AUDIT_LOG_NOT_FOUND" || payload?.error === "ERROR_LOG_NOT_FOUND") {
+      return "Log-Eintrag wurde nicht gefunden.";
+    }
+    if (payload?.error === "FORBIDDEN") {
+      return "Sie besitzen keine Berechtigung, diesen Log-Eintrag anzuzeigen.";
+    }
+    const message = payload?.message || "Log-Details konnten nicht geladen werden.";
+    return payload?.requestId ? `${message} Referenz: ${payload.requestId}` : message;
+  }, []);
+
+  useEffect(() => {
+    const section = searchParams.get("section") as AdminSectionKey | null;
+    if (section) setActiveSection(section);
+    setSelectedAuditLogId(searchParams.get("auditId"));
+    setSelectedErrorLogId(searchParams.get("errorId"));
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (!selectedAuditLogId) {
+      setSelectedAuditLog(null);
+      setAuditDetailError(null);
+      setAuditDetailLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    setSelectedAuditLog(null);
+    setAuditDetailError(null);
+    setAuditDetailLoading(true);
+    void fetchJson<{ log: AdminLogDetail }>(`/api/admin/audit-logs/${selectedAuditLogId}`, {
+      method: "GET", headers: {}, signal: controller.signal
+    }).then((payload) => {
+      setSelectedAuditLog(payload.log);
+    }).catch((apiError) => {
+      if (!controller.signal.aborted) setAuditDetailError(describeLogDetailError(apiError));
+    }).finally(() => {
+      if (!controller.signal.aborted) setAuditDetailLoading(false);
+    });
+    return () => controller.abort();
+  }, [describeLogDetailError, selectedAuditLogId]);
+
+  useEffect(() => {
+    if (!selectedErrorLogId) {
+      setSelectedErrorLog(null);
+      setErrorDetailError(null);
+      setErrorDetailLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    setSelectedErrorLog(null);
+    setErrorDetailError(null);
+    setErrorDetailLoading(true);
+    void fetchJson<{ log: AdminLogDetail }>(`/api/admin/error-logs/${selectedErrorLogId}`, {
+      method: "GET", headers: {}, signal: controller.signal
+    }).then((payload) => {
+      setSelectedErrorLog(payload.log);
+    }).catch((apiError) => {
+      if (!controller.signal.aborted) setErrorDetailError(describeLogDetailError(apiError));
+    }).finally(() => {
+      if (!controller.signal.aborted) setErrorDetailLoading(false);
+    });
+    return () => controller.abort();
+  }, [describeLogDetailError, selectedErrorLogId]);
+
+  const selectAdminSection = useCallback((section: AdminSectionKey) => {
+    setActiveSection(section);
+    const next = new URLSearchParams(searchParams);
+    next.set("section", section);
+    if (section !== "audit") next.delete("auditId");
+    if (section !== "fehler") next.delete("errorId");
+    setSearchParams(next);
+  }, [searchParams, setSearchParams]);
+
+  const openAuditLog = useCallback((id: string) => {
+    setSelectedAuditLogId(id);
+    setSelectedErrorLogId(null);
+    setActiveSection("audit");
+    const next = new URLSearchParams(searchParams);
+    next.set("section", "audit");
+    next.set("auditId", id);
+    next.delete("errorId");
+    setSearchParams(next);
+  }, [searchParams, setSearchParams]);
+
+  const closeAuditLog = useCallback(() => {
+    setSelectedAuditLogId(null);
+    const next = new URLSearchParams(searchParams);
+    next.delete("auditId");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
+
+  const openErrorLog = useCallback((id: string) => {
+    setSelectedErrorLogId(id);
+    setSelectedAuditLogId(null);
+    setActiveSection("fehler");
+    const next = new URLSearchParams(searchParams);
+    next.set("section", "fehler");
+    next.set("errorId", id);
+    next.delete("auditId");
+    setSearchParams(next);
+  }, [searchParams, setSearchParams]);
+
+  const closeErrorLog = useCallback(() => {
+    setSelectedErrorLogId(null);
+    const next = new URLSearchParams(searchParams);
+    next.delete("errorId");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   const loadAll = useCallback(async () => {
     setError(null);
@@ -852,9 +969,6 @@ export function AdminPage() {
     }
   }
 
-  const selectedAuditLog = logs.find((entry) => entry.id === selectedAuditLogId) || null;
-  const selectedErrorLog = errorLogs.find((entry) => entry.id === selectedErrorLogId) || null;
-
   async function applyErrorLogFilters() {
     await loadErrorLogs(errorLogFilters);
   }
@@ -1017,7 +1131,7 @@ export function AdminPage() {
 
         <div className="section-tabs">
           {sectionTabs.filter((tab) => tab.visible).map((tab) => (
-            <button key={tab.key} type="button" className={resolvedActiveSection === tab.key ? "tab-button tab-active" : "tab-button"} onClick={() => setActiveSection(tab.key)}>
+            <button key={tab.key} type="button" className={resolvedActiveSection === tab.key ? "tab-button tab-active" : "tab-button"} onClick={() => selectAdminSection(tab.key)}>
               {tab.label}
             </button>
           ))}
@@ -1036,7 +1150,7 @@ export function AdminPage() {
             logs={logs}
             errorLogs={errorLogs}
             systemStatus={systemStatus}
-            onOpenSection={setActiveSection}
+            onOpenSection={selectAdminSection}
           />
         ) : null}
 
@@ -1161,8 +1275,12 @@ export function AdminPage() {
             applyAuditFilters={applyAuditFilters}
             resetAuditFilters={resetAuditFilters}
             logs={logs}
+            selectedAuditLogId={selectedAuditLogId}
             selectedAuditLog={selectedAuditLog}
-            setSelectedAuditLogId={setSelectedAuditLogId}
+            detailLoading={auditDetailLoading}
+            detailError={auditDetailError}
+            openAuditLog={openAuditLog}
+            closeAuditLog={closeAuditLog}
           />
         ) : null}
 
@@ -1173,8 +1291,12 @@ export function AdminPage() {
             applyErrorLogFilters={applyErrorLogFilters}
             resetErrorLogFilters={resetErrorLogFilters}
             errorLogs={errorLogs}
+            selectedErrorLogId={selectedErrorLogId}
             selectedErrorLog={selectedErrorLog}
-            setSelectedErrorLogId={setSelectedErrorLogId}
+            detailLoading={errorDetailLoading}
+            detailError={errorDetailError}
+            openErrorLog={openErrorLog}
+            closeErrorLog={closeErrorLog}
           />
         ) : null}
       </main>

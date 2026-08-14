@@ -41,6 +41,7 @@ import {
 import { getUiBackgroundById, listUiBackgrounds } from "../lib/uiBackgrounds";
 import { listSiteMapCatalog, selectSiteMapCatalogEntry } from "../lib/siteMapCatalog";
 import { APP_VERSION } from "../lib/appVersion";
+import { parseRedactedLogJson, readLogMetadataString, redactSensitiveText } from "../lib/logRedaction";
 import {
   countUserReferences,
   getRequestIp,
@@ -1880,7 +1881,6 @@ adminRouter.get("/api/admin/audit-logs", async (request, response) => {
       objectId: string;
       ipAddress: string | null;
       userAgent: string | null;
-      metadataJson: string | null;
       timestamp: string;
     }>(`
       SELECT TOP 200
@@ -1891,7 +1891,6 @@ adminRouter.get("/api/admin/audit-logs", async (request, response) => {
         object_id AS objectId,
         ip_address AS ipAddress,
         user_agent AS userAgent,
-        metadata_json AS metadataJson,
         CONVERT(NVARCHAR(30), [timestamp], 127) AS [timestamp]
       FROM dbo.audit_logs
       WHERE ${conditions.join(" AND ")}
@@ -1900,6 +1899,58 @@ adminRouter.get("/api/admin/audit-logs", async (request, response) => {
     response.json({ logs: result.recordset });
   } catch (error) {
     return handleUnexpectedError(response, error, "DATABASE_ERROR", "Das Auditlog konnte nicht geladen werden.");
+  }
+});
+
+adminRouter.get("/api/admin/audit-logs/:id", async (request, response) => {
+  const user = await requirePermission(request, response, "logs.audit");
+  if (!user) return;
+  if (!z.string().uuid().safeParse(request.params.id).success) {
+    return sendError(response, 404, "AUDIT_LOG_NOT_FOUND", "Log-Eintrag wurde nicht gefunden.");
+  }
+  try {
+    const pool = await getPool();
+    const result = await pool.request()
+      .input("id", sql.UniqueIdentifier, request.params.id)
+      .query<{
+        id: string; user: string; userId: string | null; legacyRole: AuthenticatedUser["role"] | null;
+        action: string; objectType: string; objectId: string; ipAddress: string | null;
+        userAgent: string | null; metadataJson: string | null; timestamp: string;
+      }>(`
+        SELECT a.id, a.[user], a.user_id AS userId, u.role AS legacyRole, a.action,
+          a.object_type AS objectType, a.object_id AS objectId, a.ip_address AS ipAddress,
+          a.user_agent AS userAgent, a.metadata_json AS metadataJson,
+          CONVERT(NVARCHAR(30), a.[timestamp], 127) AS [timestamp]
+        FROM dbo.audit_logs a
+        LEFT JOIN dbo.users u ON u.id = a.user_id
+        WHERE a.id = @id
+      `);
+    const entry = result.recordset[0];
+    if (!entry) return sendError(response, 404, "AUDIT_LOG_NOT_FOUND", "Log-Eintrag wurde nicht gefunden.");
+    const rolesByUserId = entry.userId ? await loadUserRoles([entry.userId]) : {};
+    const roles = entry.userId && rolesByUserId[entry.userId]?.length
+      ? rolesByUserId[entry.userId]
+      : entry.legacyRole ? [entry.legacyRole] : [];
+    const metadata = parseRedactedLogJson(entry.metadataJson);
+    const statusValue = readLogMetadataString(metadata, "httpStatus", "statusCode", "status");
+    return response.json({
+      log: {
+        kind: "audit", id: entry.id, timestamp: entry.timestamp, username: entry.user,
+        userId: entry.userId, roles, action: entry.action, category: entry.objectType,
+        result: readLogMetadataString(metadata, "result") ?? "success",
+        requestId: readLogMetadataString(metadata, "requestId", "request_id"),
+        httpMethod: readLogMetadataString(metadata, "httpMethod", "method"),
+        endpoint: readLogMetadataString(metadata, "endpoint", "path", "requestPath"),
+        httpStatus: statusValue && Number.isFinite(Number(statusValue)) ? Number(statusValue) : null,
+        errorCode: readLogMetadataString(metadata, "errorCode", "error_code"),
+        errorMessage: readLogMetadataString(metadata, "errorMessage", "message"),
+        source: readLogMetadataString(metadata, "source"), entityType: entry.objectType,
+        entityId: entry.objectId, ipAddress: entry.ipAddress, userAgent: entry.userAgent,
+        metadata, technicalContext: null
+      }
+    });
+  } catch (error) {
+    return handleUnexpectedError(response, error, "AUDIT_LOG_DETAIL_ERROR", "Log-Details konnten nicht geladen werden.");
   }
 });
 
@@ -1951,8 +2002,6 @@ adminRouter.get("/api/admin/error-logs", async (request, response) => {
       ipAddress: string | null;
       userAgent: string | null;
       userName: string | null;
-      stackTrace: string | null;
-      metadataJson: string | null;
       timestamp: string;
     }>(`
       SELECT TOP 200
@@ -1965,17 +2014,70 @@ adminRouter.get("/api/admin/error-logs", async (request, response) => {
         ip_address AS ipAddress,
         user_agent AS userAgent,
         user_name AS userName,
-        stack_trace AS stackTrace,
-        metadata_json AS metadataJson,
         CONVERT(NVARCHAR(30), [timestamp], 127) AS [timestamp]
       FROM dbo.error_logs
       WHERE ${conditions.join(" AND ")}
       ORDER BY [timestamp] DESC
     `);
 
-    response.json({ logs: result.recordset });
+    response.json({ logs: result.recordset.map((entry) => ({ ...entry, message: redactSensitiveText(entry.message) })) });
   } catch (error) {
     return handleUnexpectedError(response, error, "DATABASE_ERROR", "Das Fehlerlog konnte nicht geladen werden.");
+  }
+});
+
+adminRouter.get("/api/admin/error-logs/:id", async (request, response) => {
+  const user = await requirePermission(request, response, "logs.errors");
+  if (!user) return;
+  if (!z.string().uuid().safeParse(request.params.id).success) {
+    return sendError(response, 404, "ERROR_LOG_NOT_FOUND", "Log-Eintrag wurde nicht gefunden.");
+  }
+  try {
+    const pool = await getPool();
+    const result = await pool.request()
+      .input("id", sql.UniqueIdentifier, request.params.id)
+      .query<{
+        id: string; level: string; errorCode: string; message: string; requestPath: string | null;
+        requestMethod: string | null; requestId: string | null; ipAddress: string | null;
+        userAgent: string | null; userName: string | null; userId: string | null;
+        legacyRole: AuthenticatedUser["role"] | null; stackTrace: string | null;
+        metadataJson: string | null; timestamp: string;
+      }>(`
+        SELECT e.id, e.[level], e.error_code AS errorCode, e.[message],
+          e.request_path AS requestPath, e.request_method AS requestMethod,
+          e.request_id AS requestId, e.ip_address AS ipAddress, e.user_agent AS userAgent,
+          e.user_name AS userName, u.id AS userId, u.role AS legacyRole,
+          e.stack_trace AS stackTrace, e.metadata_json AS metadataJson,
+          CONVERT(NVARCHAR(30), e.[timestamp], 127) AS [timestamp]
+        FROM dbo.error_logs e
+        LEFT JOIN dbo.users u ON u.username = e.user_name
+        WHERE e.id = @id
+      `);
+    const entry = result.recordset[0];
+    if (!entry) return sendError(response, 404, "ERROR_LOG_NOT_FOUND", "Log-Eintrag wurde nicht gefunden.");
+    const rolesByUserId = entry.userId ? await loadUserRoles([entry.userId]) : {};
+    const roles = entry.userId && rolesByUserId[entry.userId]?.length
+      ? rolesByUserId[entry.userId]
+      : entry.legacyRole ? [entry.legacyRole] : [];
+    const metadata = parseRedactedLogJson(entry.metadataJson);
+    const statusValue = readLogMetadataString(metadata, "httpStatus", "statusCode", "status");
+    return response.json({
+      log: {
+        kind: "error", id: entry.id, timestamp: entry.timestamp, username: entry.userName,
+        userId: entry.userId, roles, action: entry.errorCode, category: entry.level,
+        result: "failure", requestId: entry.requestId, httpMethod: entry.requestMethod,
+        endpoint: entry.requestPath,
+        httpStatus: statusValue && Number.isFinite(Number(statusValue)) ? Number(statusValue) : null,
+        errorCode: entry.errorCode,
+        errorMessage: redactSensitiveText(entry.message), source: readLogMetadataString(metadata, "source"),
+        entityType: readLogMetadataString(metadata, "entityType", "objectType"),
+        entityId: readLogMetadataString(metadata, "entityId", "objectId"),
+        ipAddress: entry.ipAddress, userAgent: entry.userAgent,
+        metadata, technicalContext: entry.stackTrace ? redactSensitiveText(entry.stackTrace) : null
+      }
+    });
+  } catch (error) {
+    return handleUnexpectedError(response, error, "ERROR_LOG_DETAIL_ERROR", "Log-Details konnten nicht geladen werden.");
   }
 });
 

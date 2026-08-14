@@ -3,6 +3,7 @@ import { Alert, Card, DataTable, FormField } from "../ui";
 import {
   type AdminAuditLog,
   type AdminErrorLog,
+  type AdminLogDetail,
   type AdminFieldDefinition,
   type AdminGate,
   type AdminSiteMap,
@@ -21,6 +22,7 @@ import {
   getAllowedMenuAccessForRole,
   type UserPermissions
 } from "../../app/core";
+import { LogDetailDialog } from "./LogDetailDialog";
 
 export type AdminSectionKey = "dashboard" | "wachen" | "benutzer" | "texte" | "karte" | "hintergrund" | "felder" | "audit" | "fehler" | "system" | "datenloeschung";
 
@@ -1042,16 +1044,24 @@ export function AdminAuditSection({
   applyAuditFilters,
   resetAuditFilters,
   logs,
+  selectedAuditLogId,
   selectedAuditLog,
-  setSelectedAuditLogId
+  detailLoading,
+  detailError,
+  openAuditLog,
+  closeAuditLog
 }: {
   auditFilters: { search: string; action: string; user: string; ip: string; from: string; to: string };
   setAuditFilters: Dispatch<SetStateAction<{ search: string; action: string; user: string; ip: string; from: string; to: string }>>;
   applyAuditFilters: () => Promise<void>;
   resetAuditFilters: () => Promise<void>;
   logs: AdminAuditLog[];
-  selectedAuditLog: AdminAuditLog | null;
-  setSelectedAuditLogId: Dispatch<SetStateAction<string | null>>;
+  selectedAuditLogId: string | null;
+  selectedAuditLog: AdminLogDetail | null;
+  detailLoading: boolean;
+  detailError: string | null;
+  openAuditLog: (id: string) => void;
+  closeAuditLog: () => void;
 }) {
   return (
     <Card className="admin-section-stack">
@@ -1098,14 +1108,19 @@ export function AdminAuditSection({
         </thead>
         <tbody>
           {logs.length ? logs.map((log) => (
-            <tr key={log.id}>
+            <tr key={log.id} className="clickable-row" tabIndex={0} onClick={() => openAuditLog(log.id)} onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                openAuditLog(log.id);
+              }
+            }}>
               <td>{formatDateTime(log.timestamp)}</td>
               <td>{log.user}</td>
               <td>{formatAuditAction(log.action)}</td>
               <td>{log.objectType}:{log.objectId}</td>
               <td>{log.ipAddress || "-"}</td>
               <td>{formatUserAgent(log.userAgent)}</td>
-              <td><button type="button" className="secondary-button" onClick={() => setSelectedAuditLogId(log.id)}>Details</button></td>
+              <td><button type="button" className="secondary-button" onClick={(event) => { event.stopPropagation(); openAuditLog(log.id); }}>Details</button></td>
             </tr>
           )) : (
             <tr>
@@ -1115,24 +1130,7 @@ export function AdminAuditSection({
         </tbody>
       </DataTable>
 
-      {selectedAuditLog ? (
-        <div className="audit-detail-panel">
-          <div className="section-header">
-            <div>
-              <h3>Audit-Details</h3>
-            </div>
-          </div>
-          <dl className="detail-grid">
-            <div><dt>Zeit</dt><dd>{formatDateTime(selectedAuditLog.timestamp)}</dd></div>
-            <div><dt>Benutzer</dt><dd>{selectedAuditLog.user}</dd></div>
-            <div><dt>IP</dt><dd>{selectedAuditLog.ipAddress || "-"}</dd></div>
-            <div><dt>User-Agent</dt><dd>{selectedAuditLog.userAgent || "-"}</dd></div>
-          </dl>
-          <FormField label="metadata_json">
-            <textarea readOnly rows={10} value={selectedAuditLog.metadataJson || "{}"} />
-          </FormField>
-        </div>
-      ) : null}
+      <LogDetailDialog selectedId={selectedAuditLogId} detail={selectedAuditLog} loading={detailLoading} error={detailError} onClose={closeAuditLog} />
     </Card>
   );
 }
@@ -1143,16 +1141,24 @@ export function AdminErrorLogSection({
   applyErrorLogFilters,
   resetErrorLogFilters,
   errorLogs,
+  selectedErrorLogId,
   selectedErrorLog,
-  setSelectedErrorLogId
+  detailLoading,
+  detailError,
+  openErrorLog,
+  closeErrorLog
 }: {
   errorLogFilters: { search: string; errorCode: string; path: string; from: string; to: string };
   setErrorLogFilters: Dispatch<SetStateAction<{ search: string; errorCode: string; path: string; from: string; to: string }>>;
   applyErrorLogFilters: () => Promise<void>;
   resetErrorLogFilters: () => Promise<void>;
   errorLogs: AdminErrorLog[];
-  selectedErrorLog: AdminErrorLog | null;
-  setSelectedErrorLogId: Dispatch<SetStateAction<string | null>>;
+  selectedErrorLogId: string | null;
+  selectedErrorLog: AdminLogDetail | null;
+  detailLoading: boolean;
+  detailError: string | null;
+  openErrorLog: (id: string) => void;
+  closeErrorLog: () => void;
 }) {
   return (
     <Card className="admin-section-stack">
@@ -1195,14 +1201,19 @@ export function AdminErrorLogSection({
         </thead>
         <tbody>
           {errorLogs.length ? errorLogs.map((entry) => (
-            <tr key={entry.id}>
+            <tr key={entry.id} className="clickable-row" tabIndex={0} onClick={() => openErrorLog(entry.id)} onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                openErrorLog(entry.id);
+              }
+            }}>
               <td>{formatDateTime(entry.timestamp)}</td>
               <td>{entry.errorCode}</td>
               <td>{entry.message}</td>
               <td>{entry.requestMethod || "-"} {entry.requestPath || "-"}</td>
               <td>{entry.userName || "-"}</td>
               <td>
-                <button type="button" className="secondary-button" onClick={() => setSelectedErrorLogId(entry.id)}>Details</button>
+                <button type="button" className="secondary-button" onClick={(event) => { event.stopPropagation(); openErrorLog(entry.id); }}>Details</button>
               </td>
             </tr>
           )) : (
@@ -1213,29 +1224,7 @@ export function AdminErrorLogSection({
         </tbody>
       </DataTable>
 
-      {selectedErrorLog ? (
-        <div className="audit-detail-panel">
-          <div className="section-header">
-            <div>
-              <h3>Fehlerdetails</h3>
-            </div>
-          </div>
-          <dl className="detail-grid">
-            <div><dt>Benutzer</dt><dd>{selectedErrorLog.userName || "-"}</dd></div>
-            <div><dt>IP</dt><dd>{selectedErrorLog.ipAddress || "-"}</dd></div>
-            <div><dt>Pfad</dt><dd>{selectedErrorLog.requestPath || "-"}</dd></div>
-            <div><dt>Methode</dt><dd>{selectedErrorLog.requestMethod || "-"}</dd></div>
-            <div className="detail-span-2"><dt>User-Agent</dt><dd>{selectedErrorLog.userAgent || "-"}</dd></div>
-            <div className="detail-span-2"><dt>Meldung</dt><dd>{selectedErrorLog.message}</dd></div>
-          </dl>
-          <FormField label="stack_trace">
-            <textarea readOnly rows={12} value={selectedErrorLog.stackTrace || "-"} />
-          </FormField>
-          <FormField label="metadata_json">
-            <textarea readOnly rows={8} value={selectedErrorLog.metadataJson || "{}"} />
-          </FormField>
-        </div>
-      ) : null}
+      <LogDetailDialog selectedId={selectedErrorLogId} detail={selectedErrorLog} loading={detailLoading} error={detailError} onClose={closeErrorLog} />
     </Card>
   );
 }

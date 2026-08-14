@@ -23,6 +23,7 @@ import datetime as dt
 import http.cookiejar
 import io
 import json
+import time
 import uuid
 import sys
 import urllib.error
@@ -641,12 +642,66 @@ def main() -> int:
     finally:
         admin_client.request("PUT", "/api/admin/system-settings/maintenance", payload={"maintenanceMode": False})
 
+    print("Zusatzpruefung: Audit-/Fehlerlog-Detailansicht und Berechtigungen...")
+    detail_actions = [
+        "SIBE_SIMPLIFIED_VISIT_CREATED",
+        "USER_LOGIN_SUCCEEDED",
+        "ADMIN_USER_CREATED",
+        "MAINTENANCE_MODE_UPDATED",
+    ]
+    audit_detail_ids: list[str] = []
+    for action in detail_actions:
+        entries = admin_client.request("GET", f"/api/admin/audit-logs?action={urllib.parse.quote(action)}")["logs"]
+        if not entries:
+            raise RuntimeError(f"Kein Audit-Eintrag fuer Detailtest gefunden: {action}")
+        audit_detail = admin_client.request("GET", f"/api/admin/audit-logs/{entries[0]['id']}")["log"]
+        if audit_detail.get("id") != entries[0]["id"] or audit_detail.get("action") != action:
+            raise RuntimeError(f"Audit-Detail liefert nicht den ausgewaehlten Eintrag: {action}")
+        audit_detail_ids.append(entries[0]["id"])
+
+    try:
+        guard_client.request("GET", f"/api/admin/audit-logs/{audit_detail_ids[0]}")
+        raise RuntimeError("Guard konnte Audit-Details ohne Berechtigung lesen.")
+    except ApiError as error:
+        if error.status != 403 or error.payload.get("error") != "FORBIDDEN":
+            raise
+    try:
+        public_client.request("GET", f"/api/admin/audit-logs/{audit_detail_ids[0]}")
+        raise RuntimeError("Nicht angemeldeter Client konnte Audit-Details lesen.")
+    except ApiError as error:
+        if error.status != 401 or error.payload.get("error") != "UNAUTHORIZED":
+            raise
+    try:
+        admin_client.request("GET", f"/api/admin/audit-logs/{uuid.uuid4()}")
+        raise RuntimeError("Unbekannte Audit-ID lieferte keinen 404-Fehler.")
+    except ApiError as error:
+        if error.status != 404 or error.payload.get("error") != "AUDIT_LOG_NOT_FOUND" or not error.payload.get("requestId"):
+            raise
+
+    try:
+        admin_client.request("GET", "/api/admin/audit-logs?from=not-a-date")
+    except ApiError as error:
+        if error.status != 500:
+            raise
+    error_entries: list[dict[str, Any]] = []
+    for _attempt in range(10):
+        error_entries = admin_client.request("GET", "/api/admin/error-logs?errorCode=DATABASE_ERROR")["logs"]
+        if error_entries:
+            break
+        time.sleep(0.2)
+    if not error_entries:
+        raise RuntimeError("Kein Fehlerlog fuer Detailtest erzeugt.")
+    error_detail = admin_client.request("GET", f"/api/admin/error-logs/{error_entries[0]['id']}")["log"]
+    if error_detail.get("id") != error_entries[0]["id"] or error_detail.get("result") != "failure":
+        raise RuntimeError("Fehlerlog-Detail liefert nicht den ausgewaehlten Eintrag.")
+
     print(json.dumps({
         "success": True,
         "visitId": visit_id,
         "gate": gate["name"],
         "signatureStatus": args.signature_status,
         "auditEntriesFound": len(audit_logs),
+        "logDetailsChecked": len(audit_detail_ids) + 1,
         "sibeSummary": {summary_key: sibe_summary.get(summary_key)} if summary_key else {},
         "adminSummary": {summary_key: admin_system.get(summary_key)} if summary_key else {},
     }, indent=2))

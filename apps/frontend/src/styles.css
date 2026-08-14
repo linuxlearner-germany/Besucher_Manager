@@ -1305,6 +1305,45 @@ button:disabled {
   border-top: 1px solid var(--border);
 }
 
+.clickable-row {
+  cursor: pointer;
+}
+
+.clickable-row:hover,
+.clickable-row:focus-visible {
+  background: var(--surface-subtle);
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.log-detail-modal {
+  width: min(960px, 96vw);
+}
+
+.log-detail-content {
+  display: grid;
+  gap: 20px;
+}
+
+.log-detail-content section {
+  display: grid;
+  gap: 10px;
+}
+
+.log-json-view {
+  max-height: 320px;
+  overflow: auto;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: var(--surface-subtle);
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 13px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
 .tab-button {
   background: var(--surface-subtle);
   color: var(--text);
