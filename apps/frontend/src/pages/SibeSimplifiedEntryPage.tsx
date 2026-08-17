@@ -93,7 +93,6 @@ export function SibeSimplifiedEntryPage() {
           <div className="page-hero-content">
             <h2>Besucher vereinfacht erfassen</h2>
             <p>Nur Wache und Gültigkeitszeitraum sind erforderlich. Fehlende Personendaten können vor dem Check-in ergänzt werden.</p>
-            <Link className="button-link" to="/import">XLSX-Datei importieren</Link>
           </div>
         </section>
 

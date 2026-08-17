@@ -148,7 +148,16 @@ function AppRoutes() {
       <Route path="/kaskdt/texte" element={<Navigate to="/texte" replace />} />
       <Route
         path="/import"
-        element={<ImportPage />}
+        element={
+          <RequireRoles
+            allowedRoles={["admin", "guard", "sibe", "kaskdt", "custom"]}
+            requiredMenuKey="import"
+            requiredPermissions={["imports.execute"]}
+            redirectTo="/"
+          >
+            <ImportPage />
+          </RequireRoles>
+        }
       />
       <Route
         path="/sibe/besucher"

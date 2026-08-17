@@ -19,9 +19,9 @@ describe("simplified visit policy access", () => {
     expect(source).toContain('label: "Vereinfachte Besucherregelung", visible: canUseSimplifiedVisitPolicy(user)');
   });
 
-  it("renders the XLSX policy input only for SiBe", () => {
+  it("keeps the normal import separate from the SiBe simplified entry", () => {
     const source = readFileSync(`${srcRoot}/pages/ImportPage.tsx`, "utf8");
-    expect(source).toContain('canUseSimplifiedVisitPolicy(user) ? <section className="panel import-card">');
-    expect(source).toContain('accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"');
+    expect(source).toContain("NormalVisitorImportSection");
+    expect(source).not.toContain("canUseSimplifiedVisitPolicy");
   });
 });

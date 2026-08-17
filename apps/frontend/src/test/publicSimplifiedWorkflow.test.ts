@@ -21,7 +21,7 @@ describe("public simplified XLSX workflow", () => {
     expect(core).toContain('label: "Vereinfachte Besucherregelung", visible: !user');
     expect(core).toContain('activePrefixes: ["/visit/simplified/"]');
     expect(core).not.toContain('label: "XLSX-Antrag"');
-    expect(core).toContain('label: "XLSX-Import", visible: Boolean(user &&');
+    expect(core).not.toContain('label: "XLSX-Import"');
   });
 
   it("uses a semantic stateful stepper and progressively reveals the workflow", () => {

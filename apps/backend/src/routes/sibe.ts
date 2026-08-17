@@ -11,13 +11,12 @@ import { createImportedPreRegistrations, ImportValidationError, validateSimplifi
 import { parseExcelBufferWithMetadata } from "../lib/visitImportParsing";
 import { buildSimplifiedImportTemplate } from "../lib/simplifiedImportTemplate";
 import { getRequestIp, getRequestUserAgent, handleUnexpectedError, requireAnyPermission, requirePermission, requireRole, sendError, sendForbidden, sendValidationError } from "./shared";
-import { handleVisitorImportUpload, sendVisitorImportTemplateWorkbook, visitorImportUpload } from "./visitorImport";
+import { handleVisitorImportPreview, handleVisitorImportUpload, sendVisitorImportTemplateWorkbook, visitorImportUpload } from "./visitorImport";
 
 export const sibeRouter = Router();
 
 const sibeReadRoles = ["admin", "sibe", "kaskdt"] as const;
 const sibeWriteRoles = ["admin", "sibe"] as const;
-const importRoles = ["admin", "guard", "sibe"] as const;
 const sibeVisitNotesSchema = z.object({
   notes: z.string().trim().max(4000, "Die Anmerkung darf maximal 4000 Zeichen enthalten.").optional().or(z.literal(""))
 });
@@ -607,6 +606,13 @@ sibeRouter.post("/api/sibe/visits/import", async (request, response) => {
   });
 });
 
+sibeRouter.post("/api/sibe/visits/import/preview", async (request, response) => {
+  const user = await requirePermission(request, response, "imports.execute");
+  if (!user) return;
+
+  return handleVisitorImportPreview(request, response);
+});
+
 sibeRouter.post("/api/sibe/visits/simplified-rule/preview", async (request, response) => {
   const user = await requireRole(request, response, ["sibe"]);
   if (!user) return;
@@ -671,7 +677,7 @@ sibeRouter.get("/api/sibe/visits/simplified-rule/template.xlsx", async (request,
 });
 
 sibeRouter.get("/api/sibe/visits/import-template.xlsx", async (request, response) => {
-  const user = await requireRole(request, response, [...importRoles]);
+  const user = await requirePermission(request, response, "imports.execute");
   if (!user) return;
 
   return sendVisitorImportTemplateWorkbook(response);
