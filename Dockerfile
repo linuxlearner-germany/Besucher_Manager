@@ -31,6 +31,10 @@ FROM node:22-bookworm-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
+ARG APP_COMMIT=unknown
+ENV APP_COMMIT=${APP_COMMIT}
+LABEL org.opencontainers.image.revision=${APP_COMMIT}
+
 ARG HTTP_PROXY
 ARG HTTPS_PROXY
 ARG NO_PROXY

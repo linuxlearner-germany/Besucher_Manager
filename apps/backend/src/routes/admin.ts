@@ -116,7 +116,7 @@ const userCreateSchema = z.object({
 }).superRefine((value, context) => {
   const roles = normalizeRoles(value.roles, value.role);
   if (value.roles && roles.length !== new Set(value.roles).size) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["roles"], message: "Nur die Kombination SiBe + KasKdt ist zulässig." });
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["roles"], message: "Nur die Kombination SiBe + KSKdt ist zulässig." });
   }
   const allowed = new Set(roles.flatMap(getAllowedMenuAccessForRole));
   const invalid = (value.menuAccess ?? []).filter((entry) => !allowed.has(entry));
@@ -1104,7 +1104,7 @@ adminRouter.put("/api/admin/users/:id", async (request, response) => {
     const requestedRoles = data.roles ?? (data.role ? [data.role] : currentRolesById[request.params.id] ?? [currentUser.role]);
     const nextRoles = normalizeRoles(requestedRoles, data.role ?? currentUser.role);
     if (nextRoles.length !== new Set(requestedRoles).size) {
-      return sendError(response, 400, "INVALID_ROLE_COMBINATION", "Nur die Kombination SiBe + KasKdt ist zulässig.");
+      return sendError(response, 400, "INVALID_ROLE_COMBINATION", "Nur die Kombination SiBe + KSKdt ist zulässig.");
     }
     const nextRole = nextRoles.includes("sibe") ? "sibe" : nextRoles[0] ?? currentUser.role;
     const nextActive = data.isActive ?? currentUser.isActive;
@@ -2288,7 +2288,7 @@ adminRouter.post("/api/admin/system-settings/workflow-email/test", async (reques
       return sendError(response, 400, "VALIDATION_ERROR", "Bitte Host und Absenderadresse fuer das Relay hinterlegen.");
     }
     if (error instanceof Error && error.message === "mail_relay_missing_test_recipient") {
-      return sendError(response, 400, "VALIDATION_ERROR", "Bitte mindestens einen Empfaenger oder eine Testadresse hinterlegen.");
+      return sendError(response, 400, "VALIDATION_ERROR", "Bitte mindestens einen Empfänger oder eine Testadresse hinterlegen.");
     }
     return handleUnexpectedError(response, error, "MAIL_RELAY_TEST_FAILED", "Die Testmail konnte nicht versendet werden.");
   }

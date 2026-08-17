@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { AppLayout, type ApiError, fetchJson, formatDateTime, formatStatus, statusClassName, type SibeSummary, type SibeVisitRow } from "../app/core";
+import { AppLayout, type ApiError, fetchJson, formatDateTime, formatStatus, hasRole, statusClassName, type SibeSummary, type SibeVisitRow, useAuth } from "../app/core";
 import { Alert, Card, DataTable } from "../components/ui";
 
 export function CommanderDashboardPage() {
+  const { user } = useAuth();
   const [summary, setSummary] = useState<SibeSummary | null>(null);
   const [recentVisits, setRecentVisits] = useState<SibeVisitRow[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -20,7 +21,7 @@ export function CommanderDashboardPage() {
         setRecentVisits(recentPayload.visits.slice(0, 120));
       } catch (apiError) {
         const errorPayload = apiError as ApiError;
-        setError(errorPayload.message || "Die KasKdt-Übersicht konnte nicht geladen werden.");
+        setError(errorPayload.message || "Die KSKdt-Übersicht konnte nicht geladen werden.");
       }
     }
 
@@ -52,7 +53,7 @@ export function CommanderDashboardPage() {
         <section className="page-hero">
           <div className="page-hero-grid dashboard-hero-grid">
             <div className="page-hero-content">
-              <h2>KasKdt-Übersicht</h2>
+              <h2>KSKdt-Übersicht</h2>
             </div>
             <div className="hero-stat-grid">
               <div className="hero-stat-card">
@@ -81,7 +82,9 @@ export function CommanderDashboardPage() {
 
         {error ? <Alert type="error">{error}</Alert> : null}
 
-        <Card><div className="section-header"><div><h3>Anträge – Vereinfachte Besucherregelung</h3><p>Neue Anträge prüfen, Personen entscheiden und eine zusammenfassende Entscheidung versenden.</p></div><Link className="button-link" to="/kaskdt/antraege">Anträge öffnen</Link></div></Card>
+        {hasRole(user, "kaskdt") ? (
+          <Card><div className="section-header"><div><h3>Anträge – Vereinfachte Besucherregelung</h3><p>Neue Anträge prüfen, Personen entscheiden und eine zusammenfassende Entscheidung versenden.</p></div><Link className="button-link" to="/kaskdt/antraege">Anträge öffnen</Link></div></Card>
+        ) : null}
 
         <div className="split-card-grid">
           <Card>

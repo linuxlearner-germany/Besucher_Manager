@@ -354,11 +354,11 @@ export function AdminUsersSection({
               <option value="guard">Wache</option>
               <option value="admin">Admin</option>
               <option value="sibe">SiBe</option>
-              <option value="kaskdt">KasKdt</option>
+              <option value="kaskdt">KSKdt</option>
               <option value="custom">Benutzerdefiniert</option>
             </select>
           </FormField>
-          {newUser.role === "sibe" || newUser.role === "kaskdt" ? <label className="checkbox-row"><input type="checkbox" checked={newUser.roles.length === 2} onChange={(event) => setNewUser((current) => ({ ...current, roles: event.target.checked ? ["sibe", "kaskdt"] : [current.role], menuAccess: event.target.checked ? Array.from(new Set([...getAllowedMenuAccessForRole("sibe"), ...getAllowedMenuAccessForRole("kaskdt")])) : getAllowedMenuAccessForRole(current.role) }))} /> Doppelrolle SiBe + KasKdt</label> : null}
+          {newUser.role === "sibe" || newUser.role === "kaskdt" ? <label className="checkbox-row"><input type="checkbox" checked={newUser.roles.length === 2} onChange={(event) => setNewUser((current) => ({ ...current, roles: event.target.checked ? ["sibe", "kaskdt"] : [current.role], menuAccess: event.target.checked ? Array.from(new Set([...getAllowedMenuAccessForRole("sibe"), ...getAllowedMenuAccessForRole("kaskdt")])) : getAllowedMenuAccessForRole(current.role) }))} /> Doppelrolle SiBe + KSKdt</label> : null}
           <FormField label="Gruppen">
             <textarea rows={3} placeholder="z. B. Werkschutz, Schicht A" value={newUser.groupsText} onChange={(event) => setNewUser((current) => ({ ...current, groupsText: event.target.value }))} />
           </FormField>
@@ -500,11 +500,11 @@ export function AdminUsersSection({
                 <td className="truncate-cell" title={summarizePermissions(editableUsers[entry.id] || entry as EditableAdminUser)}>{summarizePermissions(editableUsers[entry.id] || entry as EditableAdminUser)}</td>
                 <td className="actions-cell">
                   <div className="action-row admin-action-row compact-action-row">
-                    <button type="button" className="secondary-button" onClick={() => setSelectedUserId(entry.id)}>Bearbeiten</button>
-                    <button className={entry.isActive ? "danger-button" : "secondary-button"} type="button" onClick={() => entry.isActive ? setPendingUserAction({ kind: "deactivate", user: entry }) : void toggleUserActive(entry.id, true)} disabled={currentUserId === entry.id || userActionBusy}>
+                    <button type="button" className="secondary-button" aria-label={`Benutzer ${entry.username} bearbeiten`} onClick={() => setSelectedUserId(entry.id)}>Bearbeiten</button>
+                    <button className={entry.isActive ? "danger-button" : "secondary-button"} type="button" aria-label={`Benutzer ${entry.username} ${entry.isActive ? "sperren" : "freigeben"}`} onClick={() => entry.isActive ? setPendingUserAction({ kind: "deactivate", user: entry }) : void toggleUserActive(entry.id, true)} disabled={currentUserId === entry.id || userActionBusy}>
                       {entry.isActive ? "Zugang sperren" : "Zugang freigeben"}
                     </button>
-                    <button className="danger-button" type="button" onClick={() => setPendingUserAction({ kind: "delete", user: entry })} disabled={currentUserId === entry.id || userActionBusy}>Löschen</button>
+                    <button className="danger-button" type="button" aria-label={`Benutzer ${entry.username} löschen`} onClick={() => setPendingUserAction({ kind: "delete", user: entry })} disabled={currentUserId === entry.id || userActionBusy}>Löschen</button>
                   </div>
                 </td>
               </tr>
@@ -538,7 +538,7 @@ export function AdminUsersSection({
           <div>
             <h4>Benutzer bearbeiten</h4>
           </div>
-            <button type="button" className="secondary-button" onClick={() => setSelectedUserId(null)}>Schließen</button>
+            <button type="button" className="secondary-button" aria-label={`Bearbeitung von Benutzer ${selectedUser.username} schließen`} onClick={() => setSelectedUserId(null)}>Schließen</button>
           </div>
           <div className="admin-user-create-grid">
             <FormField label="Benutzername" required>
@@ -558,11 +558,11 @@ export function AdminUsersSection({
                 <option value="guard">Wache</option>
                 <option value="admin">Admin</option>
                 <option value="sibe">SiBe</option>
-                <option value="kaskdt">KasKdt</option>
+                <option value="kaskdt">KSKdt</option>
                 <option value="custom">Benutzerdefiniert</option>
               </select>
             </FormField>
-            {selectedUser.role === "sibe" || selectedUser.role === "kaskdt" ? <label className="checkbox-row"><input type="checkbox" checked={selectedUser.roles.length === 2} onChange={(event) => setEditableUsers((current) => ({ ...current, [selectedUser.id]: { ...selectedUser, roles: event.target.checked ? ["sibe", "kaskdt"] : [selectedUser.role] } }))} /> Doppelrolle SiBe + KasKdt</label> : null}
+            {selectedUser.role === "sibe" || selectedUser.role === "kaskdt" ? <label className="checkbox-row"><input type="checkbox" checked={selectedUser.roles.length === 2} onChange={(event) => setEditableUsers((current) => ({ ...current, [selectedUser.id]: { ...selectedUser, roles: event.target.checked ? ["sibe", "kaskdt"] : [selectedUser.role] } }))} /> Doppelrolle SiBe + KSKdt</label> : null}
             <FormField label="Gruppen">
               <textarea rows={3} value={selectedUser.groupsText} onChange={(event) => updateEditableUserGroups(selectedUser.id, event.target.value)} />
             </FormField>
@@ -616,7 +616,7 @@ export function AdminUsersSection({
                 <input type="checkbox" checked={selectedUser.isActive} onChange={(event) => setEditableUsers((current) => ({ ...current, [selectedUser.id]: { ...selectedUser, isActive: event.target.checked } }))} />
                 Aktiv
               </label>
-              <button type="button" onClick={() => void saveUser(selectedUser.id)} disabled={userSaveState?.userId === selectedUser.id && userSaveState.kind === "saving"}>
+              <button type="button" aria-label={`Benutzer ${selectedUser.username} speichern`} onClick={() => void saveUser(selectedUser.id)} disabled={userSaveState?.userId === selectedUser.id && userSaveState.kind === "saving"}>
                 {userSaveState?.userId === selectedUser.id && userSaveState.kind === "saving" ? "Speichert..." : "Speichern"}
               </button>
             </div>
@@ -947,7 +947,7 @@ export function AdminSystemSection({
               <div className="feedback info">
                 Das Mail-Relay wird aus einer YML-Datei geladen.
                 {workflowSettings.emailRelay.configPath ? ` Pfad: ${workflowSettings.emailRelay.configPath}` : ""}
-                {" "}Die SMTP-Felder sind hier nur lesbar, Tests bleiben moeglich.
+                {" "}Die SMTP-Felder sind hier nur lesbar, Tests bleiben möglich.
               </div>
             </div>
           ) : null}
@@ -1061,7 +1061,7 @@ export function AdminSystemSection({
               <option value="reminder">Besuchserinnerung</option>
             </select>
           </FormField>
-          <FormField label="Testadresse">
+          <FormField label="Empfänger der Testmail">
             <input
               type="email"
               value={workflowTestRecipient}

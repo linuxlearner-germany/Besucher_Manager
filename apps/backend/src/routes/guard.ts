@@ -16,6 +16,7 @@ import {
   updateVisitForGuard
 } from "../lib/guardVisits";
 import { writeAuditLog } from "../lib/auditLog";
+import { isIsoDateOnly } from "../lib/dateOnly";
 import { getPool } from "../lib/db";
 import { HOST_SIGNATURE_STATUS, VISIT_STATUS } from "../lib/visitWorkflow";
 import {
@@ -219,10 +220,16 @@ const guardCalendarQuerySchema = z.object({
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["to"], message: "Der Datumsbereich darf maximal 90 Tage umfassen." });
   }
 });
-const guardWalkInCreateSchema = z.object({
+function isValidDateOnly(value: string): boolean {
+  if (!isIsoDateOnly(value)) return false;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+export const guardWalkInCreateSchema = z.object({
   clientRequestId: z.string().trim().min(8).max(64).optional().or(z.literal("")),
-  existingVisitorId: z.string().uuid().optional().or(z.literal("")),
-  gateId: z.string().uuid().optional().or(z.literal("")),
+  existingVisitorId: z.string().uuid().nullable().optional().or(z.literal("")),
+  gateId: z.string().uuid().nullable().optional().or(z.literal("")),
   action: z.enum(["save", "check_in", "check_in_and_print"]).optional(),
   firstName: z.string().trim().max(120).optional().default(""),
   lastName: z.string().trim().max(120).optional().default(""),
@@ -263,6 +270,20 @@ const guardWalkInCreateSchema = z.object({
   deviceAccessories: z.string().trim().max(500).optional().or(z.literal("")),
   deviceDepositNote: z.string().trim().max(500).optional().or(z.literal(""))
 }).superRefine((value, context) => {
+  if (value.validFrom && !isValidDateOnly(value.validFrom)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["validFrom"],
+      message: "Bitte überprüfen Sie das Besuchsdatum."
+    });
+  }
+  if (value.validUntil && !isValidDateOnly(value.validUntil)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["validUntil"],
+      message: "Bitte überprüfen Sie das Besuchsdatum."
+    });
+  }
   const validFrom = new Date(value.validFrom);
   const validUntil = new Date(value.validUntil);
   if (!Number.isNaN(validFrom.getTime()) && !Number.isNaN(validUntil.getTime()) && validUntil < validFrom) {
@@ -378,12 +399,11 @@ guardRouter.post("/api/guard/visits/walk-in", async (request, response) => {
     });
   } catch (error) {
     if (error instanceof Error && error.message === "visit_gate_required_for_checkin") {
-      return sendError(
-        response,
-        400,
-        "VALIDATION_ERROR",
-        "Für diese Anmeldung ist zuerst eine aktive Wache erforderlich."
-      );
+      return sendValidationError(response, {
+        fieldErrors: {
+          gateId: ["Bitte wählen Sie eine aktive Wache aus."]
+        }
+      });
     }
     if (error instanceof Error && error.message === "existing_visitor_not_found") {
       return sendError(response, 404, "NOT_FOUND", "Der ausgewählte Besucher wurde nicht gefunden.");

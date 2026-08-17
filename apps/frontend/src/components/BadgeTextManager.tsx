@@ -86,8 +86,10 @@ export function BadgeTextManager({
   const [savePendingId, setSavePendingId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   const loadTexts = useCallback(async () => {
+    setLoading(true);
     setError(null);
     try {
       const payload = await fetchJson<{ texts: AdminBadgeText[] }>("/api/texts", { method: "GET", headers: {} });
@@ -102,6 +104,8 @@ export function BadgeTextManager({
     } catch (apiError) {
       const payload = apiError as ApiError;
       setError(payload.message || "Hinweistexte konnten nicht geladen werden.");
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -323,13 +327,14 @@ export function BadgeTextManager({
               placeholder="Überschrift, Bereich oder Inhalt"
             />
           </FormField>
-          <FormField label="Status">
+          <fieldset className="form-field">
+            <legend className="field-label">Status</legend>
             <div className="text-filter-row">
-              <button type="button" className={statusFilter === "all" ? "secondary-button active-chip" : "secondary-button"} onClick={() => setStatusFilter("all")}>Alle ({texts.length})</button>
-              <button type="button" className={statusFilter === "active" ? "secondary-button active-chip" : "secondary-button"} onClick={() => setStatusFilter("active")}>Aktiv ({activeCount})</button>
-              <button type="button" className={statusFilter === "inactive" ? "secondary-button active-chip" : "secondary-button"} onClick={() => setStatusFilter("inactive")}>Inaktiv ({inactiveCount})</button>
+              <button type="button" className={statusFilter === "all" ? "secondary-button active-chip" : "secondary-button"} onClick={() => setStatusFilter("all")}>Alle ({loading ? "—" : texts.length})</button>
+              <button type="button" className={statusFilter === "active" ? "secondary-button active-chip" : "secondary-button"} onClick={() => setStatusFilter("active")}>Aktiv ({loading ? "—" : activeCount})</button>
+              <button type="button" className={statusFilter === "inactive" ? "secondary-button active-chip" : "secondary-button"} onClick={() => setStatusFilter("inactive")}>Inaktiv ({loading ? "—" : inactiveCount})</button>
             </div>
-          </FormField>
+          </fieldset>
         </div>
         <div className="text-type-chip-row">
           <button type="button" className={typeFilter === "all" ? "secondary-button active-chip" : "secondary-button"} onClick={() => setTypeFilter("all")}>Alle Bereiche</button>
@@ -398,7 +403,9 @@ export function BadgeTextManager({
               </div>
             </div>
             <div className="text-record-list">
-              {filteredTexts.length ? filteredTexts.map((text) => {
+              {loading ? (
+                <div className="text-empty-state" role="status">Texte werden geladen …</div>
+              ) : filteredTexts.length ? filteredTexts.map((text) => {
                 const draft = editableTexts[text.id] ?? createDraft(text);
                 const dirty = isDirty(text, draft);
 
@@ -420,7 +427,7 @@ export function BadgeTextManager({
                     <p>{summarizeContent(draft.content)}</p>
                   </button>
                 );
-              }) : (
+              }) : error ? null : (
                 <div className="text-empty-state">
                   Keine Hinweistexte für die aktuelle Auswahl gefunden.
                 </div>
@@ -430,7 +437,9 @@ export function BadgeTextManager({
         </div>
 
         <Card className="text-detail-card">
-          {selectedText && selectedDraft ? (
+          {loading ? (
+            <div className="text-empty-state text-empty-state-large" role="status">Texte werden geladen …</div>
+          ) : selectedText && selectedDraft ? (
             <>
               <div className="text-section-header">
                 <div>
@@ -498,6 +507,8 @@ export function BadgeTextManager({
                 </div>
               </div>
             </>
+          ) : error ? (
+            <div className="text-empty-state text-empty-state-large">Die Textdetails stehen derzeit nicht zur Verfügung.</div>
           ) : (
             <div className="text-empty-state text-empty-state-large">
               Links einen Hinweistext auswählen, um ihn zu bearbeiten.

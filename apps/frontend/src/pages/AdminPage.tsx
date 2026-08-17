@@ -58,7 +58,7 @@ export function AdminPage() {
     { key: "admin", label: "Admin" },
     { key: "sibe", label: "SiBe" },
     { key: "laenderbenachrichtigungen", label: "Länderbenachrichtigungen" },
-    { key: "kaskdt", label: "KasKdt" },
+    { key: "kaskdt", label: "KSKdt" },
     { key: "texte", label: "Texte" }
   ];
   const permissionGroups: Array<{ title: string; items: Array<{ key: AppPermission; label: string }> }> = [
@@ -79,7 +79,7 @@ export function AdminPage() {
       items: [
         { key: "imports.execute", label: "Import ausführen" },
         { key: "dashboards.sibe", label: "SiBe-Übersicht" },
-        { key: "dashboards.commander", label: "KasKdt-Lagebild" },
+        { key: "dashboards.commander", label: "KSKdt-Lagebild" },
         { key: "admin.users", label: "Benutzer verwalten" },
         { key: "admin.guards", label: "Wachen verwalten" },
         { key: "texts.manage", label: "Texte verwalten" },

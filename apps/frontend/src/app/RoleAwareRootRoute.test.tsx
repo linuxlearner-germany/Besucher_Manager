@@ -100,8 +100,14 @@ describe("role-aware root routing", () => {
       </MemoryRouter>
     );
 
-    fireEvent.change(await screen.findByLabelText(/Benutzername/), { target: { value: "wache.test" } });
-    fireEvent.change(screen.getByLabelText(/Passwort/), { target: { value: "secret" } });
+    const usernameInput = await screen.findByLabelText(/Benutzername/);
+    const passwordInput = screen.getByLabelText(/Passwort/);
+    expect(usernameInput).toHaveAttribute("name", "username");
+    expect(usernameInput).toHaveAttribute("autocomplete", "username");
+    expect(passwordInput).toHaveAttribute("name", "password");
+    expect(passwordInput).toHaveAttribute("autocomplete", "current-password");
+    fireEvent.change(usernameInput, { target: { value: "wache.test" } });
+    fireEvent.change(passwordInput, { target: { value: "secret" } });
     fireEvent.click(screen.getByRole("button", { name: "Anmelden" }));
 
     expect(await screen.findByLabelText(/Aktive Wache/)).toHaveValue("gate-1");

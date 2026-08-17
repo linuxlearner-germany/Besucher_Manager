@@ -34,6 +34,76 @@ function createBaseVisit() {
   };
 }
 
+function loadWalkInSchema() {
+  process.env.APP_SECRET = process.env.APP_SECRET || "test-secret";
+  process.env.MSSQL_HOST = process.env.MSSQL_HOST || "localhost";
+  process.env.MSSQL_DATABASE = process.env.MSSQL_DATABASE || "testdb";
+  process.env.MSSQL_USER = process.env.MSSQL_USER || "sa";
+  process.env.MSSQL_PASSWORD = process.env.MSSQL_PASSWORD || "Password123!";
+  return require("../routes/guard").guardWalkInCreateSchema;
+}
+
+function createBrowserWalkInPayload() {
+  return {
+    clientRequestId: "walkin-browser-request-1",
+    existingVisitorId: null,
+    gateId: "",
+    action: "save",
+    firstName: "",
+    lastName: "",
+    company: "",
+    nationalityCode: "",
+    birthDate: "",
+    phone: "",
+    email: "",
+    licensePlate: "",
+    hostName: "",
+    hostEmail: "",
+    hostPhone: "",
+    hostDepartment: "",
+    purpose: "",
+    validFrom: "",
+    validUntil: "",
+    notes: "",
+    visitorStreet: "",
+    visitorHouseNumber: "",
+    visitorPostalCode: "",
+    visitorCity: "",
+    idDocumentType: "",
+    idDocumentValidUntil: "",
+    idDocumentNumber: "",
+    devicePhotoApp: false,
+    deviceFilmApp: false,
+    deviceVideoCamera: false,
+    deviceManufacturer: "",
+    deviceSerialNumber: "",
+    deviceAccessories: "",
+    deviceDepositNote: ""
+  };
+}
+
+test("walk-in schema accepts the browser payload for a new visitor with optional fields empty", () => {
+  const schema = loadWalkInSchema();
+  const parsed = schema.safeParse(createBrowserWalkInPayload());
+  assert.equal(parsed.success, true, parsed.success ? undefined : JSON.stringify(parsed.error.flatten()));
+});
+
+test("walk-in schema reports invalid populated values on their fields", () => {
+  const schema = loadWalkInSchema();
+  const parsed = schema.safeParse({
+    ...createBrowserWalkInPayload(),
+    email: "ungueltig",
+    nationalityCode: "unbekannt",
+    validFrom: "2026-99-99"
+  });
+  assert.equal(parsed.success, false);
+  if (parsed.success) return;
+  const fields = parsed.error.flatten().fieldErrors;
+  assert.ok(fields.email?.length);
+  assert.ok(fields.nationalityCode?.length);
+  assert.ok(fields.validFrom?.length);
+});
+
 test("completeness detects missing host phone and blocks check-in", () => {
   process.env.APP_SECRET = process.env.APP_SECRET || "test-secret";
   process.env.MSSQL_HOST = process.env.MSSQL_HOST || "localhost";

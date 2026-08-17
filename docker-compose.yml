@@ -49,6 +49,7 @@ services:
         http_proxy: ${http_proxy:-}
         https_proxy: ${https_proxy:-}
         no_proxy: ${no_proxy:-}
+        APP_COMMIT: ${APP_COMMIT:-unknown}
     restart: unless-stopped
     depends_on:
       sqlserver:

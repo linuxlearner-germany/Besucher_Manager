@@ -414,17 +414,39 @@ def main() -> int:
 
     print("4/16 Guard meldet sich an und findet den Besuch...")
     guard_login = login(guard_client, args.guard_user, args.guard_password, gate["name"])
-    walk_in_payload = make_public_payload(f"walkin-{suffix}", gate["id"])
-    walk_in_payload.update({"action": "check_in", "clientRequestId": f"walkin-{uuid.uuid4()}"})
+    walk_in_save_payload = make_public_payload(f"walkin-save-{suffix}", gate["id"])
+    walk_in_save_payload.update({
+        "action": "save",
+        "clientRequestId": f"walkin-save-{uuid.uuid4()}",
+        "existingVisitorId": None,
+        "validFrom": dt.date.today().isoformat(),
+        "validUntil": dt.date.today().isoformat(),
+    })
+    walk_in_saved = guard_client.request("POST", "/api/guard/visits/walk-in", payload=walk_in_save_payload)
+    if walk_in_saved.get("status") != "pre_registered":
+        raise RuntimeError(f"Spontanbesucher wurde nicht gespeichert: {walk_in_saved}")
+    walk_in_save_retry = guard_client.request("POST", "/api/guard/visits/walk-in", payload=walk_in_save_payload)
+    if walk_in_save_retry.get("visitId") != walk_in_saved.get("visitId"):
+        raise RuntimeError("Spontanbesucher-Speichern ist bei einem Retry nicht idempotent.")
+
+    walk_in_payload = make_public_payload(f"walkin-checkin-{suffix}", gate["id"])
+    walk_in_payload.update({
+        "action": "check_in",
+        "clientRequestId": f"walkin-checkin-{uuid.uuid4()}",
+        "existingVisitorId": None,
+        "validFrom": dt.date.today().isoformat(),
+        "validUntil": dt.date.today().isoformat(),
+    })
     walk_in = guard_client.request("POST", "/api/guard/visits/walk-in", payload=walk_in_payload)
     if walk_in.get("status") != "checked_in":
         raise RuntimeError(f"Spontanbesucher wurde nicht eingecheckt: {walk_in}")
     walk_in_retry = guard_client.request("POST", "/api/guard/visits/walk-in", payload=walk_in_payload)
     if walk_in_retry.get("visitId") != walk_in.get("visitId"):
-        raise RuntimeError("Spontanbesucher-Idempotenz hat einen zweiten Besuch erzeugt.")
+        raise RuntimeError("Spontanbesucher-Check-in ist bei einem Retry nicht idempotent.")
     visits_payload = guard_client.request("GET", "/api/guard/visits/today?status=all")
     visits = visits_payload.get("visits", [])
     require_visit(visits, visit_id, "Wache-Tagesuebersicht")
+    require_visit(visits, walk_in_saved["visitId"], "Wache-Tagesübersicht gespeicherter Spontanbesucher")
     require_visit(visits, walk_in["visitId"], "Wache-Tagesübersicht Spontanbesucher")
     pending_visits = guard_client.request("GET", "/api/guard/visits/today?status=all&signatureStatus=pending")["visits"]
     pending_visit = require_visit(pending_visits, visit_id, "Wache-Unterschriftsfilter vor Check-out")
@@ -707,6 +729,8 @@ def main() -> int:
         time.sleep(0.2)
     if not error_entries:
         raise RuntimeError("Kein Fehlerlog fuer Detailtest erzeugt.")
+    if any("v.status" in str(entry.get("message", "")) for entry in error_entries):
+        raise RuntimeError("Walk-in-Regression: SQL-Alias v.status ist weiterhin fehlerhaft.")
     error_detail = admin_client.request("GET", f"/api/admin/error-logs/{error_entries[0]['id']}")["log"]
     if error_detail.get("id") != error_entries[0]["id"] or error_detail.get("result") != "failure":
         raise RuntimeError("Fehlerlog-Detail liefert nicht den ausgewaehlten Eintrag.")

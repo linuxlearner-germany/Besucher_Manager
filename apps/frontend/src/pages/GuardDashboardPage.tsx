@@ -527,6 +527,12 @@ export function GuardDashboardPage() {
   async function handleWalkInCreate(action: WalkInAction) {
     if (walkInSaving) return;
 
+    if (!user?.gateId) {
+      setWalkInFieldErrors({ gateId: "Bitte wählen Sie eine aktive Wache aus." });
+      setWalkInError("Bitte korrigieren Sie die markierten Felder.");
+      return;
+    }
+
     // Das Fenster muss noch innerhalb des Klick-Ereignisses geöffnet werden,
     // sonst wird es nach der asynchronen Speicherung von Popup-Blockern verworfen.
     const printWindow = action === "check_in_and_print" ? window.open("", "_blank") : null;
@@ -1065,12 +1071,18 @@ export function GuardDashboardPage() {
               <fieldset className="walkin-form-group">
                 <legend>Besuch</legend>
                 <div className="form-grid two-columns">
-                {!isGuardUser ? <FormField label="Aktive Sitzung-Wache" required fieldId="walkin-gateId" error={walkInFieldErrors.gateId}>
-                  <select required value={user?.gateId || ""} onChange={(event) => { const gateId = event.target.value; if (!gateId) return; void fetchJson("/api/auth/gate", { method: "POST", body: JSON.stringify({ gateId }) }).then(() => window.location.reload()); }}>
-                    <option value="">Wache auswählen</option>
-                    {walkInGates.map((gate) => <option key={gate.id} value={gate.id}>{gate.name}</option>)}
-                  </select>
-                </FormField> : null}
+                {isGuardUser ? (
+                  <FormField label="Aktive Sitzung-Wache" required fieldId="walkin-gateId" error={walkInFieldErrors.gateId}>
+                    <input readOnly value={user?.gateName || "Keine Wache ausgewählt"} />
+                  </FormField>
+                ) : (
+                  <FormField label="Aktive Sitzung-Wache" required fieldId="walkin-gateId" error={walkInFieldErrors.gateId}>
+                    <select required value={user?.gateId || ""} onChange={(event) => { const gateId = event.target.value; if (!gateId) return; void fetchJson("/api/auth/gate", { method: "POST", body: JSON.stringify({ gateId }) }).then(() => window.location.reload()); }}>
+                      <option value="">Wache auswählen</option>
+                      {walkInGates.map((gate) => <option key={gate.id} value={gate.id}>{gate.name}</option>)}
+                    </select>
+                  </FormField>
+                )}
                 <FormField label="Besuchszweck" fieldId="walkin-purpose" error={walkInFieldErrors.purpose}><input value={walkInForm.purpose} onChange={(event) => setWalkInForm((current) => ({ ...current, purpose: event.target.value }))} /></FormField>
                 <FormField label="Gültig von (automatisch heute)" fieldId="walkin-validFrom" error={walkInFieldErrors.validFrom}><input type="date" value={walkInForm.validFrom} onChange={(event) => setWalkInForm((current) => ({ ...current, validFrom: event.target.value }))} /></FormField>
                 <FormField label="Gültig bis (automatisch heute)" fieldId="walkin-validUntil" error={walkInFieldErrors.validUntil}><input type="date" value={walkInForm.validUntil} onChange={(event) => setWalkInForm((current) => ({ ...current, validUntil: event.target.value }))} /></FormField>

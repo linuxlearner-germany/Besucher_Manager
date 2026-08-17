@@ -777,7 +777,7 @@ export function formatRoleLabel(role: User["role"] | AdminUser["role"]): string 
     case "sibe":
       return "SiBe";
     case "kaskdt":
-      return "KasKdt";
+      return "KSKdt";
     case "custom":
       return "Benutzerdefiniert";
     default:
@@ -1316,7 +1316,7 @@ export function AppLayout({ children }: PropsWithChildren) {
     { to: "/sibe/besucher/vereinfacht", label: "Vereinfachte Besucherregelung", visible: canUseSimplifiedVisitPolicy(user) },
     { to: "/sibe/ablehnungen", label: "Ablehnungen", visible: Boolean(user && hasMenuAccess(user, "sibe") && hasPermission(user, "visits.read")) },
     { to: "/sibe/benachrichtigungen", label: "Länderbenachrichtigungen", visible: Boolean(user && hasMenuAccess(user, "laenderbenachrichtigungen") && hasPermission(user, "dashboards.sibe")) },
-    { to: "/kaskdt", label: "KasKdt", visible: Boolean(user && hasMenuAccess(user, "kaskdt") && hasPermission(user, "dashboards.commander")) },
+    { to: "/kaskdt", label: "KSKdt", visible: Boolean(user && hasMenuAccess(user, "kaskdt") && hasPermission(user, "dashboards.commander")) },
     { to: "/kaskdt/antraege", label: "Anträge", visible: Boolean(user && hasRole(user, "kaskdt")) },
     { to: "/texte", label: "Texte", visible: Boolean(user && hasMenuAccess(user, "texte") && hasPermission(user, "texts.manage")) },
     { to: "/login", label: "Login", visible: !user }
@@ -1325,7 +1325,7 @@ export function AppLayout({ children }: PropsWithChildren) {
   const adminRoleMenus: Array<{ key: "wache" | "sibe" | "kaskdt"; label: string; paths: string[] }> = [
     { key: "wache", label: "Wache", paths: ["/wache"] },
     { key: "sibe", label: "SiBe", paths: ["/sibe", "/sibe/besucher/vereinfacht", "/sibe/ablehnungen", "/sibe/benachrichtigungen"] },
-    { key: "kaskdt", label: "KasKdt", paths: ["/kaskdt", "/kaskdt/antraege", "/texte"] }
+    { key: "kaskdt", label: "KSKdt", paths: ["/kaskdt", "/kaskdt/antraege", "/texte"] }
   ];
   const isAdminNavigation = user?.role === "admin";
 
