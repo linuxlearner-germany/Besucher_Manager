@@ -19,6 +19,12 @@ test("SiBe setting and KSKdt decisions use role guards and strict schemas", () =
   assert.match(route, /requireRole\(request,response,\["kaskdt"\]\)/);
 });
 
+test("public bootstrap exposes the persisted verification mode read-only", () => {
+  assert.match(route, /\/api\/public\/simplified-applications\/bootstrap/);
+  assert.match(route, /requireEmailVerification:settings\.get\(WORKFLOW_SETTING_KEYS\.publicXlsxRequireEmailVerification\)!=="false"/);
+  assert.match(route, /PUBLIC_XLSX_BOOTSTRAP_FAILED/);
+});
+
 test("approval is idempotently linked to one public-source visit", () => {
   assert.match(service, /created_visit_id/);
   assert.match(service, /N'public_simplified_excel'/);
@@ -31,4 +37,10 @@ test("verification stores only SHA-256 token hashes and submitted mail uses outb
   assert.match(service, /createHash\("sha256"\)/);
   assert.doesNotMatch(migration, /token_value|plain.*token/i);
   assert.match(migration, /public_simplified_application_mail_outbox/);
+});
+
+test("workflow mails consistently name the simplified visitor policy", () => {
+  assert.match(service, /Ihr Antrag zur vereinfachten Besucherregelung wurde eingereicht/);
+  assert.match(service, /Neuer Antrag zur vereinfachten Besucherregelung/);
+  assert.match(service, /Entscheidung zu Ihrem Antrag der vereinfachten Besucherregelung/);
 });

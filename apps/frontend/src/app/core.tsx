@@ -1289,14 +1289,14 @@ export function AppLayout({ children }: PropsWithChildren) {
   const location = useLocation();
   const navigationRef = useRef<HTMLDivElement>(null);
   const [openRoleMenu, setOpenRoleMenu] = useState<"wache" | "sibe" | "kaskdt" | null>(null);
-  const menuItems: Array<{ to: string; label: string; visible: boolean }> = [
+  const menuItems: Array<{ to: string; label: string; visible: boolean; activePrefixes?: string[] }> = [
     { to: "/", label: "Voranmeldung", visible: !user || Boolean(user && hasMenuAccess(user, "voranmeldung")) },
-    { to: "/visit/simplified/application", label: "XLSX-Antrag", visible: !user },
+    { to: "/visit/simplified/application", label: "Vereinfachte Besucherregelung", visible: !user, activePrefixes: ["/visit/simplified/"] },
     { to: "/wache", label: "Wache", visible: Boolean(user && hasMenuAccess(user, "wache") && hasPermission(user, "visits.read")) },
-    { to: "/import", label: "Import", visible: Boolean(!user || (user && hasMenuAccess(user, "import") && hasPermission(user, "imports.execute"))) },
+    { to: "/import", label: "XLSX-Import", visible: Boolean(user && hasMenuAccess(user, "import") && hasPermission(user, "imports.execute")) },
     { to: "/admin", label: "Admin", visible: Boolean(user && hasMenuAccess(user, "admin") && (hasPermission(user, "admin.users") || hasPermission(user, "admin.guards") || hasPermission(user, "admin.fields") || hasPermission(user, "admin.map") || hasPermission(user, "admin.system") || hasPermission(user, "logs.audit") || hasPermission(user, "logs.errors"))) },
     { to: "/sibe", label: "SiBe", visible: Boolean(user && hasMenuAccess(user, "sibe") && hasPermission(user, "dashboards.sibe")) },
-    { to: "/sibe/besucher/vereinfacht", label: "Vereinfachte Besuchsregelung", visible: canUseSimplifiedVisitPolicy(user) },
+    { to: "/sibe/besucher/vereinfacht", label: "Vereinfachte Besucherregelung", visible: canUseSimplifiedVisitPolicy(user) },
     { to: "/sibe/ablehnungen", label: "Ablehnungen", visible: Boolean(user && hasMenuAccess(user, "sibe") && hasPermission(user, "visits.read")) },
     { to: "/sibe/benachrichtigungen", label: "Länderbenachrichtigungen", visible: Boolean(user && hasMenuAccess(user, "laenderbenachrichtigungen") && hasPermission(user, "dashboards.sibe")) },
     { to: "/kaskdt", label: "KasKdt", visible: Boolean(user && hasMenuAccess(user, "kaskdt") && hasPermission(user, "dashboards.commander")) },
@@ -1391,7 +1391,7 @@ export function AppLayout({ children }: PropsWithChildren) {
                         {openRoleMenu === roleMenu.key ? (
                           <div id={`role-menu-${roleMenu.key}`} className="role-menu-popover">
                             {entries.map((item) => (
-                              <NavLink key={item.to} to={item.to} className={({ isActive: itemIsActive }) => (itemIsActive ? "active-link" : "")}>
+                              <NavLink key={item.to} to={item.to} className={({ isActive: itemIsActive }) => (itemIsActive || item.activePrefixes?.some((prefix) => location.pathname.startsWith(prefix)) ? "active-link" : "")}>
                                 {item.label}
                               </NavLink>
                             ))}
@@ -1402,7 +1402,7 @@ export function AppLayout({ children }: PropsWithChildren) {
                   })}
                 </>
               ) : visibleMenuItems.map((item) => (
-                <NavLink key={item.to} to={item.to} className={({ isActive }) => (isActive ? "active-link" : "")}>
+                <NavLink key={item.to} to={item.to} className={({ isActive }) => (isActive || item.activePrefixes?.some((prefix) => location.pathname.startsWith(prefix)) ? "active-link" : "")}>
                   {item.label}
                 </NavLink>
               ))}

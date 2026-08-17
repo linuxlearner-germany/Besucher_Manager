@@ -16,7 +16,7 @@ describe("simplified visit policy access", () => {
   it("shows the dedicated navigation entry through the SiBe-only helper", () => {
     const source = readFileSync(`${srcRoot}/app/core.tsx`, "utf8");
     expect(source).toContain('return hasRole(user, "sibe");');
-    expect(source).toContain('label: "Vereinfachte Besuchsregelung", visible: canUseSimplifiedVisitPolicy(user)');
+    expect(source).toContain('label: "Vereinfachte Besucherregelung", visible: canUseSimplifiedVisitPolicy(user)');
   });
 
   it("renders the XLSX policy input only for SiBe", () => {
