@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type SelectHTMLAttributes } from "react";
 import { fetchJson } from "../app/core";
 
 export type Country = { code: string; name: string };
@@ -18,11 +18,9 @@ export function useCountries(): Country[] {
   return countries;
 }
 
-export function CountrySelect(props: {
+export function CountrySelect(props: Omit<SelectHTMLAttributes<HTMLSelectElement>, "value" | "onChange"> & {
   value: string;
   onChange: (countryCode: string) => void;
-  required?: boolean;
-  className?: string;
 }) {
   const countries = useCountries();
   return (
@@ -30,6 +28,10 @@ export function CountrySelect(props: {
       value={props.value}
       required={props.required}
       className={props.className}
+      id={props.id}
+      aria-invalid={props["aria-invalid"]}
+      aria-describedby={props["aria-describedby"]}
+      aria-required={props["aria-required"]}
       onChange={(event) => props.onChange(event.target.value)}
     >
       <option value="">Bitte wählen</option>
