@@ -15,6 +15,26 @@ function resolveFrontendDist(): string {
   return path.resolve(__dirname, "../../frontend/dist");
 }
 
+function isFrontendAsset(requestPath: string): boolean {
+  return requestPath.startsWith("/assets/")
+    || requestPath.startsWith("/branding/")
+    || requestPath.startsWith("/uploads/")
+    || requestPath === "/favicon.ico";
+}
+
+function sendMaintenancePage(response: import("express").Response) {
+  response.setHeader("Cache-Control", "no-store, max-age=0");
+  response.setHeader("Retry-After", "120");
+  return response.status(503).type("html").send(`<!doctype html>
+<html lang="de">
+  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Wartungsarbeiten</title></head>
+  <body style="font-family:system-ui,sans-serif;max-width:42rem;margin:12vh auto;padding:2rem;line-height:1.5;color:#10233a">
+    <h1>Wartungsarbeiten</h1>
+    <p>Das Besuchermanagement ist derzeit wegen Wartungsarbeiten vorübergehend nicht verfügbar. Bitte versuchen Sie es später erneut.</p>
+  </body>
+</html>`);
+}
+
 export function createApp() {
   const app = express();
   const frontendDist = resolveFrontendDist();
@@ -54,22 +74,31 @@ export function createApp() {
   });
 
   app.get("/api/maintenance/status", async (_request, response) => {
+    response.setHeader("Cache-Control", "no-store, max-age=0");
     const settings = await loadSystemSettings([WORKFLOW_SETTING_KEYS.maintenanceMode]);
     response.json({ maintenanceMode: settings.get(WORKFLOW_SETTING_KEYS.maintenanceMode) === "true" });
   });
 
   app.use(async (request, response, next) => {
+    const isFrontendPage = request.method === "GET"
+      && !request.path.startsWith("/api")
+      && request.path !== "/health"
+      && request.path !== "/login"
+      && !isFrontendAsset(request.path);
     const exempt = request.path === "/health"
       || request.path === "/api/maintenance/status"
       || request.path.startsWith("/api/auth/")
       || request.path === "/api/ui-settings"
-      || !request.path.startsWith("/api");
-    if (exempt) return next();
+      || isFrontendAsset(request.path)
+      || request.path === "/login";
+    if (exempt && !isFrontendPage) return next();
     try {
       const settings = await loadSystemSettings([WORKFLOW_SETTING_KEYS.maintenanceMode]);
       if (settings.get(WORKFLOW_SETTING_KEYS.maintenanceMode) !== "true") return next();
       const user = await resolveAuthenticatedUser(request);
       if (user && hasRole(user, "admin")) return next();
+      if (isFrontendPage) return sendMaintenancePage(response);
+      response.setHeader("Retry-After", "120");
       return sendError(response, 503, "MAINTENANCE_MODE", "Die Anwendung befindet sich im Wartungsmodus.");
     } catch {
       return next();

@@ -69,10 +69,10 @@ const guardVisitUpdateSchema = z.object({
   birthDate: z.string().trim().optional().or(z.literal("")),
   company: z.string().trim().min(1).max(255),
   phone: z.string().trim().optional().or(z.literal("")),
-  email: z.string().trim().email("Ungueltige E-Mail-Adresse.").optional().or(z.literal("")),
+  email: z.string().trim().email("Die E-Mail-Adresse hat kein gültiges Format.").optional().or(z.literal("")),
   licensePlate: z.string().trim().max(40).optional().or(z.literal("")),
   hostName: z.string().trim().min(1).max(255),
-  hostEmail: z.string().trim().email("Ungueltige Ansprechpartner-E-Mail.").optional().or(z.literal("")),
+  hostEmail: z.string().trim().email("Die E-Mail-Adresse des Ansprechpartners hat kein gültiges Format.").optional().or(z.literal("")),
   hostPhone: z.string().trim().max(80).optional().or(z.literal("")),
   hostDepartment: z.string().trim().max(255).optional().or(z.literal("")),
   purpose: z.string().trim().min(1).max(500),
@@ -130,7 +130,7 @@ const guardVisitUpdateSchema = z.object({
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["birthDate"],
-        message: "Ungueltiges Geburtsdatum."
+        message: "Ungültiges Geburtsdatum."
       });
     } else if (birthDate > new Date()) {
       context.addIssue({
@@ -147,7 +147,7 @@ const guardVisitUpdateSchema = z.object({
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["idDocumentValidUntil"],
-        message: "Ungueltiges Ausweisdatum."
+        message: "Ungültiges Ausweisdatum."
       });
     }
   }
@@ -158,7 +158,7 @@ const guardVisitUpdateSchema = z.object({
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["deviceReturnedAt"],
-        message: "Ungueltiges Rueckgabe-Datum."
+        message: "Ungültiges Rückgabe-Datum."
       });
     }
   }
@@ -183,7 +183,7 @@ const userCreateSchema = z.object({
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["gateId"],
-      message: "Fuer Guard-Benutzer ist eine Wache erforderlich."
+      message: "Für Wache-Benutzer ist eine Wache erforderlich."
     });
   }
 });
@@ -208,15 +208,15 @@ const guardCalendarQuerySchema = z.object({
   const from = new Date(`${value.from}T00:00:00.000Z`);
   const to = new Date(`${value.to}T00:00:00.000Z`);
   if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["from"], message: "Ungueltiger Datumsbereich." });
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["from"], message: "Ungültiger Datumsbereich." });
     return;
   }
   if (to < from) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["to"], message: "Bis-Datum muss nach Von-Datum liegen." });
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["to"], message: "Das Bis-Datum muss am oder nach dem Von-Datum liegen." });
   }
   const diffDays = Math.floor((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24));
   if (diffDays > 90) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["to"], message: "Datumsbereich darf maximal 90 Tage umfassen." });
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["to"], message: "Der Datumsbereich darf maximal 90 Tage umfassen." });
   }
 });
 const guardWalkInCreateSchema = z.object({
@@ -238,10 +238,10 @@ const guardWalkInCreateSchema = z.object({
   }),
   birthDate: z.string().trim().optional().or(z.literal("")),
   phone: z.string().trim().optional().or(z.literal("")),
-  email: z.string().trim().email("Ungueltige E-Mail-Adresse.").optional().or(z.literal("")),
+  email: z.string().trim().email("Die E-Mail-Adresse hat kein gültiges Format.").optional().or(z.literal("")),
   licensePlate: z.string().trim().max(40).optional().or(z.literal("")),
   hostName: z.string().trim().max(255).optional().default(""),
-  hostEmail: z.string().trim().email("Ungueltige Ansprechpartner-E-Mail.").optional().or(z.literal("")),
+  hostEmail: z.string().trim().email("Die E-Mail-Adresse des Ansprechpartners hat kein gültiges Format.").optional().or(z.literal("")),
   hostPhone: z.string().trim().max(80).optional().default(""),
   hostDepartment: z.string().trim().max(255).optional().or(z.literal("")),
   purpose: z.string().trim().max(500).optional().default(""),
@@ -409,7 +409,7 @@ guardRouter.get("/api/guard/visits/today", async (request, response) => {
 
     return response.json({ visits });
   } catch (error) {
-    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Tagesuebersicht konnte nicht geladen werden.");
+    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Tagesübersicht konnte nicht geladen werden.");
   }
 });
 

@@ -1,4 +1,4 @@
-import { type ChangeEvent, type Dispatch, type DragEvent, type FormEvent, type SetStateAction } from "react";
+import { type ChangeEvent, type Dispatch, type DragEvent, type FormEvent, type SetStateAction, useState } from "react";
 import { Alert, Card, DataTable, FormField } from "../ui";
 import {
   type AdminAuditLog,
@@ -64,6 +64,7 @@ export function AdminDashboardSection({
   logs,
   errorLogs,
   systemStatus,
+  loading,
   onOpenSection
 }: {
   gates: AdminGate[];
@@ -74,20 +75,22 @@ export function AdminDashboardSection({
   logs: AdminAuditLog[];
   errorLogs: AdminErrorLog[];
   systemStatus: { activeVisits: number; signaturesFollowUp: number } | null;
+  loading: boolean;
   onOpenSection: (section: AdminSectionKey) => void;
 }) {
+  const loadingText = "Wird geladen …";
   return (
     <div className="card-grid stat-grid admin-dashboard-grid">
-      <article className="panel mini-card"><h3>Wachen</h3><p>{gates.filter((gate) => gate.isActive).length} aktive Wachen</p><button type="button" className="secondary-button" onClick={() => onOpenSection("wachen")}>Öffnen</button></article>
-      <article className="panel mini-card"><h3>Benutzer</h3><p>{users.filter((entry) => entry.isActive).length} aktive Benutzer</p><button type="button" className="secondary-button" onClick={() => onOpenSection("benutzer")}>Öffnen</button></article>
-      <article className="panel mini-card"><h3>Hinweistexte</h3><p>{texts.filter((text) => text.isActive).length} aktive Texte</p><button type="button" className="secondary-button" onClick={() => onOpenSection("texte")}>Öffnen</button></article>
-      <article className="panel mini-card"><h3>Geländeplan</h3><p title={activeSiteMap?.name || "Kein aktiver Plan"}>{activeSiteMap ? truncateLabel(activeSiteMap.name) : "Kein aktiver Plan"}</p><button type="button" className="secondary-button" onClick={() => onOpenSection("karte")}>Öffnen</button></article>
+      <article className="panel mini-card"><h3>Wachen</h3><p>{loading ? loadingText : `${gates.filter((gate) => gate.isActive).length} aktive Wachen`}</p><button type="button" className="secondary-button" onClick={() => onOpenSection("wachen")}>Öffnen</button></article>
+      <article className="panel mini-card"><h3>Benutzer</h3><p>{loading ? loadingText : `${users.filter((entry) => entry.isActive).length} aktive Benutzer`}</p><button type="button" className="secondary-button" onClick={() => onOpenSection("benutzer")}>Öffnen</button></article>
+      <article className="panel mini-card"><h3>Hinweistexte</h3><p>{loading ? loadingText : `${texts.filter((text) => text.isActive).length} aktive Texte`}</p><button type="button" className="secondary-button" onClick={() => onOpenSection("texte")}>Öffnen</button></article>
+      <article className="panel mini-card"><h3>Geländeplan</h3><p title={!loading && activeSiteMap?.name ? activeSiteMap.name : undefined}>{loading ? loadingText : activeSiteMap ? truncateLabel(activeSiteMap.name) : "Kein aktiver Plan"}</p><button type="button" className="secondary-button" onClick={() => onOpenSection("karte")}>Öffnen</button></article>
       <article className="panel mini-card"><h3>Hintergrund</h3><p>Startbild der Anwendung verwalten</p><button type="button" className="secondary-button" onClick={() => onOpenSection("hintergrund")}>Öffnen</button></article>
-      <article className="panel mini-card"><h3>Feldkonfiguration</h3><p>{fieldDefinitions.filter((field) => field.isActive).length} aktive Felder</p><button type="button" className="secondary-button" onClick={() => onOpenSection("felder")}>Öffnen</button></article>
+      <article className="panel mini-card"><h3>Feldkonfiguration</h3><p>{loading ? loadingText : `${fieldDefinitions.filter((field) => field.isActive).length} aktive Felder`}</p><button type="button" className="secondary-button" onClick={() => onOpenSection("felder")}>Öffnen</button></article>
       <article className="panel mini-card"><h3>Benutzerimport</h3><p>Konten gesammelt per CSV anlegen oder aktualisieren</p><button type="button" className="secondary-button" onClick={() => onOpenSection("benutzer")}>Öffnen</button></article>
-      <article className="panel mini-card"><h3>Auditlog</h3><p>{logs.length} letzte Einträge</p><button type="button" className="secondary-button" onClick={() => onOpenSection("audit")}>Öffnen</button></article>
-      <article className="panel mini-card"><h3>Fehlerlog</h3><p>{errorLogs.length} letzte Einträge</p><button type="button" className="secondary-button" onClick={() => onOpenSection("fehler")}>Öffnen</button></article>
-      <article className="panel mini-card"><h3>Systemstatus</h3><p>{systemStatus ? `${systemStatus.activeVisits} aktiv, ${systemStatus.signaturesFollowUp} Nachreichungen` : "Lade..."}</p><button type="button" className="secondary-button" onClick={() => onOpenSection("system")}>Öffnen</button></article>
+      <article className="panel mini-card"><h3>Auditlog</h3><p>{loading ? loadingText : `${logs.length} letzte Einträge`}</p><button type="button" className="secondary-button" onClick={() => onOpenSection("audit")}>Öffnen</button></article>
+      <article className="panel mini-card"><h3>Fehlerlog</h3><p>{loading ? loadingText : `${errorLogs.length} letzte Einträge`}</p><button type="button" className="secondary-button" onClick={() => onOpenSection("fehler")}>Öffnen</button></article>
+      <article className="panel mini-card"><h3>Systemstatus</h3><p>{loading ? loadingText : systemStatus ? `${systemStatus.activeVisits} aktiv, ${systemStatus.signaturesFollowUp} Nachreichungen` : "Keine Daten verfügbar"}</p><button type="button" className="secondary-button" onClick={() => onOpenSection("system")}>Öffnen</button></article>
     </div>
   );
 }
@@ -266,6 +269,23 @@ export function AdminUsersSection({
   currentUserId?: string;
 }) {
   const selectedUser = selectedUserId ? editableUsers[selectedUserId] : null;
+  const [pendingUserAction, setPendingUserAction] = useState<{ kind: "deactivate" | "delete"; user: AdminUser } | null>(null);
+  const [userActionBusy, setUserActionBusy] = useState(false);
+
+  async function confirmPendingUserAction() {
+    if (!pendingUserAction || userActionBusy) return;
+    setUserActionBusy(true);
+    try {
+      if (pendingUserAction.kind === "deactivate") {
+        await toggleUserActive(pendingUserAction.user.id, false);
+      } else {
+        await deleteUser(pendingUserAction.user.id);
+      }
+      setPendingUserAction(null);
+    } finally {
+      setUserActionBusy(false);
+    }
+  }
 
   function summarizeMenuAccess(menuAccess: AppMenuKey[]) {
     if (!menuAccess.length) {
@@ -481,10 +501,10 @@ export function AdminUsersSection({
                 <td className="actions-cell">
                   <div className="action-row admin-action-row compact-action-row">
                     <button type="button" className="secondary-button" onClick={() => setSelectedUserId(entry.id)}>Bearbeiten</button>
-                    <button className={entry.isActive ? "danger-button" : "secondary-button"} type="button" onClick={() => void toggleUserActive(entry.id, entry.isActive)} disabled={currentUserId === entry.id}>
+                    <button className={entry.isActive ? "danger-button" : "secondary-button"} type="button" onClick={() => entry.isActive ? setPendingUserAction({ kind: "deactivate", user: entry }) : void toggleUserActive(entry.id, true)} disabled={currentUserId === entry.id || userActionBusy}>
                       {entry.isActive ? "Zugang sperren" : "Zugang freigeben"}
                     </button>
-                    <button className="danger-button" type="button" onClick={() => void deleteUser(entry.id)} disabled={currentUserId === entry.id}>Löschen</button>
+                    <button className="danger-button" type="button" onClick={() => setPendingUserAction({ kind: "delete", user: entry })} disabled={currentUserId === entry.id || userActionBusy}>Löschen</button>
                   </div>
                 </td>
               </tr>
@@ -493,6 +513,25 @@ export function AdminUsersSection({
           </table>
         </div>
       </div>
+      {pendingUserAction ? (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="user-action-dialog-title">
+          <div className="modal-card panel">
+            <h3 id="user-action-dialog-title">{pendingUserAction.kind === "delete" ? "Benutzer wirklich löschen?" : "Benutzer sperren?"}</h3>
+            <p>
+              Benutzer <strong>{pendingUserAction.user.username}</strong>{" "}
+              {pendingUserAction.kind === "delete"
+                ? "wird dauerhaft gelöscht. Historisch referenzierte Konten werden pseudonymisiert; Auditdaten bleiben erhalten."
+                : "wird deaktiviert und kann sich danach nicht mehr anmelden."}
+            </p>
+            <div className="row-actions">
+              <button type="button" className="secondary-button" onClick={() => setPendingUserAction(null)} disabled={userActionBusy}>Abbrechen</button>
+              <button type="button" className="danger-button" onClick={() => void confirmPendingUserAction()} disabled={userActionBusy}>
+                {userActionBusy ? "Wird verarbeitet …" : pendingUserAction.kind === "delete" ? "Benutzer löschen" : "Benutzer sperren"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {selectedUser ? (
         <div className="panel admin-user-card">
         <div className="table-section-header">
@@ -605,10 +644,12 @@ export function AdminSiteMapSection({
   return (
     <Card>
       <h3>Geländeplan</h3>
-      <div className="empty-state-box">
-        <strong>Keine Uploads in der Oberfläche</strong>
-        <span>Dateien werden kontrolliert in <code>./uploads/site-maps</code> abgelegt. Nach dem Kopieren erscheinen sie hier zur Auswahl.</span>
-      </div>
+      {!activeSiteMap ? (
+        <div className="empty-state-box">
+          <strong>{siteMaps.length ? "Kein aktiver Geländeplan ausgewählt" : "Keine weiteren hochgeladenen Versionen vorhanden"}</strong>
+          <span>Dateien werden kontrolliert in <code>./uploads/site-maps</code> abgelegt. Nach dem Kopieren erscheinen sie hier zur Auswahl.</span>
+        </div>
+      ) : null}
 
       <div className="site-map-admin-grid">
         <div className="site-map-current">

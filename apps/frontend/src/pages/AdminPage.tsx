@@ -133,6 +133,7 @@ export function AdminPage() {
   const [retentionSettings, setRetentionSettings] = useState<AdminRetentionSettings | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [adminDataLoading, setAdminDataLoading] = useState(true);
   const [selectedAuditLogId, setSelectedAuditLogId] = useState<string | null>(() => searchParams.get("auditId"));
   const [selectedErrorLogId, setSelectedErrorLogId] = useState<string | null>(() => searchParams.get("errorId"));
   const [selectedAuditLog, setSelectedAuditLog] = useState<AdminLogDetail | null>(null);
@@ -336,6 +337,7 @@ export function AdminPage() {
 
   const loadAll = useCallback(async () => {
     setError(null);
+    setAdminDataLoading(true);
     try {
       const [gatePayload, userPayload, textPayload, statusPayload, workflowPayload, backgroundPayload, siteMapPayload, siteMapsPayload, fieldDefinitionsPayload, retentionPayload, maintenancePayload] = await Promise.all([
         fetchJson<{ gates: AdminGate[] }>("/api/admin/gates", { method: "GET", headers: {} }),
@@ -382,6 +384,8 @@ export function AdminPage() {
     } catch (apiError) {
       const payload = apiError as ApiError;
       setError(payload.message || "Admin-Daten konnten nicht geladen werden.");
+    } finally {
+      setAdminDataLoading(false);
     }
   }, [auditFilters, errorLogFilters, loadAuditLogs, loadErrorLogs, setBackgroundImageUrl, setBackgroundMode]);
 
@@ -936,7 +940,6 @@ export function AdminPage() {
   }
 
   async function deleteUser(userId: string) {
-    if (!window.confirm("Benutzer wirklich dauerhaft löschen? Historisch referenzierte Konten werden pseudonymisiert.")) return;
     try {
       const payload = await fetchJson<{ message: string }>(`/api/admin/users/${userId}`, { method: "DELETE" });
       setMessage(payload.message);
@@ -1150,6 +1153,7 @@ export function AdminPage() {
             logs={logs}
             errorLogs={errorLogs}
             systemStatus={systemStatus}
+            loading={adminDataLoading}
             onOpenSection={selectAdminSection}
           />
         ) : null}

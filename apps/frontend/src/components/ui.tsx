@@ -1,4 +1,4 @@
-import { type PropsWithChildren, type ReactNode } from "react";
+import { cloneElement, isValidElement, type PropsWithChildren, type ReactElement, type ReactNode } from "react";
 
 export function Card({ children, className = "" }: PropsWithChildren<{ className?: string }>) {
   return <section className={`panel ${className}`.trim()}>{children}</section>;
@@ -17,7 +17,7 @@ export function Button({
 }
 
 export function Alert({ type, children }: PropsWithChildren<{ type: "success" | "error" | "warning" | "info" }>) {
-  return <div className={`feedback ${type}`}>{children}</div>;
+  return <div className={`feedback ${type}`} role={type === "error" || type === "warning" ? "alert" : "status"} aria-live="polite">{children}</div>;
 }
 
 export function FieldLabel({ label, required = false }: { label: string; required?: boolean }) {
@@ -34,13 +34,22 @@ export function FormField({
   required,
   error,
   errorId,
+  fieldId,
   children
-}: PropsWithChildren<{ label: string; required?: boolean; error?: string; errorId?: string }>) {
+}: PropsWithChildren<{ label: string; required?: boolean; error?: string; errorId?: string; fieldId?: string }>) {
+  const resolvedErrorId = errorId ?? (fieldId ? `${fieldId}-error` : undefined);
+  const control = isValidElement(children) && (fieldId || required || error)
+    ? cloneElement(children as ReactElement<Record<string, unknown>>, {
+      ...(fieldId ? { id: fieldId } : {}),
+      ...(required ? { "aria-required": true } : {}),
+      ...(error ? { "aria-invalid": true, "aria-describedby": resolvedErrorId } : {})
+    })
+    : children;
   return (
     <label className={`form-field${error ? " has-error" : ""}`}>
       <FieldLabel label={label} required={required} />
-      {children}
-      {error ? <span id={errorId} className="field-error" role="alert">{error}</span> : null}
+      {control}
+      {error ? <span id={resolvedErrorId} className="field-error" role="alert">{error}</span> : null}
     </label>
   );
 }

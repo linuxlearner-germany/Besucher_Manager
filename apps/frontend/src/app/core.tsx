@@ -8,7 +8,7 @@ import {
   useRef,
   useState
 } from "react";
-import { Navigate, NavLink, useLocation, useNavigate } from "react-router-dom";
+import { Link, Navigate, NavLink, useLocation, useNavigate } from "react-router-dom";
 
 export type AppRole = "admin" | "guard" | "sibe" | "kaskdt" | "custom";
 export type AppMenuKey = "voranmeldung" | "wache" | "import" | "admin" | "sibe" | "laenderbenachrichtigungen" | "kaskdt" | "texte";
@@ -1286,6 +1286,20 @@ export function RoleAwareRootRoute({ children }: PropsWithChildren) {
   return redirectTo ? <Navigate to={redirectTo} replace /> : <>{children}</>;
 }
 
+export function AccessDeniedPage({ redirectTo = "/" }: { redirectTo?: string }) {
+  return (
+    <AppLayout>
+      <main className="public-page">
+        <section className="public-card panel access-denied-page" aria-labelledby="access-denied-title">
+          <h1 id="access-denied-title">Keine Berechtigung</h1>
+          <p>Sie haben keine Berechtigung, diesen Bereich aufzurufen.</p>
+          <Link className="button-link" to={redirectTo}>Zur Startseite</Link>
+        </section>
+      </main>
+    </AppLayout>
+  );
+}
+
 export function AppLayout({ children }: PropsWithChildren) {
   const { user, logout } = useAuth();
   const { mode, toggle, securityNumber } = useThemeMode();
@@ -1465,7 +1479,7 @@ export function RequireRoles({
   const allowCustomByPermission = hasRole(user, "custom") && Boolean(requiredPermissions?.length);
 
   if (!allowedRoles.some((role) => hasRole(user, role)) && !allowCustomByPermission) {
-    return <Navigate to={redirectTo} replace />;
+    return <AccessDeniedPage redirectTo={redirectTo} />;
   }
 
   const neededMenuKeys = requiredMenuKeys?.length
@@ -1475,11 +1489,11 @@ export function RequireRoles({
       : [];
 
   if (neededMenuKeys.length > 0 && !neededMenuKeys.some((menuKey) => hasMenuAccess(user, menuKey))) {
-    return <Navigate to={redirectTo} replace />;
+    return <AccessDeniedPage redirectTo={redirectTo} />;
   }
 
   if (requiredPermissions?.length && !requiredPermissions.some((permission) => hasPermission(user, permission))) {
-    return <Navigate to={redirectTo} replace />;
+    return <AccessDeniedPage redirectTo={redirectTo} />;
   }
 
   return <>{children}</>;

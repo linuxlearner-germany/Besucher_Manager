@@ -210,6 +210,7 @@ export function GuardDashboardPage() {
   const { user } = useAuth();
   const isGuardUser = user?.role === "guard";
   const [visits, setVisits] = useState<VisitRow[]>([]);
+  const [statsVisits, setStatsVisits] = useState<VisitRow[]>([]);
   const [calendarItems, setCalendarItems] = useState<GuardCalendarItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [calendarLoading, setCalendarLoading] = useState(true);
@@ -223,6 +224,7 @@ export function GuardDashboardPage() {
   const [checkoutState, setCheckoutState] = useState<Record<string, CheckoutFormState>>({});
   const [walkInOpen, setWalkInOpen] = useState(false);
   const [walkInSaving, setWalkInSaving] = useState(false);
+  const [walkInSavingAction, setWalkInSavingAction] = useState<WalkInAction | null>(null);
   const [walkInError, setWalkInError] = useState<string | null>(null);
   const [walkInFieldErrors, setWalkInFieldErrors] = useState<Record<string, string>>({});
   const [walkInGates, setWalkInGates] = useState<Gate[]>([]);
@@ -305,11 +307,11 @@ export function GuardDashboardPage() {
   }, [isGuardUser, user?.gateId]);
 
   const stats = useMemo(() => {
-    const preRegistered = visits.filter((visit) => visit.status === "pre_registered").length;
-    const checkedIn = visits.filter((visit) => visit.status === "checked_in").length;
-    const checkedOut = visits.filter((visit) => visit.status === "checked_out").length;
+    const preRegistered = statsVisits.filter((visit) => visit.status === "pre_registered").length;
+    const checkedIn = statsVisits.filter((visit) => visit.status === "checked_in" && !visit.checkOutAt).length;
+    const checkedOut = statsVisits.filter((visit) => visit.status === "checked_out" || Boolean(visit.checkOutAt)).length;
     return { preRegistered, checkedIn, checkedOut };
-  }, [visits]);
+  }, [statsVisits]);
 
   const loadVisits = useCallback(async () => {
     setLoading(true);
@@ -324,11 +326,13 @@ export function GuardDashboardPage() {
         params.set("search", search);
       }
 
-      const payload = await fetchJson<{ visits: VisitRow[] }>(`/api/guard/visits/today?${params.toString()}`, {
-        method: "GET",
-        headers: {}
-      });
+      const summaryParams = new URLSearchParams({ status: "all", scope: isGuardUser ? visitScope : "all" });
+      const [payload, summaryPayload] = await Promise.all([
+        fetchJson<{ visits: VisitRow[] }>(`/api/guard/visits/today?${params.toString()}`, { method: "GET", headers: {} }),
+        fetchJson<{ visits: VisitRow[] }>(`/api/guard/visits/today?${summaryParams.toString()}`, { method: "GET", headers: {} })
+      ]);
       setVisits(payload.visits);
+      setStatsVisits(summaryPayload.visits);
     } catch (apiError) {
       const errorPayload = apiError as ApiError;
       setError(errorPayload.message || "Die Tagesübersicht konnte nicht geladen werden.");
@@ -473,6 +477,13 @@ export function GuardDashboardPage() {
     walkInOpen
   ]);
 
+  useEffect(() => {
+    if (!walkInError || walkInSaving) return;
+    const firstField = Object.keys(walkInFieldErrors)[0];
+    if (!firstField) return;
+    document.getElementById(`walkin-${firstField}`)?.focus();
+  }, [walkInError, walkInFieldErrors, walkInSaving]);
+
   async function handleCheckIn(visitId: string) {
     setActionMessage(null);
 
@@ -482,7 +493,7 @@ export function GuardDashboardPage() {
         body: JSON.stringify({})
       });
       setActionMessage("Besuch wurde eingecheckt.");
-      await loadVisits();
+      await Promise.all([loadVisits(), loadCalendar()]);
     } catch (apiError) {
       const errorPayload = apiError as ApiError;
       if (errorPayload.error === "VALIDATION_ERROR") {
@@ -506,7 +517,7 @@ export function GuardDashboardPage() {
       });
       setActionMessage("Besuch wurde ausgecheckt.");
       setCheckoutState((existing) => ({ ...existing, [visitId]: buildInitialCheckoutState() }));
-      await loadVisits();
+      await Promise.all([loadVisits(), loadCalendar()]);
     } catch (apiError) {
       const errorPayload = apiError as ApiError;
       setActionMessage(errorPayload.message || "Check-out fehlgeschlagen.");
@@ -523,6 +534,7 @@ export function GuardDashboardPage() {
     setWalkInError(null);
     setWalkInFieldErrors({});
     setWalkInSaving(true);
+    setWalkInSavingAction(action);
 
     try {
       const payload = await fetchJson<{ message: string; badgeNumber: string; visitId: string; status: string; warnings: string[] }>("/api/guard/visits/walk-in", {
@@ -562,12 +574,15 @@ export function GuardDashboardPage() {
     } catch (apiError) {
       printWindow?.close();
       const errorPayload = apiError as ApiError;
-      const message = errorPayload.message || "Spontanbesucher konnte nicht angelegt werden.";
-      setWalkInError(`Speichern fehlgeschlagen: ${message}`);
+      const message = errorPayload.error === "VALIDATION_ERROR"
+        ? "Bitte korrigieren Sie die markierten Felder."
+        : errorPayload.message || "Die Anmeldung konnte aufgrund eines technischen Fehlers nicht gespeichert werden. Bitte versuchen Sie es erneut.";
+      setWalkInError(message);
       setWalkInFieldErrors(extractFieldErrors(errorPayload));
       setActionMessage(message);
     } finally {
       setWalkInSaving(false);
+      setWalkInSavingAction(null);
     }
   }
 
@@ -685,9 +700,9 @@ export function GuardDashboardPage() {
 
         {activeView === "list" ? (
           <div className="card-grid stat-grid guard-stat-grid">
-            <article className="panel mini-card guard-mini-card"><h3>Vorangemeldet heute</h3><p>{stats.preRegistered}</p></article>
-            <article className="panel mini-card guard-mini-card"><h3>Aktuell eingecheckt</h3><p>{stats.checkedIn}</p></article>
-            <article className="panel mini-card guard-mini-card"><h3>Ausgecheckt heute</h3><p>{stats.checkedOut}</p></article>
+            <article className="panel mini-card guard-mini-card"><h3>Vorangemeldet heute</h3><p>{loading ? "…" : stats.preRegistered}</p></article>
+            <article className="panel mini-card guard-mini-card"><h3>{isGuardUser ? "Aktuell an dieser Wache eingecheckt" : "Aktuell eingecheckt"}</h3><p>{loading ? "…" : stats.checkedIn}</p></article>
+            <article className="panel mini-card guard-mini-card"><h3>Ausgecheckt heute</h3><p>{loading ? "…" : stats.checkedOut}</p></article>
           </div>
         ) : null}
 
@@ -1046,33 +1061,54 @@ export function GuardDashboardPage() {
                 </div>
               ) : null}
 
-              <div className="form-grid two-columns">
-                {!isGuardUser ? <FormField label="Aktive Sitzung-Wache" required error={walkInFieldErrors.gateId}>
+              <p className="field-help">* Pflichtfeld</p>
+              <fieldset className="walkin-form-group">
+                <legend>Besuch</legend>
+                <div className="form-grid two-columns">
+                {!isGuardUser ? <FormField label="Aktive Sitzung-Wache" required fieldId="walkin-gateId" error={walkInFieldErrors.gateId}>
                   <select required value={user?.gateId || ""} onChange={(event) => { const gateId = event.target.value; if (!gateId) return; void fetchJson("/api/auth/gate", { method: "POST", body: JSON.stringify({ gateId }) }).then(() => window.location.reload()); }}>
                     <option value="">Wache auswählen</option>
                     {walkInGates.map((gate) => <option key={gate.id} value={gate.id}>{gate.name}</option>)}
                   </select>
                 </FormField> : null}
-                <FormField label="Vorname" error={walkInFieldErrors.firstName}><input value={walkInForm.firstName} onChange={(event) => setWalkInForm((current) => ({ ...current, firstName: event.target.value }))} /></FormField>
-                <FormField label="Nachname" error={walkInFieldErrors.lastName}><input value={walkInForm.lastName} onChange={(event) => setWalkInForm((current) => ({ ...current, lastName: event.target.value }))} /></FormField>
-                <FormField label="Firma / Organisation" error={walkInFieldErrors.company}><input value={walkInForm.company} onChange={(event) => setWalkInForm((current) => ({ ...current, company: event.target.value }))} /></FormField>
-                <FormField label="Nationalität" error={walkInFieldErrors.nationalityCode}><CountrySelect value={walkInForm.nationalityCode} onChange={(value) => setWalkInForm((current) => ({ ...current, nationalityCode: value }))} /></FormField>
-                <FormField label="Geburtsdatum" error={walkInFieldErrors.birthDate}><input type="date" value={walkInForm.birthDate} onChange={(event) => setWalkInForm((current) => ({ ...current, birthDate: event.target.value }))} /></FormField>
-                <FormField label="Telefon Besucher" error={walkInFieldErrors.phone}><input value={walkInForm.phone} onChange={(event) => setWalkInForm((current) => ({ ...current, phone: event.target.value }))} /></FormField>
-                <FormField label="E-Mail Besucher" error={walkInFieldErrors.email}><input value={walkInForm.email} onChange={(event) => setWalkInForm((current) => ({ ...current, email: event.target.value }))} /></FormField>
-                <FormField label="Kennzeichen" error={walkInFieldErrors.licensePlate}><input value={walkInForm.licensePlate} onChange={(event) => setWalkInForm((current) => ({ ...current, licensePlate: event.target.value }))} /></FormField>
-                <FormField label="Ansprechpartner" error={walkInFieldErrors.hostName}><input value={walkInForm.hostName} onChange={(event) => setWalkInForm((current) => ({ ...current, hostName: event.target.value }))} /></FormField>
-                <FormField label="Ansprechpartner E-Mail" error={walkInFieldErrors.hostEmail}><input value={walkInForm.hostEmail} onChange={(event) => setWalkInForm((current) => ({ ...current, hostEmail: event.target.value }))} /></FormField>
-                <FormField label="Ansprechpartner Telefon" error={walkInFieldErrors.hostPhone}><input value={walkInForm.hostPhone} onChange={(event) => setWalkInForm((current) => ({ ...current, hostPhone: event.target.value }))} /></FormField>
-                <FormField label="Abteilung / Bereich" error={walkInFieldErrors.hostDepartment}><input value={walkInForm.hostDepartment} onChange={(event) => setWalkInForm((current) => ({ ...current, hostDepartment: event.target.value }))} /></FormField>
-                <FormField label="Besuchszweck" error={walkInFieldErrors.purpose}><input value={walkInForm.purpose} onChange={(event) => setWalkInForm((current) => ({ ...current, purpose: event.target.value }))} /></FormField>
-                <FormField label="Gültig von (automatisch heute)" error={walkInFieldErrors.validFrom}><input type="date" value={walkInForm.validFrom} onChange={(event) => setWalkInForm((current) => ({ ...current, validFrom: event.target.value }))} /></FormField>
-                <FormField label="Gültig bis (automatisch heute)" error={walkInFieldErrors.validUntil}><input type="date" value={walkInForm.validUntil} onChange={(event) => setWalkInForm((current) => ({ ...current, validUntil: event.target.value }))} /></FormField>
-                <FormField label="Straße" error={walkInFieldErrors.visitorStreet}><input value={walkInForm.visitorStreet} onChange={(event) => setWalkInForm((current) => ({ ...current, visitorStreet: event.target.value }))} /></FormField>
-                <FormField label="Hausnummer" error={walkInFieldErrors.visitorHouseNumber}><input value={walkInForm.visitorHouseNumber} onChange={(event) => setWalkInForm((current) => ({ ...current, visitorHouseNumber: event.target.value }))} /></FormField>
-                <FormField label="PLZ" error={walkInFieldErrors.visitorPostalCode}><input value={walkInForm.visitorPostalCode} onChange={(event) => setWalkInForm((current) => ({ ...current, visitorPostalCode: event.target.value }))} /></FormField>
-                <FormField label="Wohnort" error={walkInFieldErrors.visitorCity}><input value={walkInForm.visitorCity} onChange={(event) => setWalkInForm((current) => ({ ...current, visitorCity: event.target.value }))} /></FormField>
-                <FormField label="Ausweisart" error={walkInFieldErrors.idDocumentType}>
+                <FormField label="Besuchszweck" fieldId="walkin-purpose" error={walkInFieldErrors.purpose}><input value={walkInForm.purpose} onChange={(event) => setWalkInForm((current) => ({ ...current, purpose: event.target.value }))} /></FormField>
+                <FormField label="Gültig von (automatisch heute)" fieldId="walkin-validFrom" error={walkInFieldErrors.validFrom}><input type="date" value={walkInForm.validFrom} onChange={(event) => setWalkInForm((current) => ({ ...current, validFrom: event.target.value }))} /></FormField>
+                <FormField label="Gültig bis (automatisch heute)" fieldId="walkin-validUntil" error={walkInFieldErrors.validUntil}><input type="date" value={walkInForm.validUntil} onChange={(event) => setWalkInForm((current) => ({ ...current, validUntil: event.target.value }))} /></FormField>
+                </div>
+              </fieldset>
+
+              <fieldset className="walkin-form-group">
+                <legend>Besucher</legend>
+                <div className="form-grid two-columns">
+                <FormField label="Vorname" fieldId="walkin-firstName" error={walkInFieldErrors.firstName}><input value={walkInForm.firstName} onChange={(event) => setWalkInForm((current) => ({ ...current, firstName: event.target.value }))} /></FormField>
+                <FormField label="Nachname" fieldId="walkin-lastName" error={walkInFieldErrors.lastName}><input value={walkInForm.lastName} onChange={(event) => setWalkInForm((current) => ({ ...current, lastName: event.target.value }))} /></FormField>
+                <FormField label="Firma / Organisation" fieldId="walkin-company" error={walkInFieldErrors.company}><input value={walkInForm.company} onChange={(event) => setWalkInForm((current) => ({ ...current, company: event.target.value }))} /></FormField>
+                <FormField label="Nationalität" fieldId="walkin-nationalityCode" error={walkInFieldErrors.nationalityCode}><CountrySelect value={walkInForm.nationalityCode} onChange={(value) => setWalkInForm((current) => ({ ...current, nationalityCode: value }))} /></FormField>
+                <FormField label="Geburtsdatum" fieldId="walkin-birthDate" error={walkInFieldErrors.birthDate}><input type="date" value={walkInForm.birthDate} onChange={(event) => setWalkInForm((current) => ({ ...current, birthDate: event.target.value }))} /></FormField>
+                <FormField label="Telefon Besucher" fieldId="walkin-phone" error={walkInFieldErrors.phone}><input value={walkInForm.phone} onChange={(event) => setWalkInForm((current) => ({ ...current, phone: event.target.value }))} /></FormField>
+                <FormField label="E-Mail Besucher" fieldId="walkin-email" error={walkInFieldErrors.email}><input value={walkInForm.email} onChange={(event) => setWalkInForm((current) => ({ ...current, email: event.target.value }))} /></FormField>
+                <FormField label="Kennzeichen" fieldId="walkin-licensePlate" error={walkInFieldErrors.licensePlate}><input value={walkInForm.licensePlate} onChange={(event) => setWalkInForm((current) => ({ ...current, licensePlate: event.target.value }))} /></FormField>
+                <FormField label="Straße" fieldId="walkin-visitorStreet" error={walkInFieldErrors.visitorStreet}><input value={walkInForm.visitorStreet} onChange={(event) => setWalkInForm((current) => ({ ...current, visitorStreet: event.target.value }))} /></FormField>
+                <FormField label="Hausnummer" fieldId="walkin-visitorHouseNumber" error={walkInFieldErrors.visitorHouseNumber}><input value={walkInForm.visitorHouseNumber} onChange={(event) => setWalkInForm((current) => ({ ...current, visitorHouseNumber: event.target.value }))} /></FormField>
+                <FormField label="PLZ" fieldId="walkin-visitorPostalCode" error={walkInFieldErrors.visitorPostalCode}><input value={walkInForm.visitorPostalCode} onChange={(event) => setWalkInForm((current) => ({ ...current, visitorPostalCode: event.target.value }))} /></FormField>
+                <FormField label="Wohnort" fieldId="walkin-visitorCity" error={walkInFieldErrors.visitorCity}><input value={walkInForm.visitorCity} onChange={(event) => setWalkInForm((current) => ({ ...current, visitorCity: event.target.value }))} /></FormField>
+                </div>
+              </fieldset>
+
+              <fieldset className="walkin-form-group">
+                <legend>Ansprechpartner</legend>
+                <div className="form-grid two-columns">
+                <FormField label="Name des Ansprechpartners" fieldId="walkin-hostName" error={walkInFieldErrors.hostName}><input value={walkInForm.hostName} onChange={(event) => setWalkInForm((current) => ({ ...current, hostName: event.target.value }))} /></FormField>
+                <FormField label="Abteilung" fieldId="walkin-hostDepartment" error={walkInFieldErrors.hostDepartment}><input value={walkInForm.hostDepartment} onChange={(event) => setWalkInForm((current) => ({ ...current, hostDepartment: event.target.value }))} /></FormField>
+                <FormField label="Telefon des Ansprechpartners" fieldId="walkin-hostPhone" error={walkInFieldErrors.hostPhone}><input value={walkInForm.hostPhone} onChange={(event) => setWalkInForm((current) => ({ ...current, hostPhone: event.target.value }))} /></FormField>
+                <FormField label="E-Mail des Ansprechpartners" fieldId="walkin-hostEmail" error={walkInFieldErrors.hostEmail}><input value={walkInForm.hostEmail} onChange={(event) => setWalkInForm((current) => ({ ...current, hostEmail: event.target.value }))} /></FormField>
+                </div>
+              </fieldset>
+
+              <fieldset className="walkin-form-group">
+                <legend>Weitere Angaben</legend>
+                <div className="form-grid two-columns">
+                <FormField label="Ausweisart" fieldId="walkin-idDocumentType" error={walkInFieldErrors.idDocumentType}>
                   <select value={walkInForm.idDocumentType} onChange={(event) => setWalkInForm((current) => ({ ...current, idDocumentType: event.target.value as WalkInFormState["idDocumentType"] }))}>
                     <option value="identity_card">Personalausweis</option>
                     <option value="passport">Reisepass</option>
@@ -1080,22 +1116,23 @@ export function GuardDashboardPage() {
                     <option value="other">Sonstiges</option>
                   </select>
                 </FormField>
-                <FormField label="Ausweis gültig bis" error={walkInFieldErrors.idDocumentValidUntil}><input className={isPastDate(walkInForm.idDocumentValidUntil) ? "required-missing" : ""} type="date" value={walkInForm.idDocumentValidUntil} onChange={(event) => setWalkInForm((current) => ({ ...current, idDocumentValidUntil: event.target.value }))} /></FormField>
-                <FormField label="Ausweisnummer" error={walkInFieldErrors.idDocumentNumber}><input value={walkInForm.idDocumentNumber} onChange={(event) => setWalkInForm((current) => ({ ...current, idDocumentNumber: event.target.value }))} /></FormField>
-              </div>
+                <FormField label="Ausweis gültig bis" fieldId="walkin-idDocumentValidUntil" error={walkInFieldErrors.idDocumentValidUntil}><input className={isPastDate(walkInForm.idDocumentValidUntil) ? "required-missing" : ""} type="date" value={walkInForm.idDocumentValidUntil} onChange={(event) => setWalkInForm((current) => ({ ...current, idDocumentValidUntil: event.target.value }))} /></FormField>
+                <FormField label="Ausweisnummer" fieldId="walkin-idDocumentNumber" error={walkInFieldErrors.idDocumentNumber}><input value={walkInForm.idDocumentNumber} onChange={(event) => setWalkInForm((current) => ({ ...current, idDocumentNumber: event.target.value }))} /></FormField>
+                </div>
+                <FormField label="Bemerkung" fieldId="walkin-notes" error={walkInFieldErrors.notes}><textarea rows={3} value={walkInForm.notes} onChange={(event) => setWalkInForm((current) => ({ ...current, notes: event.target.value }))} /></FormField>
+              </fieldset>
               {isPastDate(walkInForm.idDocumentValidUntil) ? (
                 <Alert type="warning">Der Ausweis ist abgelaufen. Die Anmeldung und das Einchecken sind trotzdem möglich.</Alert>
               ) : null}
-              <FormField label="Bemerkung" error={walkInFieldErrors.notes}><textarea rows={3} value={walkInForm.notes} onChange={(event) => setWalkInForm((current) => ({ ...current, notes: event.target.value }))} /></FormField>
               <div className="row-actions">
                 <button type="button" className="secondary-button" onClick={() => void handleWalkInCreate("save")} disabled={walkInSaving}>
-                  {walkInSaving ? "Speichert..." : "Besuch speichern"}
+                  {walkInSaving ? (walkInSavingAction === "save" ? "Wird gespeichert …" : "Wird verarbeitet …") : "Besuch speichern"}
                 </button>
                 <button type="button" onClick={() => void handleWalkInCreate("check_in")} disabled={walkInSaving}>
-                  {walkInSaving ? "Speichert..." : "Speichern und einchecken"}
+                  {walkInSaving ? (walkInSavingAction === "check_in" ? "Besucher wird eingecheckt …" : "Wird verarbeitet …") : "Speichern und einchecken"}
                 </button>
                 <button type="button" onClick={() => void handleWalkInCreate("check_in_and_print")} disabled={walkInSaving}>
-                  {walkInSaving ? "Speichert..." : "Speichern, einchecken und drucken"}
+                  {walkInSaving ? (walkInSavingAction === "check_in_and_print" ? "Besucher wird eingecheckt …" : "Wird verarbeitet …") : "Speichern, einchecken und drucken"}
                 </button>
                 <button
                   type="button"

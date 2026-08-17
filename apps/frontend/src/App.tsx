@@ -50,7 +50,7 @@ function MaintenanceBoundary({ children }: PropsWithChildren) {
     void fetchJson<{ maintenanceMode: boolean }>("/api/maintenance/status").then((payload) => setMaintenance(payload.maintenanceMode)).catch(() => undefined);
   }, [user]);
   if (maintenance && !hasRole(user, "admin") && location.pathname !== "/login") {
-    return <main className="public-page"><section className="public-card"><h1>Wartungsarbeiten</h1><p>Die Besucherverwaltung ist vorübergehend nicht verfügbar. Bitte versuchen Sie es später erneut.</p><a href="/login">Admin-Anmeldung</a></section></main>;
+    return <main className="public-page"><section className="public-card"><h1>Wartungsarbeiten</h1><p>Das Besuchermanagement ist derzeit wegen Wartungsarbeiten vorübergehend nicht verfügbar. Bitte versuchen Sie es später erneut.</p><a href="/login">Admin-Anmeldung</a></section></main>;
   }
   return <>{children}</>;
 }

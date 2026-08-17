@@ -27,8 +27,9 @@ const guardUser: User = {
 function renderRoutes(initialPath: string) {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
-      <AuthProvider>
-        <Routes>
+      <ThemeProvider>
+        <AuthProvider>
+          <Routes>
           <Route
             path="/"
             element={<RoleAwareRootRoute><div>Allgemeine Startseite</div></RoleAwareRootRoute>}
@@ -42,8 +43,9 @@ function renderRoutes(initialPath: string) {
             }
           />
           <Route path="/login" element={<div>Login</div>} />
-        </Routes>
-      </AuthProvider>
+          </Routes>
+        </AuthProvider>
+      </ThemeProvider>
     </MemoryRouter>
   );
 }
@@ -156,5 +158,27 @@ describe("role-aware root routing", () => {
 
     expect(await screen.findByText("Login")).toBeInTheDocument();
     expect(screen.queryByText("Wache-Ansicht")).not.toBeInTheDocument();
+  });
+
+  it("shows an access-denied page for an authenticated user with the wrong role", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ user: guardUser }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" }
+    })));
+
+    render(
+      <MemoryRouter initialEntries={["/admin"]}>
+        <ThemeProvider>
+          <AuthProvider>
+            <Routes>
+              <Route path="/admin" element={<RequireRoles allowedRoles={["admin"]}><div>Admin</div></RequireRoles>} />
+            </Routes>
+          </AuthProvider>
+        </ThemeProvider>
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByRole("heading", { name: "Keine Berechtigung" })).toBeInTheDocument();
+    expect(screen.queryByText("Admin")).not.toBeInTheDocument();
   });
 });

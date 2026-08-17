@@ -414,9 +414,18 @@ def main() -> int:
 
     print("4/16 Guard meldet sich an und findet den Besuch...")
     guard_login = login(guard_client, args.guard_user, args.guard_password, gate["name"])
+    walk_in_payload = make_public_payload(f"walkin-{suffix}", gate["id"])
+    walk_in_payload.update({"action": "check_in", "clientRequestId": f"walkin-{uuid.uuid4()}"})
+    walk_in = guard_client.request("POST", "/api/guard/visits/walk-in", payload=walk_in_payload)
+    if walk_in.get("status") != "checked_in":
+        raise RuntimeError(f"Spontanbesucher wurde nicht eingecheckt: {walk_in}")
+    walk_in_retry = guard_client.request("POST", "/api/guard/visits/walk-in", payload=walk_in_payload)
+    if walk_in_retry.get("visitId") != walk_in.get("visitId"):
+        raise RuntimeError("Spontanbesucher-Idempotenz hat einen zweiten Besuch erzeugt.")
     visits_payload = guard_client.request("GET", "/api/guard/visits/today?status=all")
     visits = visits_payload.get("visits", [])
     require_visit(visits, visit_id, "Wache-Tagesuebersicht")
+    require_visit(visits, walk_in["visitId"], "Wache-Tagesübersicht Spontanbesucher")
     pending_visits = guard_client.request("GET", "/api/guard/visits/today?status=all&signatureStatus=pending")["visits"]
     pending_visit = require_visit(pending_visits, visit_id, "Wache-Unterschriftsfilter vor Check-out")
     if pending_visit.get("hostSignatureStatus") != "pending":
@@ -637,6 +646,13 @@ def main() -> int:
         except ApiError as error:
             if error.status != 503 or error.payload.get("error") != "MAINTENANCE_MODE":
                 raise
+        for public_route in ("/", "/visit/simplified/application"):
+            try:
+                public_client.request("GET", public_route)
+                raise RuntimeError(f"Öffentliche Seite blieb im Wartungsmodus erreichbar: {public_route}")
+            except ApiError as error:
+                if error.status != 503 or "Wartungsarbeiten" not in str(error.payload.get("message", error.payload)):
+                    raise
         admin_client.request("GET", "/api/admin/system-status")
         login(HttpClient(args.base_url), args.sibe_user, args.sibe_password)
     finally:

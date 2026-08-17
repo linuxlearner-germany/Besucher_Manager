@@ -1363,8 +1363,8 @@ export async function createWalkInVisit(
             id,
             visitor_id AS visitorId,
             badge_number AS badgeNumber,
-            ${normalizedStatusForAlias("dbo.visits")} AS status
-          FROM dbo.visits
+            ${normalizedStatusForAlias("v")} AS status
+          FROM dbo.visits v
           WHERE client_request_id = @clientRequestId
           ORDER BY created_at DESC
         `);

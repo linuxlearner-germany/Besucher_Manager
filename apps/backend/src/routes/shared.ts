@@ -62,7 +62,7 @@ export function sendError(
 }
 
 export function sendValidationError(response: Response, details?: unknown) {
-  return sendError(response, 400, "VALIDATION_ERROR", "Bitte pruefen Sie die eingegebenen Daten.", details);
+  return sendError(response, 400, "VALIDATION_ERROR", "Bitte prüfen Sie die eingegebenen Daten.", details);
 }
 
 export function sendForbidden(response: Response) {
@@ -232,7 +232,7 @@ export async function countUserReferences(pool: sql.ConnectionPool, userId: stri
     { label: "Besuche ausgecheckt", query: "SELECT COUNT(*) AS count FROM dbo.visits WHERE check_out_by = @id" },
     { label: "Besuche storniert", query: "SELECT COUNT(*) AS count FROM dbo.visits WHERE cancelled_by = @id" },
     { label: "Unterschriften bestaetigt", query: "SELECT COUNT(*) AS count FROM dbo.visits WHERE host_signature_confirmed_by = @id" },
-    { label: "Besuchsnummern geprueft", query: "SELECT COUNT(*) AS count FROM dbo.visits WHERE returned_badge_number_checked_by = @id" },
+    { label: "Besuchsnummern geprüft", query: "SELECT COUNT(*) AS count FROM dbo.visits WHERE returned_badge_number_checked_by = @id" },
     { label: "Geraete rueckgegeben", query: "SELECT COUNT(*) AS count FROM dbo.visits WHERE device_returned_by = @id" },
     { label: "Besucher archiviert", query: "SELECT COUNT(*) AS count FROM dbo.visitors WHERE deleted_by = @id" },
     { label: "Wachen deaktiviert", query: "SELECT COUNT(*) AS count FROM dbo.gates WHERE deactivated_by = @id" },

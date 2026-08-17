@@ -501,6 +501,7 @@ export function BadgeTextManager({
           ) : (
             <div className="text-empty-state text-empty-state-large">
               Links einen Hinweistext auswählen, um ihn zu bearbeiten.
+              <span className="feedback info">Wählen Sie zuerst einen bestehenden Text aus, um Vorschau und Druck zu verwenden.</span>
             </div>
           )}
         </Card>

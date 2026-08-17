@@ -92,7 +92,7 @@ sibeRouter.get("/api/sibe/summary", async (request, response) => {
       pool.request().query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.visitors WHERE is_deleted = 0"),
       pool.request().query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.visitors WHERE is_deleted = 0 AND is_active = 1"),
       pool.request().query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.visits WHERE CAST(valid_from AS date) = CAST(SYSUTCDATETIME() AS date)"),
-      pool.request().query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.visits WHERE status = 'checked_in'"),
+      pool.request().query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.visits WHERE status = 'checked_in' AND check_out_at IS NULL"),
       pool.request().query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.users"),
       pool.request().query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.users WHERE is_active = 1"),
       pool.request().query<{ count: number }>(`SELECT COUNT(*) AS count FROM dbo.visits WHERE ISNULL(host_signature_status, '${HOST_SIGNATURE_STATUS.PENDING}') = '${HOST_SIGNATURE_STATUS.PENDING}'`),

@@ -2087,7 +2087,7 @@ adminRouter.get("/api/admin/system-status", async (request, response) => {
   try {
     const pool = await getPool();
     const [activeVisits, configuredGates, openPreRegistrationsToday, signaturesPending, signaturesFollowUp, signaturesExceptions, schemaVersion] = await Promise.all([
-      pool.request().query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.visits WHERE status = 'checked_in'"),
+      pool.request().query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.visits WHERE status = 'checked_in' AND check_out_at IS NULL"),
       pool.request().query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.gates WHERE is_active = 1"),
       pool.request().query<{ count: number }>(`
         SELECT COUNT(*) AS count

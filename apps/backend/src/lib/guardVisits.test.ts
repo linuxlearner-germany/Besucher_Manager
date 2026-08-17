@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 function createBaseVisit() {
   return {
@@ -187,4 +189,15 @@ test("guard visitor search ignores empty and too-short criteria", () => {
   assert.equal(hasGuardVisitorSearchCriteria({ birthDate: "2026-07-14" }), true);
   assert.equal(hasGuardVisitorSearchCriteria({ firstName: "Al" }), true);
   assert.equal(hasGuardVisitorSearchCriteria({ email: "ab" }), true);
+});
+
+test("walk-in idempotency lookup uses the visits table alias for normalized status", () => {
+  const source = readFileSync(resolve(__dirname, "guardVisits.ts"), "utf8");
+  const start = source.indexOf("const existingRequest");
+  const end = source.indexOf("let visitorId", start);
+  assert.ok(start >= 0 && end > start, "walk-in idempotency query should be present");
+  const query = source.slice(start, end);
+  assert.match(query, /normalizedStatusForAlias\("v"\)/);
+  assert.match(query, /FROM dbo\.visits v/);
+  assert.doesNotMatch(query, /normalizedStatusForAlias\("dbo\.visits"\)/);
 });
