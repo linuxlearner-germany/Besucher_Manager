@@ -9,6 +9,7 @@ const users = readFileSync(resolve(__dirname, "../lib/users.ts"), "utf8");
 test("startup uses an insert-only admin bootstrap", () => {
   assert.match(start, /createAdminIfMissing/);
   assert.doesNotMatch(start, /createOrUpdateAdmin/);
+  assert.doesNotMatch(readFileSync(resolve(__dirname, "createAdmin.ts"), "utf8"), /createOrUpdateAdmin/);
   assert.match(users, /export async function createAdminIfMissing/);
   assert.match(users, /if \(existingId\) \{[\s\S]*?transaction\.commit\(\);[\s\S]*?created: false/);
 });

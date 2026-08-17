@@ -329,66 +329,11 @@ export async function listNotificationEmailsByMenuAccess(menuKey: AppMenuKey): P
   );
 }
 
-export async function createOrUpdateAdmin(input: CreateAdminInput): Promise<{ created: boolean; userId: string }> {
-  const pool = await getPool();
-  const passwordHash = await hashPassword(input.password);
-  const existing = await findUserForLogin(input.username);
-
-  if (existing) {
-    await pool.request()
-      .input("id", sql.UniqueIdentifier, existing.id)
-      .input("passwordHash", sql.NVarChar(255), passwordHash)
-      .query(`
-        UPDATE dbo.users
-        SET
-          password_hash = @passwordHash,
-          role = 'admin',
-          is_active = 1,
-          updated_at = SYSUTCDATETIME()
-        WHERE id = @id
-      `);
-    await replaceSingleUserRole(existing.id, "admin");
-
-    return {
-      created: false,
-      userId: existing.id
-    };
-  }
-
-  const inserted = await pool.request()
-    .input("username", sql.NVarChar(120), input.username)
-    .input("passwordHash", sql.NVarChar(255), passwordHash)
-    .query<{ id: string }>(`
-      INSERT INTO dbo.users (
-        username,
-        password_hash,
-        display_name,
-        role,
-        is_active
-      )
-      OUTPUT inserted.id
-      VALUES (
-        @username,
-        @passwordHash,
-        @username,
-        'admin',
-        1
-      )
-    `);
-  await replaceSingleUserRole(inserted.recordset[0].id, "admin");
-
-  return {
-    created: true,
-    userId: inserted.recordset[0].id
-  };
-}
-
 /**
  * Creates the configured startup administrator only when the username is absent.
  *
- * This is deliberately separate from createOrUpdateAdmin: startup/bootstrap must
- * never be a credential synchronizer. Existing profile data, including the
- * password hash, is left untouched.
+ * Startup/bootstrap must never be a credential synchronizer. Existing profile
+ * data, including the password hash, is left untouched.
  */
 export async function createAdminIfMissing(input: CreateAdminInput): Promise<{ created: boolean; userId: string }> {
   const pool = await getPool();
