@@ -383,6 +383,66 @@ export async function createOrUpdateAdmin(input: CreateAdminInput): Promise<{ cr
   };
 }
 
+/**
+ * Creates the configured startup administrator only when the username is absent.
+ *
+ * This is deliberately separate from createOrUpdateAdmin: startup/bootstrap must
+ * never be a credential synchronizer. Existing profile data, including the
+ * password hash, is left untouched.
+ */
+export async function createAdminIfMissing(input: CreateAdminInput): Promise<{ created: boolean; userId: string }> {
+  const pool = await getPool();
+  const transaction = new sql.Transaction(pool);
+  await transaction.begin(sql.ISOLATION_LEVEL.SERIALIZABLE);
+
+  try {
+    const existing = await new sql.Request(transaction)
+      .input("username", sql.NVarChar(120), input.username)
+      .query<{ id: string }>(`
+        SELECT id
+        FROM dbo.users WITH (UPDLOCK, HOLDLOCK)
+        WHERE username = @username
+      `);
+    const existingId = existing.recordset[0]?.id;
+
+    if (existingId) {
+      await transaction.commit();
+      return { created: false, userId: existingId };
+    }
+
+    const passwordHash = await hashPassword(input.password);
+    const inserted = await new sql.Request(transaction)
+      .input("username", sql.NVarChar(120), input.username)
+      .input("passwordHash", sql.NVarChar(255), passwordHash)
+      .query<{ id: string }>(`
+        INSERT INTO dbo.users (
+          username,
+          password_hash,
+          display_name,
+          role,
+          is_active
+        )
+        OUTPUT inserted.id
+        VALUES (
+          @username,
+          @passwordHash,
+          @username,
+          'admin',
+          1
+        )
+      `);
+    const userId = inserted.recordset[0]?.id;
+    if (!userId) throw new Error("startup_admin_insert_failed");
+
+    await replaceUserRoles(userId, ["admin"], transaction);
+    await transaction.commit();
+    return { created: true, userId };
+  } catch (error) {
+    await transaction.rollback().catch(() => undefined);
+    throw error;
+  }
+}
+
 export async function createOrUpdateUser(input: {
   username: string;
   password: string;

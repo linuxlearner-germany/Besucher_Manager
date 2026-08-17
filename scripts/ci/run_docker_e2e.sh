@@ -77,14 +77,47 @@ curl -fsS "${BASE_URL}/health" >/dev/null
 docker compose --env-file "${ENV_FILE}" --project-name "${E2E_PROJECT_NAME}" --profile local-db exec -T app npm run seed:sample:compiled --workspace @besucher-manager/backend
 docker compose --env-file "${ENV_FILE}" --project-name "${E2E_PROJECT_NAME}" --profile local-db exec -T app npm run verify:public-confirmation:compiled --workspace @besucher-manager/backend
 
+python3 scripts/ops/verify_admin_bootstrap_persistence.py \
+  --base-url "${BASE_URL}" \
+  --username admin \
+  --initial-password Admin123! \
+  --changed-password RebuildAdmin_123! \
+  --change
+
+docker compose --env-file "${ENV_FILE}" --project-name "${E2E_PROJECT_NAME}" --profile local-db restart app
+docker compose --env-file "${ENV_FILE}" --project-name "${E2E_PROJECT_NAME}" --profile local-db run --rm db-bootstrap
+docker compose --env-file "${ENV_FILE}" --project-name "${E2E_PROJECT_NAME}" --profile local-db build app
+docker compose --env-file "${ENV_FILE}" --project-name "${E2E_PROJECT_NAME}" --profile local-db up -d --force-recreate app
+
+if [[ -z "${BASE_URL_OVERRIDE}" ]]; then
+  published_address="$(docker compose --env-file "${ENV_FILE}" --project-name "${E2E_PROJECT_NAME}" port app 3030)"
+  published_port="${published_address##*:}"
+  [[ "${published_port}" =~ ^[0-9]+$ ]] || docker_safety_fail "Could not determine the isolated App port after rebuild."
+  BASE_URL="http://127.0.0.1:${published_port}"
+fi
+
+for attempt in $(seq 1 60); do
+  if curl -fsS "${BASE_URL}/health" >/dev/null; then
+    break
+  fi
+  sleep 2
+done
+
+curl -fsS "${BASE_URL}/health" >/dev/null
+python3 scripts/ops/verify_admin_bootstrap_persistence.py \
+  --base-url "${BASE_URL}" \
+  --username admin \
+  --initial-password Admin123! \
+  --changed-password RebuildAdmin_123!
+
 python3 scripts/ops/verify_role_access.py \
   --base-url "${BASE_URL}" \
   --admin-user admin \
-  --admin-password Admin123!
+  --admin-password RebuildAdmin_123!
 
 python3 scripts/ops/verify_mvp_flow.py \
   --base-url "${BASE_URL}" \
   --admin-user admin \
-  --admin-password Admin123!
+  --admin-password RebuildAdmin_123!
 
 python3 scripts/ops/verify_public_xlsx_application.py --base-url "${BASE_URL}"
