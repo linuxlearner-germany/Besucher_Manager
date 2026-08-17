@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { createApp } from "../app";
 import { env } from "../config/env";
 import { closePool, getPool } from "../lib/db";
-import { createAdminIfMissing } from "../lib/users";
+import { createAdminIfMissing, findUserForLogin } from "../lib/users";
 import { runMigrations } from "./migrate";
 import { sendDueVisitReminders } from "../lib/mailRelay";
 import { runRetentionCleanup } from "../lib/retentionCleanup";
@@ -48,11 +48,17 @@ async function main() {
   const adminUsername = env.ADMIN_USERNAME || env.INITIAL_ADMIN_USER;
   const adminPassword = env.ADMIN_PASSWORD || env.INITIAL_ADMIN_PASSWORD;
 
-  if ((adminUsername && !adminPassword) || (!adminUsername && adminPassword)) {
+  if (!adminUsername && adminPassword) {
     throw new Error("Set both ADMIN_USERNAME and ADMIN_PASSWORD (or INITIAL_ADMIN_USER and INITIAL_ADMIN_PASSWORD).");
   }
 
-  if (adminUsername && adminPassword) {
+  if (adminUsername && !adminPassword) {
+    const existingAdmin = await findUserForLogin(adminUsername);
+    if (!existingAdmin) {
+      throw new Error("An initial admin password is required when the configured admin user does not exist.");
+    }
+    console.log(`Startup admin user ${adminUsername} already exists. Keeping stored credentials and profile data.`);
+  } else if (adminUsername && adminPassword) {
     const adminResult = await createAdminIfMissing({ username: adminUsername, password: adminPassword });
     console.log(adminResult.created
       ? `Created startup admin user ${adminUsername}.`

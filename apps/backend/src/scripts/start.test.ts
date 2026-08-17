@@ -18,3 +18,9 @@ test("startup bootstrap does not synchronize existing admin profile fields", () 
   const existingBranch = bootstrap.slice(0, bootstrap.indexOf("const passwordHash = await hashPassword"));
   assert.doesNotMatch(existingBranch, /UPDATE dbo\.users|passwordHash|is_active|role =/i);
 });
+
+test("an existing admin may start without an initial password configured", () => {
+  assert.match(start, /if \(adminUsername && !adminPassword\)/);
+  assert.match(start, /const existingAdmin = await findUserForLogin\(adminUsername\)/);
+  assert.match(start, /initial admin password is required when the configured admin user does not exist/);
+});
