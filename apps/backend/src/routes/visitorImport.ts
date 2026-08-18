@@ -34,6 +34,8 @@ function getExcelExtension(filename: string): "xlsx" | null {
 }
 
 export function sendVisitorImportTemplate(response: Response, workbookBuffer: Buffer) {
+  response.setHeader("Cache-Control", "private, no-store, max-age=0");
+  response.setHeader("Pragma", "no-cache");
   response.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   response.setHeader("Content-Disposition", 'attachment; filename="besucher-import-vorlage.xlsx"');
   return response.status(200).send(workbookBuffer);

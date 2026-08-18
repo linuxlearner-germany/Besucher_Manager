@@ -22,6 +22,7 @@ test("internal normal visitor import preview and template retain the import perm
   assert.match(sibeRoutes, /\/api\/sibe\/visits\/import\/preview/);
   assert.match(sibeRoutes, /requirePermission\(request, response, "imports\.execute"\)/);
   assert.doesNotMatch(sibeRoutes, /const importRoles/);
+  assert.match(visitorImport, /Cache-Control", "private, no-store, max-age=0"/);
 });
 
 test("public normal visitor import has separate CSRF, rate-limit, preview and safe XLSX routes", () => {
