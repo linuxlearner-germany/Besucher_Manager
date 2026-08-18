@@ -60,6 +60,20 @@ afterEach(() => {
 });
 
 describe("walk-in form", () => {
+  it("shows invalid optional e-mail locally before sending the request", async () => {
+    const fetchMock = renderGuard(() => jsonResponse({ message: "unexpected" }, 500));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Spontanbesucher anmelden" }));
+    const email = screen.getByRole("textbox", { name: "E-Mail Besucher" });
+    fireEvent.change(email, { target: { value: "ungueltig" } });
+    fireEvent.click(screen.getByRole("button", { name: "Besuch speichern" }));
+
+    expect(await screen.findByText("Die E-Mail-Adresse hat kein gültiges Format.")).toBeInTheDocument();
+    expect(email).toHaveAttribute("aria-invalid", "true");
+    expect(email).toHaveFocus();
+    expect(fetchMock.mock.calls.some(([input]) => String(input) === "/api/guard/visits/walk-in")).toBe(false);
+  });
+
   it("shows backend validation at the affected field and focuses it", async () => {
     renderGuard(() => jsonResponse({
       status: 400,

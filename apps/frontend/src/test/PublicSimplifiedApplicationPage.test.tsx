@@ -64,4 +64,21 @@ describe("PublicSimplifiedApplicationPage", () => {
     expect(screen.getByRole("button", { name: "Neue Anmeldung starten" })).toBeInTheDocument();
     await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(5));
   });
+
+  it("marks an invalid applicant e-mail before submit and keeps submit disabled", async () => {
+    renderPage(false);
+    await screen.findByRole("heading", { name: "Vereinfachte Besucherregelung" });
+    fireEvent.change(screen.getByLabelText("XLSX-Datei auswählen"), { target: { files: [new File(["xlsx"], "besucher.xlsx")] } });
+    fireEvent.click(screen.getByRole("button", { name: "Datei prüfen und Vorschau anzeigen" }));
+    await screen.findByRole("heading", { name: "Ihre Kontaktdaten" });
+
+    const email = screen.getByRole("textbox", { name: "E-Mail-Adresse" });
+    const submit = screen.getByRole("button", { name: "Antrag der vereinfachten Besucherregelung absenden" });
+    fireEvent.change(email, { target: { value: "ungueltig" } });
+
+    expect(submit).toBeDisabled();
+    expect(email).toHaveAttribute("aria-invalid", "true");
+    expect(email).toHaveAttribute("aria-describedby", "applicant-email-error");
+    expect(screen.getByText("Bitte geben Sie eine gültige E-Mail-Adresse ein.")).toHaveAttribute("role", "alert");
+  });
 });

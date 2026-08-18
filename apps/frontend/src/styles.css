@@ -1445,6 +1445,16 @@ textarea {
   font-size: 12px;
 }
 
+.guard-walkin-modal .form-field.has-error input,
+.guard-walkin-modal .form-field.has-error select,
+.guard-walkin-modal .form-field.has-error textarea,
+.public-xlsx-page .form-field.has-error input,
+.public-xlsx-page .form-field.has-error select,
+.public-xlsx-page .form-field.has-error textarea {
+  border-color: var(--required-missing-border);
+  background: var(--required-missing-bg);
+}
+
 .required-indicator {
   color: var(--danger-text);
   font-weight: 700;

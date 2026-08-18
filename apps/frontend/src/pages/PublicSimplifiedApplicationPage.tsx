@@ -1,5 +1,5 @@
 import { type DragEvent, type FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { AppLayout, type ApiError, fetchJson, formatDateOnly } from "../app/core";
+import { AppLayout, type ApiError, extractFieldErrors, fetchJson, formatDateOnly } from "../app/core";
 import { Alert, Button, Card, DataTable, FormField } from "../components/ui";
 
 type PreviewRow = {
@@ -47,12 +47,16 @@ export function PublicSimplifiedApplicationPage() {
   const [result, setResult] = useState<Result | null>(null);
   const [templateDownloaded, setTemplateDownloaded] = useState(false);
   const [applicantEmail, setApplicantEmail] = useState("");
+  const [applicantEmailValid, setApplicantEmailValid] = useState(false);
+  const [applicantEmailTouched, setApplicantEmailTouched] = useState(false);
+  const [applicantEmailServerError, setApplicantEmailServerError] = useState<string | null>(null);
   const [applicantName, setApplicantName] = useState("");
   const [applicantOrganization, setApplicantOrganization] = useState("");
   const [applicantNote, setApplicantNote] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const errorRef = useRef<HTMLDivElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
+  const applicantEmailRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     void fetchJson<Bootstrap>("/api/public/simplified-applications/bootstrap", { headers: {} })
@@ -74,7 +78,13 @@ export function PublicSimplifiedApplicationPage() {
     return { errorRows, warningRows, validRows, period: displayPeriod(starts[0] ?? null, ends.at(-1) ?? null) };
   }, [preview]);
 
-  const currentStep = result ? 5 : !file ? 1 : !preview ? 2 : !preview.valid ? 3 : applicantEmail.trim() ? 5 : 4;
+  const applicantEmailError = applicantEmailServerError
+    ?? (applicantEmailTouched && !applicantEmailValid
+      ? applicantEmail.trim()
+        ? "Bitte geben Sie eine gültige E-Mail-Adresse ein."
+        : "Bitte geben Sie Ihre E-Mail-Adresse ein."
+      : undefined);
+  const currentStep = result ? 5 : !file ? 1 : !preview ? 2 : !preview.valid ? 3 : applicantEmailValid ? 5 : 4;
   const limits = bootstrap?.limits ?? { maxBytes: 5 * 1024 * 1024, maxRows: 500, maxSheets: 3 };
 
   function selectFile(nextFile: File | null) {
@@ -123,6 +133,11 @@ export function PublicSimplifiedApplicationPage() {
       setError("Bitte prüfen und korrigieren Sie die Datei vor dem Absenden.");
       return;
     }
+    if (!applicantEmailValid) {
+      setApplicantEmailTouched(true);
+      applicantEmailRef.current?.focus();
+      return;
+    }
     setBusy("submit");
     setError(null);
     const data = new FormData();
@@ -136,6 +151,12 @@ export function PublicSimplifiedApplicationPage() {
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (reason) {
       const api = reason as ApiError;
+      const fieldErrors = extractFieldErrors(api);
+      if (fieldErrors.applicantEmail) {
+        setApplicantEmailServerError(fieldErrors.applicantEmail);
+        setApplicantEmailTouched(true);
+        applicantEmailRef.current?.focus();
+      }
       setError(api.message || "Der Antrag konnte nicht eingereicht werden.");
     } finally {
       setBusy(null);
@@ -147,6 +168,9 @@ export function PublicSimplifiedApplicationPage() {
     setFile(null);
     setPreview(null);
     setApplicantEmail("");
+    setApplicantEmailValid(false);
+    setApplicantEmailTouched(false);
+    setApplicantEmailServerError(null);
     setApplicantName("");
     setApplicantOrganization("");
     setApplicantNote("");
@@ -260,7 +284,25 @@ export function PublicSimplifiedApplicationPage() {
                   <h3>Ihre Kontaktdaten</h3>
                   <p>An diese Adresse senden wir Ihnen die Eingangs- und Entscheidungsbestätigung.</p>
                   <div className="form-grid application-contact-grid">
-                    <FormField label="E-Mail-Adresse" required><input name="applicantEmail" type="email" autoComplete="email" required maxLength={255} value={applicantEmail} onChange={(event) => setApplicantEmail(event.target.value)} /></FormField>
+                    <FormField label="E-Mail-Adresse" required fieldId="applicant-email" error={applicantEmailError}>
+                      <input
+                        ref={applicantEmailRef}
+                        name="applicantEmail"
+                        type="email"
+                        inputMode="email"
+                        autoComplete="email"
+                        required
+                        maxLength={255}
+                        value={applicantEmail}
+                        onBlur={() => setApplicantEmailTouched(true)}
+                        onChange={(event) => {
+                          setApplicantEmail(event.target.value);
+                          setApplicantEmailValid(event.currentTarget.validity.valid);
+                          setApplicantEmailTouched(Boolean(event.target.value));
+                          setApplicantEmailServerError(null);
+                        }}
+                      />
+                    </FormField>
                     <FormField label="Name (optional)"><input name="applicantName" autoComplete="name" maxLength={255} value={applicantName} onChange={(event) => setApplicantName(event.target.value)} /></FormField>
                     <FormField label="Organisation / Abteilung (optional)"><input name="applicantOrganization" maxLength={255} value={applicantOrganization} onChange={(event) => setApplicantOrganization(event.target.value)} /></FormField>
                     <FormField label="Bemerkung (optional)"><textarea name="applicantNote" maxLength={2000} rows={4} value={applicantNote} onChange={(event) => setApplicantNote(event.target.value)} /></FormField>
@@ -275,7 +317,7 @@ export function PublicSimplifiedApplicationPage() {
                     <div><dt>Antragsteller-E-Mail</dt><dd className="break-anywhere">{applicantEmail || "–"}</dd></div>
                     <div><dt>E-Mail-Bestätigung erforderlich</dt><dd>{bootstrap?.requireEmailVerification ? "Ja" : "Nein"}</dd></div>
                   </dl>
-                  <Button type="submit" disabled={Boolean(busy) || !applicantEmail.trim()}>{busy === "submit" ? "Antrag wird eingereicht …" : "Antrag der vereinfachten Besucherregelung absenden"}</Button>
+                  <Button type="submit" disabled={Boolean(busy) || !applicantEmailValid}>{busy === "submit" ? "Antrag wird eingereicht …" : "Antrag der vereinfachten Besucherregelung absenden"}</Button>
                 </Card>
               </form>
             ) : null}

@@ -527,8 +527,20 @@ export function GuardDashboardPage() {
   async function handleWalkInCreate(action: WalkInAction) {
     if (walkInSaving) return;
 
+    const clientFieldErrors: Record<string, string> = {};
     if (!user?.gateId) {
-      setWalkInFieldErrors({ gateId: "Bitte wählen Sie eine aktive Wache aus." });
+      clientFieldErrors.gateId = "Bitte wählen Sie eine aktive Wache aus.";
+    }
+    const visitorEmailInput = document.getElementById("walkin-email") as HTMLInputElement | null;
+    if (walkInForm.email && visitorEmailInput && !visitorEmailInput.validity.valid) {
+      clientFieldErrors.email = "Die E-Mail-Adresse hat kein gültiges Format.";
+    }
+    const hostEmailInput = document.getElementById("walkin-hostEmail") as HTMLInputElement | null;
+    if (walkInForm.hostEmail && hostEmailInput && !hostEmailInput.validity.valid) {
+      clientFieldErrors.hostEmail = "Die E-Mail-Adresse des Ansprechpartners hat kein gültiges Format.";
+    }
+    if (Object.keys(clientFieldErrors).length > 0) {
+      setWalkInFieldErrors(clientFieldErrors);
       setWalkInError("Bitte korrigieren Sie die markierten Felder.");
       return;
     }
@@ -1098,7 +1110,7 @@ export function GuardDashboardPage() {
                 <FormField label="Nationalität" fieldId="walkin-nationalityCode" error={walkInFieldErrors.nationalityCode}><CountrySelect value={walkInForm.nationalityCode} onChange={(value) => setWalkInForm((current) => ({ ...current, nationalityCode: value }))} /></FormField>
                 <FormField label="Geburtsdatum" fieldId="walkin-birthDate" error={walkInFieldErrors.birthDate}><input type="date" value={walkInForm.birthDate} onChange={(event) => setWalkInForm((current) => ({ ...current, birthDate: event.target.value }))} /></FormField>
                 <FormField label="Telefon Besucher" fieldId="walkin-phone" error={walkInFieldErrors.phone}><input value={walkInForm.phone} onChange={(event) => setWalkInForm((current) => ({ ...current, phone: event.target.value }))} /></FormField>
-                <FormField label="E-Mail Besucher" fieldId="walkin-email" error={walkInFieldErrors.email}><input value={walkInForm.email} onChange={(event) => setWalkInForm((current) => ({ ...current, email: event.target.value }))} /></FormField>
+                <FormField label="E-Mail Besucher" fieldId="walkin-email" error={walkInFieldErrors.email}><input type="email" inputMode="email" autoComplete="email" value={walkInForm.email} onChange={(event) => { setWalkInForm((current) => ({ ...current, email: event.target.value })); setWalkInFieldErrors((current) => { const { email: _email, ...rest } = current; return rest; }); }} /></FormField>
                 <FormField label="Kennzeichen" fieldId="walkin-licensePlate" error={walkInFieldErrors.licensePlate}><input value={walkInForm.licensePlate} onChange={(event) => setWalkInForm((current) => ({ ...current, licensePlate: event.target.value }))} /></FormField>
                 <FormField label="Straße" fieldId="walkin-visitorStreet" error={walkInFieldErrors.visitorStreet}><input value={walkInForm.visitorStreet} onChange={(event) => setWalkInForm((current) => ({ ...current, visitorStreet: event.target.value }))} /></FormField>
                 <FormField label="Hausnummer" fieldId="walkin-visitorHouseNumber" error={walkInFieldErrors.visitorHouseNumber}><input value={walkInForm.visitorHouseNumber} onChange={(event) => setWalkInForm((current) => ({ ...current, visitorHouseNumber: event.target.value }))} /></FormField>
@@ -1113,7 +1125,7 @@ export function GuardDashboardPage() {
                 <FormField label="Name des Ansprechpartners" fieldId="walkin-hostName" error={walkInFieldErrors.hostName}><input value={walkInForm.hostName} onChange={(event) => setWalkInForm((current) => ({ ...current, hostName: event.target.value }))} /></FormField>
                 <FormField label="Abteilung" fieldId="walkin-hostDepartment" error={walkInFieldErrors.hostDepartment}><input value={walkInForm.hostDepartment} onChange={(event) => setWalkInForm((current) => ({ ...current, hostDepartment: event.target.value }))} /></FormField>
                 <FormField label="Telefon des Ansprechpartners" fieldId="walkin-hostPhone" error={walkInFieldErrors.hostPhone}><input value={walkInForm.hostPhone} onChange={(event) => setWalkInForm((current) => ({ ...current, hostPhone: event.target.value }))} /></FormField>
-                <FormField label="E-Mail des Ansprechpartners" fieldId="walkin-hostEmail" error={walkInFieldErrors.hostEmail}><input value={walkInForm.hostEmail} onChange={(event) => setWalkInForm((current) => ({ ...current, hostEmail: event.target.value }))} /></FormField>
+                <FormField label="E-Mail des Ansprechpartners" fieldId="walkin-hostEmail" error={walkInFieldErrors.hostEmail}><input type="email" inputMode="email" autoComplete="email" value={walkInForm.hostEmail} onChange={(event) => { setWalkInForm((current) => ({ ...current, hostEmail: event.target.value })); setWalkInFieldErrors((current) => { const { hostEmail: _hostEmail, ...rest } = current; return rest; }); }} /></FormField>
                 </div>
               </fieldset>
 
