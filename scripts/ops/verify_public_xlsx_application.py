@@ -75,9 +75,10 @@ def main():
     sibe.login("sibe.demo");kskdt.login("kaskdt.demo")
     expect(sibe.request("PATCH","/api/sibe/settings/public-xlsx-applications",{"requireEmailVerification":True})[0],200,"enable verification")
     request_id=str(uuid.uuid4());fields={"applicantEmail":"xlsx-verify-e2e@example.test","applicantName":"XLSX Verify E2E","applicantOrganization":"Isolierter Test","clientRequestId":request_id}
+    mail_count_before_submit=mail_count(args.mailpit_url)
     body,ctype=multipart(fields,file)
     status,pending=public.request("POST","/api/public/simplified-applications",raw=body,headers={"Content-Type":ctype,"X-CSRF-Token":csrf});expect(status,201,"verified-mode submit");expect(pending["status"],"pending_email_verification","pending verification state")
-    first_mail_count=mail_count(args.mailpit_url);expect(first_mail_count,1,"single verification mail")
+    first_mail_count=mail_count(args.mailpit_url);expect(first_mail_count,mail_count_before_submit+1,"single verification mail")
     retry_body,retry_ctype=multipart(fields,file)
     status,retry=public.request("POST","/api/public/simplified-applications",raw=retry_body,headers={"Content-Type":retry_ctype,"X-CSRF-Token":csrf});expect(status,201,"idempotent submit retry");expect(retry["reference"],pending["reference"],"idempotent reference")
     expect(mail_count(args.mailpit_url),first_mail_count,"retry mail count")
