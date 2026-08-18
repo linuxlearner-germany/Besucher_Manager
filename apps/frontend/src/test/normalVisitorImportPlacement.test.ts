@@ -14,8 +14,8 @@ describe("normal visitor XLSX import placement", () => {
   it("renders the normal importer at the bottom of the regular registration page", () => {
     expect(publicPage).toContain("NormalVisitorImportSection");
     expect(publicPage).toContain("canUseNormalVisitorImport(user)");
-    expect(importSection).toContain("Besucher per XLSX importieren");
-    expect(importSection).toContain("Alternativ können Sie mehrere Besucher gesammelt über eine XLSX-Datei importieren.");
+    expect(importSection).toContain("Mehrere Besucher per XLSX importieren");
+    expect(importSection).toContain("Alternativ können Sie mehrere reguläre Besucher gesammelt über eine XLSX-Datei importieren.");
     expect(importCard).toContain("Vorschau anzeigen");
     expect(importCard).toContain("Import ausführen");
     expect(importSection).toContain("/api/sibe/visits/import/preview");
@@ -35,5 +35,11 @@ describe("normal visitor XLSX import placement", () => {
     expect(route).not.toBeNull();
     expect(route?.[0]).toContain('requiredMenuKey="import"');
     expect(route?.[0]).toContain('requiredPermissions={["imports.execute"]}');
+  });
+
+  it("keeps the regular registration page reachable for signed-in import users", () => {
+    expect(app).toContain('path="/voranmeldung" element={<PublicPreRegistrationPage />}');
+    expect(core).toContain('const preRegistrationPath = user ? "/voranmeldung" : "/";');
+    expect(core).toContain('hasMenuAccess(user, "voranmeldung") || canUseNormalVisitorImport(user)');
   });
 });

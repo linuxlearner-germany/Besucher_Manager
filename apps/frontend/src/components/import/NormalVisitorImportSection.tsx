@@ -110,11 +110,11 @@ export function NormalVisitorImportSection() {
   const detailBasePath = user?.role === "guard" || user?.role === "admin" ? "/wache/besuche" : "/sibe/besucher";
 
   return (
-    <section className="normal-import-section" aria-labelledby="normal-import-title">
+    <section id="normal-visitor-xlsx-import" className="normal-import-section" aria-labelledby="normal-import-title">
       <div className="section-header normal-import-heading">
         <div>
-          <h2 id="normal-import-title">Besucher per XLSX importieren</h2>
-          <p className="section-copy">Alternativ können Sie mehrere Besucher gesammelt über eine XLSX-Datei importieren.</p>
+          <h2 id="normal-import-title">Mehrere Besucher per XLSX importieren</h2>
+          <p className="section-copy">Alternativ können Sie mehrere reguläre Besucher gesammelt über eine XLSX-Datei importieren.</p>
         </div>
       </div>
 

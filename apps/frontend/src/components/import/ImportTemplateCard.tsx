@@ -71,6 +71,7 @@ export function ImportTemplateCard({
         <input
           className="visually-hidden"
           type="file"
+          aria-label="XLSX-Datei auswählen"
           accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
           onChange={handleFileInput}
         />

@@ -1307,8 +1307,13 @@ export function AppLayout({ children }: PropsWithChildren) {
   const location = useLocation();
   const navigationRef = useRef<HTMLDivElement>(null);
   const [openRoleMenu, setOpenRoleMenu] = useState<"wache" | "sibe" | "kaskdt" | null>(null);
+  const preRegistrationPath = user ? "/voranmeldung" : "/";
   const menuItems: Array<{ to: string; label: string; visible: boolean; activePrefixes?: string[] }> = [
-    { to: "/", label: "Voranmeldung", visible: !user || Boolean(user && hasMenuAccess(user, "voranmeldung")) },
+    {
+      to: preRegistrationPath,
+      label: "Voranmeldung",
+      visible: !user || Boolean(user && (hasMenuAccess(user, "voranmeldung") || canUseNormalVisitorImport(user)))
+    },
     { to: "/visit/simplified/application", label: "Vereinfachte Besucherregelung", visible: !user, activePrefixes: ["/visit/simplified/"] },
     { to: "/wache", label: "Wache", visible: Boolean(user && hasMenuAccess(user, "wache") && hasPermission(user, "visits.read")) },
     { to: "/admin", label: "Admin", visible: Boolean(user && hasMenuAccess(user, "admin") && (hasPermission(user, "admin.users") || hasPermission(user, "admin.guards") || hasPermission(user, "admin.fields") || hasPermission(user, "admin.map") || hasPermission(user, "admin.system") || hasPermission(user, "logs.audit") || hasPermission(user, "logs.errors"))) },
@@ -1381,7 +1386,7 @@ export function AppLayout({ children }: PropsWithChildren) {
             <nav ref={navigationRef} className="nav-links" aria-label="Hauptnavigation">
               {isAdminNavigation ? (
                 <>
-                  {visibleMenuItems.filter((item) => ["/", "/admin"].includes(item.to)).map((item) => (
+                  {visibleMenuItems.filter((item) => [preRegistrationPath, "/admin"].includes(item.to)).map((item) => (
                     <NavLink key={item.to} to={item.to} className={({ isActive }) => (isActive ? "active-link" : "")}>
                       {item.label}
                     </NavLink>

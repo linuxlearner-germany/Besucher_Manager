@@ -59,6 +59,7 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<RoleAwareRootRoute><PublicPreRegistrationPage /></RoleAwareRootRoute>} />
+      <Route path="/voranmeldung" element={<PublicPreRegistrationPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/visit/confirmation" element={<PublicPreRegistrationConfirmationPage />} />
       <Route path="/visit/simplified/application" element={<PublicSimplifiedApplicationPage />} />
