@@ -8,14 +8,12 @@ import {
   type AdminFieldDefinition,
   type ApiError,
   buildInitialFormState,
-  canUseNormalVisitorImport,
   extractFieldErrors,
   fetchJson,
   type FieldErrorState,
   type FormState,
   type Gate,
-  toDateInputValue,
-  useAuth
+  toDateInputValue
 } from "../app/core";
 
 type PublicSubmitState =
@@ -83,7 +81,6 @@ function isPastDate(value: string): boolean {
 }
 
 export function PublicPreRegistrationPage() {
-  const { user } = useAuth();
   const [form, setForm] = useState<FormState>(() => buildInitialFormState());
   const [submitState, setSubmitState] = useState<PublicSubmitState>({ kind: "idle" });
   const [groupSubmitState, setGroupSubmitState] = useState<PublicSubmitState>({ kind: "idle" });
@@ -464,7 +461,7 @@ export function PublicPreRegistrationPage() {
           />
         ) : null}
 
-        {canUseNormalVisitorImport(user) ? <NormalVisitorImportSection /> : null}
+        <NormalVisitorImportSection publicMode csrfToken={csrfToken} />
       </main>
     </AppLayout>
   );

@@ -7,6 +7,7 @@ import { parseExcelBufferWithMetadata } from "../lib/visitImportParsing";
 import { listFieldDefinitions } from "../lib/fieldDefinitions";
 import { findCountryCode } from "../lib/countries";
 import { cleanOptional } from "../lib/textValues";
+import { assertSafePublicXlsx, PublicXlsxError } from "../lib/publicSimplifiedXlsx";
 import { PUBLIC_FIELD_INPUT_MAP, type PublicFieldKey, validateImportedPreRegistrationRows } from "../lib/publicPreRegistrationSchema";
 import {
   getRequestIp,
@@ -69,7 +70,15 @@ function addRowError(rowErrors: Map<number, string[]>, message: string) {
   rowErrors.set(rowNumber, errors);
 }
 
-export function handleVisitorImportPreview(request: Request, response: Response) {
+function sendPublicXlsxValidationError(response: Response, error: PublicXlsxError) {
+  return sendError(response, 400, error.code, error.message);
+}
+
+export function handleVisitorImportPreview(
+  request: Request,
+  response: Response,
+  options?: { validatePublicXlsx?: boolean }
+) {
   return visitorImportUpload.single("file")(request, response, async (error) => {
     if (error) {
       if (error instanceof MulterError && error.code === "LIMIT_FILE_SIZE") {
@@ -85,6 +94,9 @@ export function handleVisitorImportPreview(request: Request, response: Response)
     }
 
     try {
+      if (options?.validatePublicXlsx) {
+        await assertSafePublicXlsx(file.buffer);
+      }
       const { rows, ignoredSampleRows } = await parseExcelBufferWithMetadata(file.buffer);
       if (rows.length === 0) {
         const message = ignoredSampleRows > 0
@@ -125,6 +137,9 @@ export function handleVisitorImportPreview(request: Request, response: Response)
         ignoredSampleRows
       });
     } catch (parseError) {
+      if (parseError instanceof PublicXlsxError) {
+        return sendPublicXlsxValidationError(response, parseError);
+      }
       return handleUnexpectedError(response, parseError, "XLSX_IMPORT_PARSE_FAILED", "Die XLSX-Datei konnte nicht als Besucherimport gelesen werden.");
     }
   });
@@ -136,6 +151,7 @@ export function handleVisitorImportUpload(
   options: {
     createdBy: AuthenticatedUser | null;
     fallbackGateId: string | null;
+    validatePublicXlsx?: boolean;
   }
 ) {
   return visitorImportUpload.single("file")(request, response, async (error) => {
@@ -156,6 +172,9 @@ export function handleVisitorImportUpload(
     }
 
     try {
+      if (options.validatePublicXlsx) {
+        await assertSafePublicXlsx(file.buffer);
+      }
       const { rows, ignoredSampleRows } = await parseExcelBufferWithMetadata(file.buffer);
 
       if (rows.length === 0) {
@@ -185,6 +204,9 @@ export function handleVisitorImportUpload(
         ignoredSampleRows
       });
     } catch (importError) {
+      if (importError instanceof PublicXlsxError) {
+        return sendPublicXlsxValidationError(response, importError);
+      }
       if (importError instanceof ImportValidationError) {
         return sendValidationError(response, { fieldErrors: { file: importError.messages } });
       }

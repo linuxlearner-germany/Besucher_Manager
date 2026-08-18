@@ -7,6 +7,7 @@ type ImportTemplateCardProps = {
   importFile: File | null;
   importing: boolean;
   previewing: boolean;
+  interactionDisabled?: boolean;
   previewReady: boolean;
   onFileChange: (file: File | null) => void;
   onPreview: () => void;
@@ -19,6 +20,7 @@ export function ImportTemplateCard({
   importFile,
   importing,
   previewing,
+  interactionDisabled = false,
   previewReady,
   onFileChange,
   onPreview,
@@ -87,13 +89,14 @@ export function ImportTemplateCard({
         ) : null}
       </label>
       <div className="row-actions import-dropzone-actions import-actions-inline">
-        <button type="button" className="secondary-button" onClick={onPreview} disabled={importing || previewing || !importFile}>
+        <button type="button" className="secondary-button" onClick={onPreview} disabled={interactionDisabled || importing || previewing || !importFile}>
           {previewing ? "Vorschau wird erstellt …" : "Vorschau anzeigen"}
         </button>
-        <button type="button" onClick={onImport} disabled={importing || previewing || !importFile || !previewReady}>
+        <button type="button" onClick={onImport} disabled={interactionDisabled || importing || previewing || !importFile || !previewReady}>
           {importing ? "Import wird ausgeführt …" : "Import ausführen"}
         </button>
         {!importFile && importDisabledHint ? <span className="inline-note">{importDisabledHint}</span> : null}
+        {interactionDisabled ? <span className="inline-note">Formular wird vorbereitet …</span> : null}
         {importFile && !previewReady && !previewing ? <span className="inline-note">Bitte zuerst die Vorschau anzeigen.</span> : null}
       </div>
     </Card>

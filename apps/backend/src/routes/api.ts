@@ -18,6 +18,7 @@ import { APP_VERSION } from "../lib/appVersion";
 import {
   getRequestIp,
   getRequestUserAgent,
+  hasValidCsrfToken,
   handleUnexpectedError,
   issueCsrfToken,
   requireAuthenticatedUser,
@@ -28,7 +29,7 @@ import {
 import { writeAuditLog } from "../lib/auditLog";
 import { getPool } from "../lib/db";
 import sql from "mssql";
-import { handleVisitorImportUpload, sendVisitorImportTemplateWorkbook } from "./visitorImport";
+import { handleVisitorImportPreview, handleVisitorImportUpload, sendVisitorImportTemplateWorkbook } from "./visitorImport";
 import { adminRouter } from "./admin";
 import { guardRouter } from "./guard";
 import { sibeRouter } from "./sibe";
@@ -132,6 +133,31 @@ const publicGroupVisitorFieldMap = {
   id_document_valid_until: "idDocumentValidUntil",
   id_document_number: "idDocumentNumber"
 } as const;
+
+function allowPublicVisitorImportRequest(
+  request: import("express").Request,
+  response: import("express").Response,
+  operation: "template" | "preview" | "submit",
+  limit: number
+): boolean {
+  const decision = checkRateLimit(`public-visitor-import:${operation}:${getRequestIp(request)}`, limit, 60);
+  if (decision.allowed) return true;
+  response.setHeader("Retry-After", String(decision.retryAfterSeconds));
+  sendError(response, 429, "RATE_LIMITED", "Zu viele Importversuche. Bitte versuchen Sie es später erneut.");
+  return false;
+}
+
+function requirePublicVisitorImportCsrf(request: import("express").Request, response: import("express").Response): boolean {
+  if (hasValidCsrfToken(request)) return true;
+  sendError(response, 403, "CSRF_INVALID", "Die Formularsitzung ist abgelaufen. Bitte laden Sie die Seite neu.");
+  return false;
+}
+
+function securePublicVisitorImportResponse(response: import("express").Response) {
+  response.setHeader("Cache-Control", "no-store, max-age=0");
+  response.setHeader("Pragma", "no-cache");
+  response.setHeader("Referrer-Policy", "no-referrer");
+}
 
 export const apiRouter = Router();
 
@@ -468,23 +494,25 @@ apiRouter.post("/api/public/pre-registrations/group", async (request, response) 
 });
 
 apiRouter.post("/api/public/visits/import", async (request, response) => {
-  const rateLimitKey = `public-visitor-import:${request.ip || request.socket.remoteAddress || "unknown"}`;
-  const rateLimitDecision = checkRateLimit(rateLimitKey, 8, 60);
-  if (!rateLimitDecision.allowed) {
-    response.setHeader("Retry-After", String(rateLimitDecision.retryAfterSeconds));
-    return response.status(429).json({
-      error: "RATE_LIMITED",
-      message: "Zu viele Importversuche. Bitte spaeter erneut versuchen."
-    });
-  }
+  securePublicVisitorImportResponse(response);
+  if (!allowPublicVisitorImportRequest(request, response, "submit", 8) || !requirePublicVisitorImportCsrf(request, response)) return;
 
   return handleVisitorImportUpload(request, response, {
     createdBy: null,
-    fallbackGateId: null
+    fallbackGateId: null,
+    validatePublicXlsx: true
   });
 });
 
-apiRouter.get("/api/public/visits/import-template.xlsx", async (_request, response) => {
+apiRouter.post("/api/public/visits/import/preview", async (request, response) => {
+  securePublicVisitorImportResponse(response);
+  if (!allowPublicVisitorImportRequest(request, response, "preview", 12) || !requirePublicVisitorImportCsrf(request, response)) return;
+  return handleVisitorImportPreview(request, response, { validatePublicXlsx: true });
+});
+
+apiRouter.get("/api/public/visits/import-template.xlsx", async (request, response) => {
+  securePublicVisitorImportResponse(response);
+  if (!allowPublicVisitorImportRequest(request, response, "template", 60)) return;
   return sendVisitorImportTemplateWorkbook(response);
 });
 

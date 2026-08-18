@@ -26,7 +26,7 @@ type NormalImportPreview = {
   ignoredSampleRows: number;
 };
 
-export function NormalVisitorImportSection() {
+export function NormalVisitorImportSection({ publicMode = false, csrfToken = "" }: { publicMode?: boolean; csrfToken?: string }) {
   const { user } = useAuth();
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
@@ -37,11 +37,18 @@ export function NormalVisitorImportSection() {
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
 
-  if (!canUseNormalVisitorImport(user)) {
+  if (!publicMode && !canUseNormalVisitorImport(user)) {
     return null;
   }
 
+  const endpointBase = publicMode ? "/api/public/visits/import" : "/api/sibe/visits/import";
+  const publicHeaders = publicMode ? { "X-CSRF-Token": csrfToken } : undefined;
+
   async function handleImport() {
+    if (publicMode && !csrfToken) {
+      setError("Die Formularsitzung wird noch vorbereitet. Bitte versuchen Sie es gleich erneut.");
+      return;
+    }
     if (!importFile || !preview || preview.invalid > 0) {
       setError("Bitte zuerst eine fehlerfreie Vorschau anzeigen.");
       return;
@@ -55,8 +62,9 @@ export function NormalVisitorImportSection() {
     try {
       const body = new FormData();
       body.set("file", importFile);
-      const payload = await fetchJson<ImportResult>("/api/sibe/visits/import", {
+      const payload = await fetchJson<ImportResult>(endpointBase, {
         method: "POST",
+        headers: publicHeaders,
         body
       });
       setImportResult(payload);
@@ -73,6 +81,10 @@ export function NormalVisitorImportSection() {
   }
 
   async function handlePreview() {
+    if (publicMode && !csrfToken) {
+      setError("Die Formularsitzung wird noch vorbereitet. Bitte versuchen Sie es gleich erneut.");
+      return;
+    }
     if (!importFile) {
       setError("Bitte zuerst eine XLSX-Datei auswählen.");
       return;
@@ -87,8 +99,9 @@ export function NormalVisitorImportSection() {
     try {
       const body = new FormData();
       body.set("file", importFile);
-      const payload = await fetchJson<NormalImportPreview>("/api/sibe/visits/import/preview", {
+      const payload = await fetchJson<NormalImportPreview>(`${endpointBase}/preview`, {
         method: "POST",
+        headers: publicHeaders,
         body
       });
       setPreview(payload);
@@ -104,7 +117,9 @@ export function NormalVisitorImportSection() {
   }
 
   function downloadImportTemplateExcel() {
-    window.location.href = "/api/sibe/visits/import-template.xlsx";
+    window.location.href = publicMode
+      ? "/api/public/visits/import-template.xlsx"
+      : "/api/sibe/visits/import-template.xlsx";
   }
 
   const detailBasePath = user?.role === "guard" || user?.role === "admin" ? "/wache/besuche" : "/sibe/besucher";
@@ -114,7 +129,7 @@ export function NormalVisitorImportSection() {
       <div className="section-header normal-import-heading">
         <div>
           <h2 id="normal-import-title">Mehrere Besucher per XLSX importieren</h2>
-          <p className="section-copy">Alternativ können Sie mehrere reguläre Besucher gesammelt über eine XLSX-Datei importieren.</p>
+          <p className="section-copy">Alternativ können Sie mehrere Besucher gesammelt über eine XLSX-Datei anmelden.</p>
         </div>
       </div>
 
@@ -126,6 +141,7 @@ export function NormalVisitorImportSection() {
         importFile={importFile}
         importing={importing}
         previewing={previewing}
+        interactionDisabled={publicMode && !csrfToken}
         previewReady={Boolean(preview && preview.invalid === 0)}
         onFileChange={(file) => {
           setImportFile(file);
@@ -180,14 +196,15 @@ export function NormalVisitorImportSection() {
         <ImportResultCard
           result={importResult}
           detailBasePath={detailBasePath}
-          canOpenDetails
+          canOpenDetails={Boolean(user)}
         />
       ) : null}
 
       {reviewModalOpen && importResult ? (
         <ImportReviewModal
           rows={importResult.rows}
-          detailBasePath={detailBasePath}
+          detailBasePath={user ? detailBasePath : null}
+          showLoginHint={!user}
           onClose={() => setReviewModalOpen(false)}
         />
       ) : null}

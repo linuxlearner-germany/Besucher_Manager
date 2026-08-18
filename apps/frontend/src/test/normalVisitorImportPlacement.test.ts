@@ -13,14 +13,17 @@ const importPage = readFileSync(resolve(srcRoot, "pages/ImportPage.tsx"), "utf8"
 describe("normal visitor XLSX import placement", () => {
   it("renders the normal importer at the bottom of the regular registration page", () => {
     expect(publicPage).toContain("NormalVisitorImportSection");
-    expect(publicPage).toContain("canUseNormalVisitorImport(user)");
+    expect(publicPage).toContain("<NormalVisitorImportSection publicMode csrfToken={csrfToken} />");
     expect(importSection).toContain("Mehrere Besucher per XLSX importieren");
-    expect(importSection).toContain("Alternativ können Sie mehrere reguläre Besucher gesammelt über eine XLSX-Datei importieren.");
+    expect(importSection).toContain("Alternativ können Sie mehrere Besucher gesammelt über eine XLSX-Datei anmelden.");
     expect(importCard).toContain("Vorschau anzeigen");
     expect(importCard).toContain("Import ausführen");
-    expect(importSection).toContain("/api/sibe/visits/import/preview");
+    expect(importSection).toContain('const endpointBase = publicMode ? "/api/public/visits/import" : "/api/sibe/visits/import";');
+    expect(importSection).toContain('`${endpointBase}/preview`');
     expect(importSection).toContain("/api/sibe/visits/import");
     expect(importSection).toContain("/api/sibe/visits/import-template.xlsx");
+    expect(importSection).toContain("/api/public/visits/import-template.xlsx");
+    expect(importSection).toContain('"X-CSRF-Token": csrfToken');
   });
 
   it("does not expose the normal importer as a navigation item or mix simplified import UI into it", () => {

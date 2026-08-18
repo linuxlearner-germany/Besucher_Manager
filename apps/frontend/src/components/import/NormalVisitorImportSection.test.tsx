@@ -39,8 +39,8 @@ const importUser: User = {
   }
 };
 
-function renderImporter() {
-  return render(<MemoryRouter><NormalVisitorImportSection /></MemoryRouter>);
+function renderImporter(props?: { publicMode?: boolean; csrfToken?: string }) {
+  return render(<MemoryRouter><NormalVisitorImportSection {...props} /></MemoryRouter>);
 }
 
 function selectWorkbook() {
@@ -95,6 +95,43 @@ describe("NormalVisitorImportSection", () => {
     fireEvent.click(screen.getByRole("button", { name: "Import ausführen" }));
     expect(await screen.findByText("1 Besucher importiert.")).toBeInTheDocument();
     expect(mocks.fetchJson).toHaveBeenNthCalledWith(2, "/api/sibe/visits/import", expect.objectContaining({ method: "POST" }));
+  });
+
+  it("is usable without login through the CSRF-protected public visitor endpoints", async () => {
+    mocks.user = null;
+    mocks.fetchJson
+      .mockResolvedValueOnce({
+        rows: [{ rowNumber: 2, firstName: "Erika", lastName: "Muster", company: "Beispiel GmbH", validFrom: "2026-08-20", validUntil: "2026-08-20", gateName: "Hauptwache", hostName: "Max Host", status: "ok", errors: [] }],
+        total: 1,
+        valid: 1,
+        invalid: 0,
+        errors: [],
+        ignoredSampleRows: 0
+      })
+      .mockResolvedValueOnce({
+        imported: 1,
+        needsReview: 0,
+        message: "1 Besucher importiert.",
+        rows: [{ rowNumber: 2, visitId: "visit-public-1", visitorName: "Erika Muster", company: "Beispiel GmbH", missingFields: [], warnings: [], needsReview: false }]
+      });
+    renderImporter({ publicMode: true, csrfToken: "csrf-public-import" });
+
+    expect(screen.getByRole("heading", { name: "Mehrere Besucher per XLSX importieren" })).toBeInTheDocument();
+    selectWorkbook();
+    fireEvent.click(screen.getByRole("button", { name: "Vorschau anzeigen" }));
+    expect(await screen.findByText("1 Besucherzeile(n) erkannt: 1 gültig, 0 fehlerhaft.")).toBeInTheDocument();
+    expect(mocks.fetchJson).toHaveBeenNthCalledWith(1, "/api/public/visits/import/preview", expect.objectContaining({
+      method: "POST",
+      headers: { "X-CSRF-Token": "csrf-public-import" }
+    }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Import ausführen" }));
+    expect(await screen.findByText("1 Besucher importiert.")).toBeInTheDocument();
+    expect(mocks.fetchJson).toHaveBeenNthCalledWith(2, "/api/public/visits/import", expect.objectContaining({
+      method: "POST",
+      headers: { "X-CSRF-Token": "csrf-public-import" }
+    }));
+    expect(screen.getByText("Login für Details")).toBeInTheDocument();
   });
 
   it("shows row errors and does not import an invalid preview", async () => {

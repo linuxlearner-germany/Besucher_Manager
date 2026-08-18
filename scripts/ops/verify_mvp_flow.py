@@ -386,12 +386,36 @@ def main() -> int:
         gate = gates[0]
 
     print("2/16 Pruefe vollstaendigen oeffentlichen Excel-Import...")
+    public_import_workbook = build_import_workbook(gate["name"], suffix)
+    try:
+        public_client.upload_file(
+            "/api/public/visits/import/preview",
+            field_name="file",
+            filename="besucher-import-test.xlsx",
+            content=public_import_workbook,
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        raise RuntimeError("Oeffentliche Standardimport-Vorschau war ohne CSRF-Token erreichbar.")
+    except ApiError as error:
+        if error.status != 403 or error.payload.get("error") != "CSRF_INVALID":
+            raise
+    import_preview = public_client.upload_file(
+        "/api/public/visits/import/preview",
+        field_name="file",
+        filename="besucher-import-test.xlsx",
+        content=public_import_workbook,
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"X-CSRF-Token": csrf_token},
+    )
+    if int(import_preview.get("valid", 0)) != 1 or int(import_preview.get("invalid", 0)) != 0:
+        raise RuntimeError("Oeffentliche Standardimport-Vorschau war unerwartet ungueltig.")
     import_result = public_client.upload_file(
         "/api/public/visits/import",
         field_name="file",
         filename="besucher-import-test.xlsx",
-        content=build_import_workbook(gate["name"], suffix),
+        content=public_import_workbook,
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"X-CSRF-Token": csrf_token},
     )
     if int(import_result.get("imported", 0)) != 1:
         raise RuntimeError("Oeffentlicher Import hat nicht genau einen vollstaendigen Eintrag verarbeitet.")
@@ -668,6 +692,20 @@ def main() -> int:
         except ApiError as error:
             if error.status != 503 or error.payload.get("error") != "MAINTENANCE_MODE":
                 raise
+        for import_endpoint in ("/api/public/visits/import/preview", "/api/public/visits/import"):
+            try:
+                public_client.upload_file(
+                    import_endpoint,
+                    field_name="file",
+                    filename="besucher-import-test.xlsx",
+                    content=public_import_workbook,
+                    content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"X-CSRF-Token": csrf_token},
+                )
+                raise RuntimeError(f"Oeffentlicher Standardimport blieb im Wartungsmodus erreichbar: {import_endpoint}")
+            except ApiError as error:
+                if error.status != 503 or error.payload.get("error") != "MAINTENANCE_MODE":
+                    raise
         for public_route in ("/", "/visit/simplified/application"):
             try:
                 public_client.request("GET", public_route)
