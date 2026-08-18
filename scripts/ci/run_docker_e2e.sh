@@ -49,6 +49,7 @@ UPLOAD_DIR=/app/uploads
 AUDIT_REVERSE_DNS_ENABLED=false
 AUDIT_TRUST_REMOTE_USER_HEADER=false
 AUDIT_REMOTE_USER_HEADER=x-auth-user
+MAILPIT_HOST_PORT=0
 EOF
 
 require_isolated_compose_project "${E2E_PROJECT_NAME}" "${ENV_FILE}"
@@ -76,6 +77,37 @@ curl -fsS "${BASE_URL}/health" >/dev/null
 
 docker compose --env-file "${ENV_FILE}" --project-name "${E2E_PROJECT_NAME}" --profile local-db exec -T app npm run seed:sample:compiled --workspace @besucher-manager/backend
 docker compose --env-file "${ENV_FILE}" --project-name "${E2E_PROJECT_NAME}" --profile local-db exec -T app npm run verify:public-confirmation:compiled --workspace @besucher-manager/backend
+
+docker compose --env-file "${ENV_FILE}" --project-name "${E2E_PROJECT_NAME}" --profile local-db exec -T app node - <<'NODE'
+const sql = require("mssql");
+(async () => {
+  const pool = await sql.connect({
+    server: process.env.MSSQL_HOST,
+    port: Number(process.env.MSSQL_PORT || 1433),
+    database: process.env.MSSQL_DATABASE,
+    user: process.env.MSSQL_USER,
+    password: process.env.MSSQL_PASSWORD,
+    options: { encrypt: false, trustServerCertificate: true }
+  });
+  const values = {
+    mail_relay_enabled: "true",
+    mail_relay_host: "mailpit",
+    mail_relay_port: "1025",
+    mail_relay_secure: "false",
+    mail_relay_username: "",
+    mail_relay_password: "",
+    mail_relay_from: "besucher-manager-e2e@example.test"
+  };
+  for (const [key, value] of Object.entries(values)) {
+    await pool.request().input("key", sql.NVarChar(120), key).input("value", sql.NVarChar(sql.MAX), value).query(`
+      IF EXISTS (SELECT 1 FROM dbo.system_settings WHERE [key]=@key)
+        UPDATE dbo.system_settings SET [value]=@value, updated_at=SYSUTCDATETIME() WHERE [key]=@key;
+      ELSE
+        INSERT INTO dbo.system_settings([key],[value]) VALUES(@key,@value);`);
+  }
+  await pool.close();
+})().catch((error) => { console.error(error.message); process.exit(1); });
+NODE
 
 python3 scripts/ops/verify_admin_bootstrap_persistence.py \
   --base-url "${BASE_URL}" \
@@ -120,4 +152,7 @@ python3 scripts/ops/verify_mvp_flow.py \
   --admin-user admin \
   --admin-password RebuildAdmin_123!
 
-python3 scripts/ops/verify_public_xlsx_application.py --base-url "${BASE_URL}"
+mailpit_address="$(docker compose --env-file "${ENV_FILE}" --project-name "${E2E_PROJECT_NAME}" port mailpit 8025)"
+mailpit_port="${mailpit_address##*:}"
+[[ "${mailpit_port}" =~ ^[0-9]+$ ]] || docker_safety_fail "Could not determine the isolated Mailpit port."
+python3 scripts/ops/verify_public_xlsx_application.py --base-url "${BASE_URL}" --mailpit-url "http://127.0.0.1:${mailpit_port}"

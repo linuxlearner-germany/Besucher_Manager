@@ -6,6 +6,9 @@ import test from "node:test";
 const route = readFileSync(resolve(__dirname, "publicSimplifiedApplications.ts"), "utf8");
 const service = readFileSync(resolve(__dirname, "../lib/publicSimplifiedApplications.ts"), "utf8");
 const migration = readFileSync(resolve(__dirname, "../../migrations/038_public_simplified_applications.sql"), "utf8");
+const idempotencyMigration = readFileSync(resolve(__dirname, "../../migrations/039_public_simplified_application_idempotency.sql"), "utf8");
+const mailRelay = readFileSync(resolve(__dirname, "../lib/mailRelay.ts"), "utf8");
+const dockerfile = readFileSync(resolve(__dirname, "../../../../Dockerfile"), "utf8");
 
 test("public workflow reparses XLSX on preview and submit and requires CSRF", () => {
   assert.equal((route.match(/parseAndValidatePublicApplicationXlsx\(file\.buffer\)/g) ?? []).length, 2);
@@ -44,4 +47,24 @@ test("workflow mails consistently name the simplified visitor policy", () => {
   assert.match(service, /Ihr Antrag zur vereinfachten Besucherregelung wurde eingereicht/);
   assert.match(service, /Neuer Antrag zur vereinfachten Besucherregelung/);
   assert.match(service, /Entscheidung zu Ihrem Antrag der vereinfachten Besucherregelung/);
+});
+
+test("public submit uses a persistent client request id for idempotent retries", () => {
+  assert.match(route, /clientRequestId:z\.string\(\)\.uuid\(\)\.optional\(\)/);
+  assert.match(service, /client_request_id = @clientRequestId/);
+  assert.match(service, /INSERT INTO dbo\.public_simplified_applications\([^)]*client_request_id/);
+  assert.match(idempotencyMigration, /UNIQUE INDEX ux_public_simplified_applications_client_request/);
+  assert.match(idempotencyMigration, /WHERE client_request_id IS NOT NULL/);
+});
+
+test("mail TLS verification cannot be bypassed and the runtime image has a CA store", () => {
+  assert.doesNotMatch(mailRelay, /rejectUnauthorized\s*:\s*false|allowInvalidCertificate/);
+  assert.match(dockerfile, /apt-get install -y --no-install-recommends ca-certificates/);
+});
+
+test("verification transport failures use a safe correlated public error", () => {
+  assert.match(route, /PUBLIC_XLSX_VERIFICATION_MAIL_FAILED/);
+  assert.match(route, /requestId:response\.req\?\.requestId/);
+  assert.match(route, /Der Antrag konnte derzeit nicht vollständig verarbeitet werden/);
+  assert.doesNotMatch(route, /unable to verify the first certificate/);
 });

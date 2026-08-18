@@ -31,6 +31,13 @@ FROM node:22-bookworm-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
+# The application establishes outbound TLS connections (for example to the
+# configured mail relay). Keep certificate validation enabled and provide the
+# operating-system trust store in the production image.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
 ARG APP_COMMIT=unknown
 ENV APP_COMMIT=${APP_COMMIT}
 LABEL org.opencontainers.image.revision=${APP_COMMIT}

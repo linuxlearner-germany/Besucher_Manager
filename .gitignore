@@ -13,3 +13,5 @@ uploads/*
 !uploads/ui-backgrounds/**
 archive/backups/
 config/mail-relay.yml
+config/ca/*.crt
+config/ca/*.pem

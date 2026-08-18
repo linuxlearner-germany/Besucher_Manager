@@ -13,7 +13,11 @@ import type { AuthenticatedUser } from "./visitWorkflow";
 export type ApplicationStatus = "pending_email_verification" | "submitted" | "partially_approved" | "approved" | "rejected" | "cancelled";
 export type EntryDecision = "approved" | "rejected";
 export class PublicApplicationError extends Error {
-  constructor(public readonly reason: "not_found" | "expired" | "revoked" | "conflict" | "not_ready" | "mail_unavailable", message: string) { super(message); }
+  constructor(
+    public readonly reason: "not_found" | "expired" | "revoked" | "conflict" | "not_ready" | "mail_unavailable",
+    message: string,
+    options?: ErrorOptions
+  ) { super(message, options); }
 }
 
 function versionString(value: Buffer | string): string {
@@ -30,7 +34,16 @@ function period(rows: PublicApplicationPreviewRow[]): string {
   return dates.length ? `${dates[0]} bis ${dates.at(-1)}` : "–";
 }
 
-type ApplicantInput = { email: string; name?: string | null; organization?: string | null; note?: string | null };
+type ApplicantInput = { email: string; name?: string | null; organization?: string | null; note?: string | null; clientRequestId?: string | null };
+
+type ExistingApplication = {
+  id: string;
+  reference: string;
+  status: ApplicationStatus;
+  emailVerificationRequired: boolean;
+  version: Buffer;
+  entryCount: number;
+};
 
 export async function createPublicSimplifiedApplication(input: ApplicantInput, rows: PublicApplicationPreviewRow[], requireVerification: boolean, context: { ip?: string | null; userAgent?: string | null }) {
   if (!rows.length || rows.some((row) => row.errors.length || !row.gateId || !row.validFrom || !row.validUntil)) throw new Error("invalid_application_rows");
@@ -38,6 +51,26 @@ export async function createPublicSimplifiedApplication(input: ApplicantInput, r
   const transaction = new sql.Transaction(pool);
   await transaction.begin(sql.ISOLATION_LEVEL.SERIALIZABLE);
   try {
+    const clientRequestId = input.clientRequestId ?? crypto.randomUUID();
+    const existing = await new sql.Request(transaction)
+      .input("clientRequestId", sql.UniqueIdentifier, clientRequestId)
+      .query<ExistingApplication>(`
+        SELECT a.id, a.public_reference AS reference, a.status,
+          a.email_verification_required AS emailVerificationRequired,
+          a.[version], COUNT(e.id) AS entryCount
+        FROM dbo.public_simplified_applications a WITH (UPDLOCK, HOLDLOCK)
+        LEFT JOIN dbo.public_simplified_application_entries e ON e.application_id = a.id
+        WHERE a.client_request_id = @clientRequestId
+        GROUP BY a.id, a.public_reference, a.status, a.email_verification_required, a.[version]`);
+    const existingApplication = existing.recordset[0];
+    if (existingApplication) {
+      await transaction.commit();
+      return {
+        ...existingApplication,
+        version: versionString(existingApplication.version),
+        entryCount: Number(existingApplication.entryCount)
+      };
+    }
     const seq = await new sql.Request(transaction).query<{ value: number }>("SELECT NEXT VALUE FOR dbo.public_simplified_application_reference_seq AS value");
     const reference = `VBA-${new Date().getUTCFullYear()}-${String(seq.recordset[0]?.value ?? 0).padStart(6, "0")}`;
     const status: ApplicationStatus = requireVerification ? "pending_email_verification" : "submitted";
@@ -45,10 +78,10 @@ export async function createPublicSimplifiedApplication(input: ApplicantInput, r
       .input("reference", sql.NVarChar(32), reference).input("email", sql.NVarChar(255), input.email.trim().toLowerCase())
       .input("name", sql.NVarChar(255), cleanOptional(input.name)).input("organization", sql.NVarChar(255), cleanOptional(input.organization))
       .input("note", sql.NVarChar(2000), cleanOptional(input.note)).input("status", sql.NVarChar(40), status)
-      .input("required", sql.Bit, requireVerification).query<{ id: string; version: Buffer }>(`
-        INSERT INTO dbo.public_simplified_applications(public_reference, applicant_email, applicant_name, applicant_organization, applicant_note, status, email_verification_required, submitted_at)
+      .input("required", sql.Bit, requireVerification).input("clientRequestId", sql.UniqueIdentifier, clientRequestId).query<{ id: string; version: Buffer }>(`
+        INSERT INTO dbo.public_simplified_applications(public_reference, applicant_email, applicant_name, applicant_organization, applicant_note, status, email_verification_required, submitted_at, client_request_id)
         OUTPUT inserted.id, inserted.[version]
-        VALUES(@reference,@email,@name,@organization,@note,@status,@required,CASE WHEN @required=0 THEN SYSUTCDATETIME() ELSE NULL END)`);
+        VALUES(@reference,@email,@name,@organization,@note,@status,@required,CASE WHEN @required=0 THEN SYSUTCDATETIME() ELSE NULL END,@clientRequestId)`);
     const application = inserted.recordset[0];
     if (!application) throw new Error("application_insert_failed");
     for (const row of rows) await insertEntry(transaction, application.id, row);
@@ -59,7 +92,12 @@ export async function createPublicSimplifiedApplication(input: ApplicantInput, r
       const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000);
       await new sql.Request(transaction).input("applicationId", sql.UniqueIdentifier, application.id).input("hash", sql.Char(64), tokenHash(verificationToken)).input("expiresAt", sql.DateTime2, expiresAt)
         .query("INSERT INTO dbo.public_simplified_application_verification_tokens(application_id,token_hash,expires_at) VALUES(@applicationId,@hash,@expiresAt)");
-      const sent = await sendVerificationMail(input.email, reference, verificationToken, expiresAt);
+      let sent = false;
+      try {
+        sent = await sendVerificationMail(input.email, reference, verificationToken, expiresAt);
+      } catch (error) {
+        throw new PublicApplicationError("mail_unavailable", "verification_mail_transport_failed", { cause: error });
+      }
       if (!sent) throw new PublicApplicationError("mail_unavailable", "verification_mail_not_sent");
       await new sql.Request(transaction).input("id", sql.UniqueIdentifier, application.id).query("UPDATE dbo.public_simplified_applications SET verification_mail_sent_at=SYSUTCDATETIME(),updated_at=SYSUTCDATETIME() WHERE id=@id");
       await writeAuditLog({ user: "public-xlsx-applicant", action: "PUBLIC_XLSX_EMAIL_VERIFICATION_SENT", objectType: "public_simplified_application", objectId: application.id, ipAddress: context.ip, metadata: { reference, expires_at: expiresAt.toISOString() } }, transaction);

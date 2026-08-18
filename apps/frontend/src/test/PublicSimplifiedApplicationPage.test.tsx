@@ -81,4 +81,45 @@ describe("PublicSimplifiedApplicationPage", () => {
     expect(email).toHaveAttribute("aria-describedby", "applicant-email-error");
     expect(screen.getByText("Bitte geben Sie eine gültige E-Mail-Adresse ein.")).toHaveAttribute("role", "alert");
   });
+
+  it("reuses one client request id when a submit is retried", async () => {
+    let submitCount = 0;
+    const requestIds: string[] = [];
+    const validPreview = {
+      valid: true,
+      ignoredSampleRows: 0,
+      rows: [{ rowNumber: 2, firstName: "Erika", lastName: "Musterfrau", company: null, validFrom: "2026-08-20", validUntil: "2026-08-20", gateName: "Hauptwache", hostName: null, hostDepartment: null, licensePlate: null, warnings: [], errors: [] }]
+    };
+    vi.spyOn(window, "scrollTo").mockImplementation(() => undefined);
+    global.fetch = vi.fn(async (input, init) => {
+      const url = String(input);
+      if (url.includes("/api/auth/me")) return json({ user: null });
+      if (url.includes("/api/ui-settings")) return json({ backgroundMode: "plain", backgroundImageUrl: "", securityNumber: "BM2026" });
+      if (url.endsWith("/bootstrap")) return json({ csrfToken: "csrf", requireEmailVerification: true, limits: { maxBytes: 5_242_880, maxRows: 500, maxSheets: 3 } });
+      if (url.endsWith("/preview")) return json(validPreview);
+      if (url.endsWith("/api/public/simplified-applications")) {
+        const body = init?.body as FormData;
+        requestIds.push(String(body.get("clientRequestId")));
+        submitCount += 1;
+        if (submitCount === 1) return json({ status: 503, error: "VERIFICATION_MAIL_FAILED", message: "Bitte versuchen Sie es später erneut." }, 503);
+        return json({ reference: "VBA-2026-000123", status: "pending_email_verification", emailVerificationRequired: true, entryCount: 1 }, 201);
+      }
+      return json({});
+    }) as typeof fetch;
+
+    render(<MemoryRouter><ThemeProvider><AuthProvider><PublicSimplifiedApplicationPage /></AuthProvider></ThemeProvider></MemoryRouter>);
+    await screen.findByRole("heading", { name: "Vereinfachte Besucherregelung" });
+    fireEvent.change(screen.getByLabelText("XLSX-Datei auswählen"), { target: { files: [new File(["xlsx"], "besucher.xlsx")] } });
+    fireEvent.click(screen.getByRole("button", { name: "Datei prüfen und Vorschau anzeigen" }));
+    await screen.findByRole("heading", { name: "Ihre Kontaktdaten" });
+    fireEvent.change(screen.getByRole("textbox", { name: /e-mail-adresse/i }), { target: { value: "test@example.org" } });
+    fireEvent.click(screen.getByRole("button", { name: /antrag der vereinfachten/i }));
+    await screen.findByText(/bitte versuchen sie es später/i);
+    fireEvent.click(screen.getByRole("button", { name: /antrag der vereinfachten/i }));
+    await screen.findByText(/antrag erfolgreich eingereicht/i);
+
+    expect(requestIds).toHaveLength(2);
+    expect(requestIds[0]).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(requestIds[1]).toBe(requestIds[0]);
+  });
 });

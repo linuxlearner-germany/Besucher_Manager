@@ -83,7 +83,7 @@ function hasMailRelayConfiguration(relay: MailRelaySettings): boolean {
   return Boolean(relay.host && relay.fromAddress);
 }
 
-function createMailTransport(relay: MailRelaySettings, options?: { allowInvalidCertificate?: boolean }) {
+function createMailTransport(relay: MailRelaySettings) {
   return nodemailer.createTransport({
     host: relay.host,
     port: relay.port,
@@ -94,7 +94,9 @@ function createMailTransport(relay: MailRelaySettings, options?: { allowInvalidC
           pass: relay.password
         }
       : undefined,
-    ...(options?.allowInvalidCertificate ? { tls: { rejectUnauthorized: false } } : {})
+    ...(env.MAIL_RELAY_TLS_SERVERNAME
+      ? { tls: { servername: env.MAIL_RELAY_TLS_SERVERNAME } }
+      : {})
   });
 }
 
@@ -300,7 +302,7 @@ export async function sendDueVisitReminders(): Promise<number> {
 export async function verifyMailRelayConnection(testRecipient?: string): Promise<void> {
   const relay = await loadConfiguredMailRelay();
   const recipient = requireRecipient(testRecipient);
-  const transport = createMailTransport(relay, { allowInvalidCertificate: true });
+  const transport = createMailTransport(relay);
   await transport.verify();
 
   await transport.sendMail({
@@ -391,7 +393,7 @@ export async function sendMailRelayPreview(kind: MailRelayTestKind, recipient: s
   const relay = await loadConfiguredMailRelay();
   const normalizedRecipient = normalizeUserEmail(recipient);
   const targetRecipient = requireRecipient(normalizedRecipient);
-  const transport = createMailTransport(relay, { allowInvalidCertificate: true });
+  const transport = createMailTransport(relay);
   await transport.verify();
 
   const preview = buildMailRelayPreviewContent(kind);

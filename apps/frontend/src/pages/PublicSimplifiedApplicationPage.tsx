@@ -39,6 +39,7 @@ function formatFileSize(size: number) {
 }
 
 export function PublicSimplifiedApplicationPage() {
+  const clientRequestId = useRef(crypto.randomUUID());
   const [bootstrap, setBootstrap] = useState<Bootstrap | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -146,6 +147,7 @@ export function PublicSimplifiedApplicationPage() {
     data.set("applicantName", applicantName);
     data.set("applicantOrganization", applicantOrganization);
     data.set("applicantNote", applicantNote);
+    data.set("clientRequestId", clientRequestId.current);
     try {
       setResult(await upload("/api/public/simplified-applications", data) as Result);
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -164,6 +166,7 @@ export function PublicSimplifiedApplicationPage() {
   }
 
   function restart() {
+    clientRequestId.current = crypto.randomUUID();
     setResult(null);
     setFile(null);
     setPreview(null);

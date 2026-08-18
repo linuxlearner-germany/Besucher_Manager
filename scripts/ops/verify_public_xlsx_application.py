@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse, http.cookiejar, io, json, urllib.error, urllib.parse, urllib.request, uuid, zipfile
+import argparse, http.cookiejar, io, json, re, time, urllib.error, urllib.parse, urllib.request, uuid, zipfile
 
 class Client:
     def __init__(self, base):
@@ -48,18 +48,48 @@ def multipart(fields,file):
 def expect(actual,expected,label):
     if actual!=expected:raise RuntimeError(f"{label}: expected {expected}, got {actual}")
 
+def verification_token(mailpit_url):
+    for _ in range(30):
+        with urllib.request.urlopen(f"{mailpit_url}/api/v1/messages") as response:
+            messages=json.load(response).get("messages",[])
+        for message in messages:
+            with urllib.request.urlopen(f"{mailpit_url}/api/v1/message/{message['ID']}") as response:
+                detail=json.load(response)
+            match=re.search(r"visit/simplified/verify#([A-Za-z0-9_-]{43})",f"{detail.get('Text','')} {detail.get('HTML','')}")
+            if match:return match.group(1)
+        time.sleep(.2)
+    raise RuntimeError("verification mail missing in isolated Mailpit")
+
+def mail_count(mailpit_url):
+    with urllib.request.urlopen(f"{mailpit_url}/api/v1/messages") as response:
+        return len(json.load(response).get("messages",[]))
+
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument("--base-url",required=True);args=parser.parse_args();public=Client(args.base_url);sibe=Client(args.base_url);kskdt=Client(args.base_url);guard=Client(args.base_url)
+    parser=argparse.ArgumentParser();parser.add_argument("--base-url",required=True);parser.add_argument("--mailpit-url",required=True);args=parser.parse_args();public=Client(args.base_url);sibe=Client(args.base_url);kskdt=Client(args.base_url);guard=Client(args.base_url)
     expect(public.request("GET","/api/public/simplified-applications/template.xlsx")[0],200,"template")
     status,boot=public.request("GET","/api/public/simplified-applications/bootstrap");expect(status,200,"bootstrap");csrf=boot["csrfToken"];file=xlsx_bytes();body,ctype=multipart({},file)
     status,preview=public.request("POST","/api/public/simplified-applications/preview",raw=body,headers={"Content-Type":ctype,"X-CSRF-Token":csrf});expect(status,200,"preview")
     if not preview["valid"] or len(preview["rows"])!=2:raise RuntimeError(f"preview invalid: {preview}")
     expect(public.request("GET","/api/sibe/settings/public-xlsx-applications")[0],401,"unauth setting")
     guard.login("guard.demo");expect(guard.request("GET","/api/sibe/settings/public-xlsx-applications")[0],403,"guard setting")
-    sibe.login("sibe.demo");expect(sibe.request("PATCH","/api/sibe/settings/public-xlsx-applications",{"requireEmailVerification":False})[0],200,"disable verification")
-    body,ctype=multipart({"applicantEmail":"xlsx-e2e@example.test","applicantName":"XLSX E2E","applicantOrganization":"Isolierter Test"},file)
+    sibe.login("sibe.demo");kskdt.login("kaskdt.demo")
+    expect(sibe.request("PATCH","/api/sibe/settings/public-xlsx-applications",{"requireEmailVerification":True})[0],200,"enable verification")
+    request_id=str(uuid.uuid4());fields={"applicantEmail":"xlsx-verify-e2e@example.test","applicantName":"XLSX Verify E2E","applicantOrganization":"Isolierter Test","clientRequestId":request_id}
+    body,ctype=multipart(fields,file)
+    status,pending=public.request("POST","/api/public/simplified-applications",raw=body,headers={"Content-Type":ctype,"X-CSRF-Token":csrf});expect(status,201,"verified-mode submit");expect(pending["status"],"pending_email_verification","pending verification state")
+    first_mail_count=mail_count(args.mailpit_url);expect(first_mail_count,1,"single verification mail")
+    retry_body,retry_ctype=multipart(fields,file)
+    status,retry=public.request("POST","/api/public/simplified-applications",raw=retry_body,headers={"Content-Type":retry_ctype,"X-CSRF-Token":csrf});expect(status,201,"idempotent submit retry");expect(retry["reference"],pending["reference"],"idempotent reference")
+    expect(mail_count(args.mailpit_url),first_mail_count,"retry mail count")
+    token=verification_token(args.mailpit_url)
+    status,verified=public.request("POST","/api/public/simplified-applications/verify",headers={"X-Application-Verification-Token":token});expect(status,200,"verification");expect(verified["status"],"submitted","verified state")
+    status,listed=kskdt.request("GET","/api/kaskdt/applications?status=open");expect(status,200,"verified application list")
+    if len([x for x in listed["applications"] if x["reference"]==pending["reference"]])!=1:raise RuntimeError("verified application missing from KSKdt list")
+
+    expect(sibe.request("PATCH","/api/sibe/settings/public-xlsx-applications",{"requireEmailVerification":False})[0],200,"disable verification")
+    body,ctype=multipart({"applicantEmail":"xlsx-e2e@example.test","applicantName":"XLSX E2E","applicantOrganization":"Isolierter Test","clientRequestId":str(uuid.uuid4())},file)
     status,created=public.request("POST","/api/public/simplified-applications",raw=body,headers={"Content-Type":ctype,"X-CSRF-Token":csrf});expect(status,201,"submit");expect(created["status"],"submitted","submitted state")
-    kskdt.login("kaskdt.demo");status,listed=kskdt.request("GET","/api/kaskdt/applications?status=open");expect(status,200,"list");matches=[x for x in listed["applications"] if x["reference"]==created["reference"]]
+    status,listed=kskdt.request("GET","/api/kaskdt/applications?status=open");expect(status,200,"list");matches=[x for x in listed["applications"] if x["reference"]==created["reference"]]
     if len(matches)!=1:raise RuntimeError("application missing from KSKdt list")
     app_id=matches[0]["id"];status,detail=kskdt.request("GET",f"/api/kaskdt/applications/{app_id}");expect(status,200,"detail")
     status,decision_payload=kskdt.request("POST",f"/api/kaskdt/applications/{app_id}/decisions",{"decision":"approved","applicationVersion":detail["version"],"entryIds":[detail["entries"][0]["id"]]})
