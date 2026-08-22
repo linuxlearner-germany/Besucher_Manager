@@ -59,16 +59,17 @@ test("simplified visit policy rejects unauthenticated requests with 401", async 
   assert.equal(access.statusCode, 401);
 });
 
-test("every simplified policy write endpoint uses the SiBe-only role guard", () => {
+test("the manual simplified visit endpoint uses the SiBe-only role guard", () => {
   const source = readFileSync(resolve(__dirname, "sibe.ts"), "utf8");
-  for (const path of [
-    "/api/sibe/visits/simplified",
-    "/api/sibe/visits/simplified-rule/preview",
-    "/api/sibe/visits/simplified-rule/import"
-  ]) {
-    const escapedPath = path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const endpoint = source.match(new RegExp(`sibeRouter\\.post\\("${escapedPath}"[\\s\\S]*?if \\(!user\\) return;`));
-    assert.ok(endpoint, `${path} must exist`);
-    assert.match(endpoint[0], /requireRole\(request, response, \["sibe"\]\)/, path);
-  }
+  const path = "/api/sibe/visits/simplified";
+  const escapedPath = path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const endpoint = source.match(new RegExp(`sibeRouter\\.post\\("${escapedPath}"[\\s\\S]*?if \\(!user\\) return;`));
+  assert.ok(endpoint, `${path} must exist`);
+  assert.match(endpoint[0], /requireRole\(request, response, \["sibe"\]\)/, path);
+});
+
+test("the simplified visit flow exposes only its manual write endpoint", () => {
+  const source = readFileSync(resolve(__dirname, "sibe.ts"), "utf8");
+  const simplifiedWriteRoutes = source.match(/sibeRouter\.post\("\/api\/sibe\/visits\/simplified[^"\n]*"/g);
+  assert.deepEqual(simplifiedWriteRoutes, ['sibeRouter.post("/api/sibe/visits/simplified"']);
 });

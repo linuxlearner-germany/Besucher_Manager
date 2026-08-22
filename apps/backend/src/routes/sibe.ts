@@ -7,11 +7,8 @@ import { COUNTRIES, getCountryName, normalizeCountryCode } from "../lib/countrie
 import { createSimplifiedSibeEntry } from "../lib/simplifiedSibeEntry";
 import { simplifiedSibeEntrySchema } from "../lib/simplifiedSibeEntrySchema";
 import { HOST_SIGNATURE_STATUS, VISIT_STATUS } from "../lib/visitWorkflow";
-import { createImportedPreRegistrations, ImportValidationError } from "../lib/visitImport";
-import type { ImportVisitInput } from "../lib/visitImportDefinitions";
-import { parseSimplifiedVisitorRulePdf } from "../lib/simplifiedVisitorRulePdf";
 import { getRequestIp, getRequestUserAgent, handleUnexpectedError, requireAnyPermission, requirePermission, requireRole, sendError, sendForbidden, sendValidationError } from "./shared";
-import { handleVisitorImportUpload, sendVisitorImportTemplateWorkbook, visitorImportUpload } from "./visitorImport";
+import { handleVisitorImportUpload, sendVisitorImportTemplateWorkbook } from "./visitorImport";
 
 export const sibeRouter = Router();
 
@@ -33,22 +30,6 @@ const nationalitySubscriptionsSchema = z.object({
     }
     return Array.from(new Set(normalized as string[]));
   })
-});
-const simplifiedVisitorRuleImportSchema = z.object({
-  gateId: z.string().uuid().optional().or(z.literal("")),
-  visitors: z.array(z.object({
-    sourceExcelRowNumber: z.number().int().positive().optional(),
-    firstName: z.string().trim().max(120).optional(),
-    lastName: z.string().trim().max(120).optional(),
-    company: z.string().trim().max(255).optional(),
-    nationalityCode: z.string().trim().max(8).optional(),
-    hostName: z.string().trim().max(255).optional(),
-    hostPhone: z.string().trim().max(80).optional(),
-    purpose: z.string().trim().max(500).optional(),
-    validFrom: z.string().trim().max(40).optional(),
-    validUntil: z.string().trim().max(40).optional(),
-    notes: z.string().trim().max(4000).optional()
-  })).min(1).max(45)
 });
 
 function csvEscape(value: unknown): string {
@@ -579,63 +560,6 @@ sibeRouter.post("/api/sibe/visits/import", async (request, response) => {
     createdBy: user,
     fallbackGateId: user.role === "guard" ? user.gateId : null
   });
-});
-
-sibeRouter.post("/api/sibe/visits/simplified-rule/preview", async (request, response) => {
-  const user = await requireRole(request, response, ["sibe"]);
-  if (!user) return;
-
-  return visitorImportUpload.single("file")(request, response, async (error) => {
-    if (error) {
-      return sendError(response, 400, "UPLOAD_ERROR", "Die PDF-Datei konnte nicht gelesen werden.");
-    }
-    const file = request.file;
-    if (!file || !/\.pdf$/i.test(file.originalname)) {
-      return sendValidationError(response, { fieldErrors: { file: ["Bitte eine PDF-Datei der vereinfachten Besucherregelung auswählen."] } });
-    }
-
-    try {
-      const preview = await parseSimplifiedVisitorRulePdf(file.buffer, file.originalname);
-      return response.json(preview);
-    } catch (parseError) {
-      return handleUnexpectedError(
-        response,
-        parseError,
-        "PDF_IMPORT_PARSE_FAILED",
-        "Die PDF-Datei konnte nicht als vereinfachte Besucherregelung gelesen werden."
-      );
-    }
-  });
-});
-
-sibeRouter.post("/api/sibe/visits/simplified-rule/import", async (request, response) => {
-  const user = await requireRole(request, response, ["sibe"]);
-  if (!user) return;
-
-  const parsed = simplifiedVisitorRuleImportSchema.safeParse(request.body);
-  if (!parsed.success) return sendValidationError(response, parsed.error.flatten());
-
-  try {
-    const imported = await createImportedPreRegistrations(parsed.data.visitors as ImportVisitInput[], {
-      source: "file_import",
-      createdBy: user,
-      submittedIpAddress: getRequestIp(request),
-      userAgent: getRequestUserAgent(request),
-      fallbackGateId: parsed.data.gateId || (user.role === "guard" ? user.gateId : null)
-    });
-    return response.status(201).json({
-      message: `${imported.imported} Besucher aus der vereinfachten Besucherregelung importiert.`,
-      ...imported
-    });
-  } catch (importError) {
-    if (importError instanceof ImportValidationError) {
-      return sendValidationError(response, { fieldErrors: { visitors: importError.messages } });
-    }
-    if (importError instanceof Error && importError.message === "invalid_import_nationalities") {
-      return sendValidationError(response, { fieldErrors: { visitors: ["Die Nationalität eines Besuchers ist ungültig."] } });
-    }
-    return handleUnexpectedError(response, importError, "IMPORT_ERROR", "Die Besucherregelung konnte nicht importiert werden.");
-  }
 });
 
 sibeRouter.get("/api/sibe/visits/import-template.xlsx", async (request, response) => {
