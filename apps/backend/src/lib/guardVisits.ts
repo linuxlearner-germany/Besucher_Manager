@@ -9,6 +9,7 @@ import { cleanOptional, isBlankOrPlaceholder } from "./textValues";
 import { loadCompletenessFieldConfig, type CompletenessFieldConfig } from "./fieldDefinitions";
 import { listSiteMapCatalog, selectSiteMapCatalogEntry } from "./siteMapCatalog";
 import { SITE_MAP_SETTING_KEY } from "./systemSettings";
+import { getApprovedSimplifiedEntriesForVisitors } from "./simplifiedRegistrations";
 import {
   assertCanCheckIn,
   assertCanCheckOut,
@@ -121,6 +122,14 @@ export type GuardVisitorSearchResult = {
   deviceAccessories: string | null;
   deviceDepositNote: string | null;
   history: GuardVisitorHistoryItem[];
+  simplifiedRegistrations: Array<{
+    id: string;
+    status: string;
+    finalValidFrom: string;
+    finalValidUntil: string;
+    barracksAreaName: string;
+    gateName: string | null;
+  }>;
 };
 
 export const GUARD_VISITOR_SEARCH_MIN_LENGTH = 2;
@@ -1147,13 +1156,15 @@ export async function searchVisitorsForGuard(
     ORDER BY lastVisitAt DESC, lastName ASC, firstName ASC
   `);
 
+  const approvals = await getApprovedSimplifiedEntriesForVisitors(user, result.recordset.map((row) => row.visitorId));
   return {
     page,
     limit,
     visitors: result.recordset.map((row) => ({
       ...row,
       nationalityName: getCountryName(row.nationalityCode),
-      history: row.historyJson ? JSON.parse(row.historyJson) as GuardVisitorHistoryItem[] : []
+      history: row.historyJson ? JSON.parse(row.historyJson) as GuardVisitorHistoryItem[] : [],
+      simplifiedRegistrations: (approvals.get(row.visitorId) ?? []) as GuardVisitorSearchResult["simplifiedRegistrations"]
     }))
   };
 }

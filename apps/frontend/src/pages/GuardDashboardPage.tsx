@@ -109,6 +109,14 @@ type GuardVisitorMatch = {
   deviceAccessories: string | null;
   deviceDepositNote: string | null;
   history: GuardVisitorHistoryItem[];
+  simplifiedRegistrations: Array<{
+    id: string;
+    status: string;
+    finalValidFrom: string;
+    finalValidUntil: string;
+    barracksAreaName: string;
+    gateName: string | null;
+  }>;
 };
 
 type RecentWalkInResult = {
@@ -980,6 +988,13 @@ export function GuardDashboardPage() {
                           <span>Bisherige Besuche: {visitor.visitCount}</span>
                           <span>Letzter Status: {visitor.lastVisitStatus ? formatStatus(visitor.lastVisitStatus) : "-"}</span>
                         </div>
+                        {visitor.simplifiedRegistrations?.map((approval) => (
+                          <Alert key={approval.id} type="success">
+                            <strong>Vereinfachte Besucheranmeldung – genehmigt</strong><br />
+                            Gültig: {formatDateOnly(approval.finalValidFrom)} – {formatDateOnly(approval.finalValidUntil)} · Kasernenbereich: {approval.barracksAreaName} · Wache: {approval.gateName || "alle Wachen im Bereich"}.<br />
+                            Ausweis lediglich prüfen; kein Besucherschein, kein regulärer Check-in/Check-out und keine Ausweishinterlegung erforderlich.
+                          </Alert>
+                        ))}
                         {visitor.history.length > 0 ? (
                           <div className="table-wrap">
                             <table className="data-table compact-table">

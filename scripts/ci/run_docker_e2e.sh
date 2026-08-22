@@ -69,3 +69,5 @@ python3 scripts/ops/verify_mvp_flow.py \
   --base-url "${BASE_URL}" \
   --admin-user admin \
   --admin-password Admin123!
+
+node scripts/ops/verify_simplified_registration_flow.mjs "${BASE_URL}"

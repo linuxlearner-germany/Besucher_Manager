@@ -9,6 +9,8 @@ import {
   assertCanUpdateHostSignature,
   canAccessGate,
   canManageGuardScopedVisit,
+  canReviewSimplifiedRegistrations,
+  canViewGuardSimplifiedVisitors,
   HOST_SIGNATURE_STATUS,
   VISIT_STATUS,
   type AuthenticatedUser
@@ -30,6 +32,19 @@ test("check-in only allows pre-registered visits", () => {
   assert.doesNotThrow(() => assertCanCheckIn(VISIT_STATUS.PRE_REGISTERED));
   assert.throws(() => assertCanCheckIn(VISIT_STATUS.CHECKED_IN));
   assert.throws(() => assertCanCheckIn(VISIT_STATUS.CHECKED_OUT));
+});
+
+test("simplified Excel registrations enforce the KasKdt and guard permission matrix", () => {
+  const kaskdt = makeUser("kaskdt", null);
+  const guard = makeUser("guard", "00000000-0000-0000-0000-000000000001");
+  assert.equal(canReviewSimplifiedRegistrations(kaskdt), true);
+  assert.equal(canReviewSimplifiedRegistrations(makeUser("admin", null)), false);
+  assert.equal(canReviewSimplifiedRegistrations(makeUser("sibe", null)), false);
+  assert.equal(canReviewSimplifiedRegistrations(guard), false);
+  assert.equal(canViewGuardSimplifiedVisitors(guard), true);
+  assert.equal(canViewGuardSimplifiedVisitors(makeUser("guard", null)), false);
+  assert.equal(canViewGuardSimplifiedVisitors(kaskdt), false);
+  assert.equal(canViewGuardSimplifiedVisitors(makeUser("admin", "00000000-0000-0000-0000-000000000001")), false);
 });
 
 test("check-out requires host signature confirmation", () => {

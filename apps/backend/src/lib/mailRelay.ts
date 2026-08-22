@@ -229,6 +229,87 @@ export async function sendGroupPreRegistrationConfirmation(payload: {
   });
 }
 
+export async function sendSimplifiedRegistrationConfirmation(payload: {
+  to: string;
+  requestNumber: string;
+  token: string;
+  visitorCount: number;
+}): Promise<boolean> {
+  const statusUrl = `${env.PUBLIC_BASE_URL.replace(/\/+$/, "")}/vereinfachte-besucheranmeldung/status`;
+  const sent = await sendMail({
+    to: [payload.to],
+    subject: `Besucher Manager: Vorgang ${payload.requestNumber} eingereicht`,
+    text: [
+      "Ihre vereinfachte Besucheranmeldung wurde eingereicht und wird durch den Kasernenkommandanten geprüft.", "",
+      `Vorgangsnummer: ${payload.requestNumber}`,
+      `Sicherheitstoken: ${payload.token}`,
+      `Anzahl Besucher: ${payload.visitorCount}`, "",
+      `Statusabfrage: ${statusUrl}`,
+      "Bewahren Sie Vorgangsnummer und Sicherheitstoken vertraulich auf."
+    ].join("\n"),
+    html: buildMailHtml({
+      heading: "Vereinfachte Besucheranmeldung eingereicht",
+      introduction: "Ihre Anmeldung wird durch den Kasernenkommandanten geprüft.",
+      details: [
+        { label: "Vorgangsnummer", value: payload.requestNumber },
+        { label: "Sicherheitstoken", value: payload.token },
+        { label: "Anzahl Besucher", value: String(payload.visitorCount) }
+      ],
+      detailUrl: statusUrl
+    })
+  });
+  if (!sent) throw new Error("simplified_registration_confirmation_not_sent");
+  return true;
+}
+
+export async function notifySimplifiedRegistrationNationalitySubscribers(payload: {
+  entryId: string;
+  requestNumber: string;
+  nationalityCode: string;
+  visitorName: string;
+  company: string;
+  proposedValidFrom: string;
+  proposedValidUntil: string;
+  areaName: string;
+  gateName: string | null;
+}): Promise<void> {
+  const countryCode = normalizeCountryCode(payload.nationalityCode);
+  if (!countryCode) return;
+  try {
+    const pool = await getPool();
+    const subscribers = await pool.request().input("entryId", sql.UniqueIdentifier, payload.entryId).input("countryCode", sql.NChar(2), countryCode)
+      .query<{ userId: string; email: string }>(`
+        DECLARE @newDeliveries TABLE(user_id UNIQUEIDENTIFIER NOT NULL);
+        INSERT INTO dbo.simplified_nationality_notification_deliveries(entry_id,user_id,country_code)
+        OUTPUT inserted.user_id INTO @newDeliveries(user_id)
+        SELECT @entryId,s.user_id,@countryCode FROM dbo.user_nationality_subscriptions s
+        INNER JOIN dbo.users u ON u.id=s.user_id
+        WHERE s.country_code=@countryCode AND u.role='sibe' AND u.is_active=1
+          AND NULLIF(LTRIM(RTRIM(u.user_email)),'') IS NOT NULL
+          AND NOT EXISTS(SELECT 1 FROM dbo.simplified_nationality_notification_deliveries d WHERE d.entry_id=@entryId AND d.user_id=s.user_id);
+        SELECT n.user_id AS userId,u.user_email AS email FROM @newDeliveries n INNER JOIN dbo.users u ON u.id=n.user_id;
+      `);
+    const countryName = getCountryName(countryCode) || countryCode;
+    for (const subscriber of subscribers.recordset) {
+      try {
+        const sent = await sendMail({
+          to: [subscriber.email],
+          subject: `Nationalitätsmeldung – Vereinfachte Besucheranmeldung: ${countryName} – ${payload.visitorName}`,
+          text: ["Vereinfachte Besucheranmeldung (noch nicht durch KasKdt genehmigt).", "", `Vorgang: ${payload.requestNumber}`, `Nationalität: ${countryName} (${countryCode})`, `Besucher: ${payload.visitorName}`, `Firma: ${payload.company}`, `Vorgeschlagener Zeitraum: ${payload.proposedValidFrom} bis ${payload.proposedValidUntil}`, `Kasernenbereich: ${payload.areaName}`, `Wache: ${payload.gateName || "Noch nicht festgelegt"}`].join("\n"),
+          html: buildMailHtml({ heading: "Nationalitätsmeldung – Vereinfachte Besucheranmeldung", introduction: "Die Anmeldung wurde importiert und ist noch nicht durch den KasKdt genehmigt.", details: [{ label: "Vorgang", value: payload.requestNumber }, { label: "Nationalität", value: `${countryName} (${countryCode})` }, { label: "Besucher", value: payload.visitorName }, { label: "Firma", value: payload.company }, { label: "Vorgeschlagener Zeitraum", value: `${payload.proposedValidFrom} bis ${payload.proposedValidUntil}` }, { label: "Kasernenbereich", value: payload.areaName }, { label: "Wache", value: payload.gateName || "Noch nicht festgelegt" }] })
+        });
+        if (!sent) throw new Error("simplified_nationality_notification_not_sent");
+        await pool.request().input("entryId",sql.UniqueIdentifier,payload.entryId).input("userId",sql.UniqueIdentifier,subscriber.userId).query(`UPDATE dbo.simplified_nationality_notification_deliveries SET sent_at=CASE WHEN ${sent ? "1" : "0"}=1 THEN SYSUTCDATETIME() ELSE sent_at END WHERE entry_id=@entryId AND user_id=@userId`);
+      } catch (error) {
+        await pool.request().input("entryId",sql.UniqueIdentifier,payload.entryId).input("userId",sql.UniqueIdentifier,subscriber.userId).query("UPDATE dbo.simplified_nationality_notification_deliveries SET failed_at=SYSUTCDATETIME() WHERE entry_id=@entryId AND user_id=@userId");
+        await writeErrorLog({ level:"warning",errorCode:"SIMPLIFIED_NATIONALITY_RECIPIENT_FAILED",message:"Nationalitätsmeldung zur vereinfachten Anmeldung konnte nicht zugestellt werden.",stackTrace:error instanceof Error?error.stack??null:null,metadataJson:JSON.stringify({entryId:payload.entryId,userId:subscriber.userId}) });
+      }
+    }
+  } catch(error) {
+    await writeErrorLog({ level:"warning",errorCode:"SIMPLIFIED_NATIONALITY_NOTIFICATION_FAILED",message:"Nationalitätsmeldungen zur vereinfachten Anmeldung konnten nicht verarbeitet werden.",stackTrace:error instanceof Error?error.stack??null:null,metadataJson:JSON.stringify({entryId:payload.entryId}) });
+  }
+}
+
 export async function sendDueVisitReminders(): Promise<number> {
   const pool = await getPool();
   const result = await pool.request().query<{
@@ -437,6 +518,7 @@ export async function notifyNationalitySubscribers(payload: {
           ].join("\n"),
           html: buildMailHtml({ heading: "Nationalitätsmeldung", introduction, details, detailUrl: buildVisitDetailUrl(payload.visitId) })
         });
+        if (!sent) throw new Error("simplified_nationality_notification_not_sent");
         await pool.request()
           .input("visitId", sql.UniqueIdentifier, payload.visitId)
           .input("userId", sql.UniqueIdentifier, subscriber.userId)

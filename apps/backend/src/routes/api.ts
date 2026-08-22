@@ -32,6 +32,7 @@ import { handleVisitorImportUpload, sendVisitorImportTemplateWorkbook } from "./
 import { adminRouter } from "./admin";
 import { guardRouter } from "./guard";
 import { sibeRouter } from "./sibe";
+import { simplifiedRegistrationsRouter } from "./simplifiedRegistrations";
 import { bundeswehrEmailSchema } from "../lib/emailPolicy";
 import { sendGroupPreRegistrationConfirmation } from "../lib/mailRelay";
 
@@ -508,6 +509,7 @@ apiRouter.post("/api/public/pre-registrations", async (request, response) => {
   }
 });
 
+apiRouter.use(simplifiedRegistrationsRouter);
 apiRouter.use(guardRouter);
 apiRouter.use(sibeRouter);
 apiRouter.use(adminRouter);

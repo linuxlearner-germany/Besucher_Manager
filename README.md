@@ -44,6 +44,16 @@ Die Anwendung bildet den vollständigen Ablauf vom Erfassen eines Besuchs über 
 - CSRF-Schutz und Rate-Limiting für öffentliche Endpunkte
 - Direkte Anlage als `pre_registered`; es gibt keinen Genehmigungsschritt
 
+### Vereinfachte Besucheranmeldung per Excel
+
+- Öffentlicher, ausschließlich dateibasierter XLSX-Import mit eigener kompakter Vorlage
+- Eine Datei erzeugt einen Vorgang mit gemeinsamer Vorgangsnummer und mehreren getrennt entscheidbaren Personen
+- Öffentliche Statusabfrage über Vorgangsnummer und nur gehasht gespeichertes Sicherheitstoken
+- KasKdt prüft und korrigiert die Personen, legt den endgültigen Zeitraum fest und genehmigt, lehnt ab oder widerruft einzeln
+- Wachen sehen ausschließlich genehmigte Freigaben im eigenen Wachen- beziehungsweise Kasernenbereich
+- Eine Freigabe ist kein regulärer Besuch: kein Besucherschein, kein Check-in/Check-out und keine Ausweishinterlegung
+- Nationalitätsmeldungen an SiBe werden bereits beim Import idempotent ausgelöst; SiBe ist nicht Genehmiger
+
 ### Wache
 
 - Tagesliste und Kalenderansicht
@@ -86,6 +96,7 @@ Die Anwendung bildet den vollständigen Ablauf vom Erfassen eines Besuchs über 
 - SMTP-Konfiguration und Testmails
 - Audit- und Fehlerlog
 - Systemstatus
+- Verwaltung von Kasernenbereichen und Zuordnung mehrerer Wachen je Bereich
 
 ## Besuchsworkflow
 
@@ -111,11 +122,11 @@ Nationalitätsmeldungen laufen unabhängig vom operativen Ablauf. Ein SMTP-Fehle
 
 | Rolle | Standardbereiche | Besonderheiten |
 |---|---|---|
-| Nicht angemeldet | Voranmeldung, Gruppenanmeldung, öffentlicher Excel-Import, Login | Öffentliche Endpunkte sind CSRF- und rate-limit-geschützt |
-| `guard` | Wache, Import | Wählt beim Login eine aktive Wache; Zugriff auf den eigenen Wachenbereich |
+| Nicht angemeldet | Voranmeldung, Gruppenanmeldung, öffentlicher Excel-Import, vereinfachte Excel-Anmeldung, Login | Öffentliche Endpunkte sind CSRF- und rate-limit-geschützt |
+| `guard` | Wache, vereinfachte Besucher, Import | Wählt beim Login eine aktive Wache; Zugriff auf den eigenen Wachen- und Kasernenbereich |
 | `sibe` | SiBe, Import | Kann Länder abonnieren, Besucher recherchieren und Besuche mit optionalen Personendaten vereinfacht erfassen |
-| `kaskdt` | KasKdt, Texte | Darf die vollständige Textverwaltung nutzen |
-| `admin` | Alle Bereiche | Benutzer-, System-, Feld-, Text- und Betriebsverwaltung |
+| `kaskdt` | KasKdt, vereinfachte Besucheranmeldungen, Texte | Entscheidet vereinfachte Freigaben und darf die Textverwaltung nutzen |
+| `admin` | Administration und bestehende Adminbereiche | Verwaltet unter anderem Kasernenbereiche und Wachen; besitzt nicht automatisch KasKdt-Genehmigungsrechte |
 | `custom` | Individuell | Menüs und fachliche Berechtigungen werden explizit gesetzt |
 
 Menüzugriffe und API-Berechtigungen werden serverseitig geprüft. Eine ausgeblendete Frontend-Navigation ist kein Ersatz für die API-Prüfung.
@@ -393,8 +404,11 @@ Die letzte Formatwahl wird im Browser gespeichert. Das gewählte Format wird im 
 | Route | Zweck |
 |---|---|
 | `/` | Öffentliche Einzel- und Gruppenanmeldung |
+| `/vereinfachte-besucheranmeldung` | Öffentliche vereinfachte Excel-Anmeldung |
+| `/vereinfachte-besucheranmeldung/status` | Statusabfrage mit Vorgangsnummer und Token |
 | `/login` | Anmeldung |
 | `/wache` | Wachenübersicht und Kalender |
+| `/wache/vereinfachte-besucher` | Genehmigte vereinfachte Besucher im eigenen Scope |
 | `/wache/besuche/:id` | Besuch bearbeiten |
 | `/wache/besuche/:id/druck` | A4-/A5-Druckansicht |
 | `/import` | Besucherimport |
@@ -403,8 +417,10 @@ Die letzte Formatwahl wird im Browser gespeichert. Das gewählte Format wird im 
 | `/sibe/besucher/vereinfacht` | Manuelle vereinfachte Besuchserfassung ausschließlich für SiBe |
 | `/sibe/benutzer` | Benutzerrecherche |
 | `/kaskdt` | KasKdt-Dashboard |
+| `/kaskdt/vereinfachte-anmeldungen` | Prüfung und Genehmigung vereinfachter Vorgänge |
 | `/kaskdt/texte` | Textverwaltung |
 | `/admin` | Administration |
+| `/admin/kasernenbereiche` | Kasernenbereiche verwalten und Wachen zuordnen |
 
 ### Ausgewählte APIs
 
@@ -413,6 +429,12 @@ Die letzte Formatwahl wird im Browser gespeichert. Das gewählte Format wird im 
 | `GET /health` | einfacher Healthcheck |
 | `GET /api/health` | API-Healthcheck |
 | `GET /api/countries` | vollständiger Länderkatalog |
+| `GET /api/public/simplified-registration/template` | vereinfachte XLSX-Vorlage |
+| `POST /api/public/simplified-registration/import` | einen öffentlichen Vorgang aus einer XLSX-Datei anlegen |
+| `POST /api/public/simplified-registration/status` | minimierten öffentlichen Vorgangsstatus abrufen |
+| `GET /api/kaskdt/simplified-registrations` | vereinfachte Vorgänge für KasKdt auflisten |
+| `GET /api/guard/simplified-visitors` | genehmigte Freigaben im Wachen-Scope suchen |
+| `GET /api/admin/barracks-areas` | Kasernenbereiche verwalten |
 | `GET /api/field-definitions?context=public` | aktive Felddefinitionen |
 | `GET /api/sibe/nationality-subscriptions` | eigenes Länderabonnement |
 | `PUT /api/sibe/nationality-subscriptions` | Länderabonnement speichern |
@@ -472,6 +494,10 @@ Wichtige Tabellen:
 | `nationality_notification_deliveries` | idempotente Versandereignisse |
 | `visitors` | Besucherstammdaten einschließlich Nationalität |
 | `visits` | konkrete Besuchsvorgänge |
+| `barracks_areas` | administrierbare Kasernenbereiche mit mehreren Wachen |
+| `simplified_registration_requests` | öffentliche Excel-Vorgänge mit Token-Hash und Gesamtstatus |
+| `simplified_registration_entries` | einzeln entscheidbare vereinfachte Besucherfreigaben |
+| `simplified_nationality_notification_deliveries` | idempotente SiBe-Nationalitätsmeldungen je Freigabe |
 | `field_definitions` | Systemfeld- und Pflichtfeldmatrix |
 | `badge_text_templates` | Texte für Besucherschein und Hinweise |
 | `site_maps` | Geländepläne |

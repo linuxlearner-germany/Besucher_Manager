@@ -17,6 +17,10 @@ import { SibeVisitorsPage } from "./pages/SibeVisitorsPage";
 import { TextManagementPage } from "./pages/TextManagementPage";
 import { VisitDetailPage } from "./pages/VisitDetailPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { PublicSimplifiedRegistrationPage } from "./pages/PublicSimplifiedRegistrationPage";
+import { GuardSimplifiedVisitorsPage } from "./pages/GuardSimplifiedVisitorsPage";
+import { CommanderSimplifiedRegistrationsPage } from "./pages/CommanderSimplifiedRegistrationsPage";
+import { BarracksAreasAdminPage } from "./pages/BarracksAreasAdminPage";
 import {
   AuthProvider,
   buildCheckoutStateFromVisit,
@@ -38,6 +42,8 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<PublicPreRegistrationPage />} />
+      <Route path="/vereinfachte-besucheranmeldung" element={<PublicSimplifiedRegistrationPage />} />
+      <Route path="/vereinfachte-besucheranmeldung/status" element={<PublicSimplifiedRegistrationPage statusOnly />} />
       <Route path="/login" element={<LoginPage />} />
       <Route
         path="/einstellungen"
@@ -55,6 +61,7 @@ function AppRoutes() {
           </RequireRoles>
         }
       />
+      <Route path="/wache/vereinfachte-besucher" element={<RequireRoles allowedRoles={["guard", "custom"]} requiredMenuKey="vereinfachte_besucher" requiredPermissions={["simplifiedRegistrations.guardView"]} redirectTo="/"><GuardSimplifiedVisitorsPage /></RequireRoles>} />
       <Route
         path="/wache/besuche/:id/druck"
         element={
@@ -111,6 +118,8 @@ function AppRoutes() {
           </RequireRoles>
         }
       />
+      <Route path="/kaskdt/vereinfachte-anmeldungen" element={<RequireRoles allowedRoles={["kaskdt", "custom"]} requiredMenuKey="vereinfachte_genehmigungen" requiredPermissions={["simplifiedRegistrations.review"]} redirectTo="/"><CommanderSimplifiedRegistrationsPage /></RequireRoles>} />
+      <Route path="/admin/kasernenbereiche" element={<RequireRoles allowedRoles={["admin", "custom"]} requiredMenuKey="admin" requiredPermissions={["admin.guards"]} redirectTo="/"><BarracksAreasAdminPage /></RequireRoles>} />
       <Route
         path="/texte"
         element={

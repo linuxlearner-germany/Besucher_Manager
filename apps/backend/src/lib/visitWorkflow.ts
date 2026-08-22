@@ -18,7 +18,7 @@ export type VisitStatus = (typeof VISIT_STATUS)[keyof typeof VISIT_STATUS] | "vo
 export type HostSignatureStatus = (typeof HOST_SIGNATURE_STATUS)[keyof typeof HOST_SIGNATURE_STATUS];
 
 export type AppRole = "admin" | "guard" | "sibe" | "kaskdt" | "custom";
-export const APP_MENU_KEYS = ["voranmeldung", "wache", "import", "admin", "sibe", "laenderbenachrichtigungen", "kaskdt", "texte"] as const;
+export const APP_MENU_KEYS = ["voranmeldung", "vereinfachte_anmeldung", "wache", "vereinfachte_besucher", "import", "admin", "sibe", "laenderbenachrichtigungen", "kaskdt", "vereinfachte_genehmigungen", "texte"] as const;
 export type AppMenuKey = (typeof APP_MENU_KEYS)[number];
 
 export type UserPermissions = {
@@ -30,6 +30,9 @@ export type UserPermissions = {
     sibe: boolean;
     commander: boolean;
     texts: boolean;
+    simplifiedPublic: boolean;
+    simplifiedGuard: boolean;
+    simplifiedReview: boolean;
   };
   visits: {
     read: boolean;
@@ -42,6 +45,10 @@ export type UserPermissions = {
   };
   imports: {
     execute: boolean;
+  };
+  simplifiedRegistrations: {
+    review: boolean;
+    guardView: boolean;
   };
   texts: { manage: boolean };
   dashboards: {
@@ -65,6 +72,7 @@ export type UserPermissionsInput = {
   menu?: Partial<UserPermissions["menu"]>;
   visits?: Partial<UserPermissions["visits"]>;
   imports?: Partial<UserPermissions["imports"]>;
+  simplifiedRegistrations?: Partial<UserPermissions["simplifiedRegistrations"]>;
   texts?: Partial<UserPermissions["texts"]>;
   dashboards?: Partial<UserPermissions["dashboards"]>;
   admin?: Partial<UserPermissions["admin"]>;
@@ -81,6 +89,8 @@ export const APP_PERMISSION_KEYS = [
   "visits.checkOut",
   "visits.printBadge",
   "imports.execute",
+  "simplifiedRegistrations.review",
+  "simplifiedRegistrations.guardView",
   "texts.manage",
   "dashboards.sibe",
   "dashboards.commander",
@@ -104,7 +114,10 @@ function createEmptyPermissions(): UserPermissions {
       admin: false,
       sibe: false,
       commander: false,
-      texts: false
+      texts: false,
+      simplifiedPublic: false,
+      simplifiedGuard: false,
+      simplifiedReview: false
     },
     visits: {
       read: false,
@@ -118,6 +131,7 @@ function createEmptyPermissions(): UserPermissions {
     imports: {
       execute: false
     },
+    simplifiedRegistrations: { review: false, guardView: false },
     texts: { manage: false },
     dashboards: {
       sibe: false,
@@ -146,7 +160,10 @@ function withAllPermissions(): UserPermissions {
       admin: true,
       sibe: true,
       commander: true,
-      texts: true
+      texts: true,
+      simplifiedPublic: true,
+      simplifiedGuard: true,
+      simplifiedReview: true
     },
     visits: {
       read: true,
@@ -160,6 +177,7 @@ function withAllPermissions(): UserPermissions {
     imports: {
       execute: true
     },
+    simplifiedRegistrations: { review: true, guardView: true },
     texts: { manage: true },
     dashboards: {
       sibe: true,
@@ -188,6 +206,7 @@ function mergePermissions(base: UserPermissions, override?: UserPermissionsInput
     menu: { ...base.menu, ...(override.menu ?? {}) },
     visits: { ...base.visits, ...(override.visits ?? {}) },
     imports: { ...base.imports, ...(override.imports ?? {}) },
+    simplifiedRegistrations: { ...base.simplifiedRegistrations, ...(override.simplifiedRegistrations ?? {}) },
     texts: { ...base.texts, ...(override.texts ?? {}) },
     dashboards: { ...base.dashboards, ...(override.dashboards ?? {}) },
     admin: { ...base.admin, ...(override.admin ?? {}) },
@@ -197,17 +216,17 @@ function mergePermissions(base: UserPermissions, override?: UserPermissionsInput
 
 const defaultMenuAccessByRole: Record<AppRole, AppMenuKey[]> = {
   admin: [...APP_MENU_KEYS],
-  guard: ["voranmeldung", "wache", "import"],
+  guard: ["voranmeldung", "wache", "vereinfachte_besucher", "import"],
   sibe: ["sibe", "import", "laenderbenachrichtigungen"],
-  kaskdt: ["kaskdt", "texte", "import"],
+  kaskdt: ["kaskdt", "vereinfachte_genehmigungen", "texte", "import"],
   custom: []
 };
 
 const allowedMenuAccessByRole: Record<AppRole, AppMenuKey[]> = {
   admin: [...APP_MENU_KEYS],
-  guard: ["voranmeldung", "wache", "import"],
+  guard: ["voranmeldung", "wache", "vereinfachte_besucher", "import"],
   sibe: ["import", "sibe", "laenderbenachrichtigungen"],
-  kaskdt: ["kaskdt", "texte", "import"],
+  kaskdt: ["kaskdt", "vereinfachte_genehmigungen", "texte", "import"],
   custom: [...APP_MENU_KEYS]
 };
 
@@ -232,7 +251,10 @@ export function getDefaultPermissionsForRole(role: AppRole): UserPermissions {
           admin: false,
           sibe: false,
           commander: false,
-          texts: false
+          texts: false,
+          simplifiedPublic: false,
+          simplifiedGuard: true,
+          simplifiedReview: false
         },
         visits: {
           read: true,
@@ -245,7 +267,8 @@ export function getDefaultPermissionsForRole(role: AppRole): UserPermissions {
         },
         imports: {
           execute: true
-        }
+        },
+        simplifiedRegistrations: { review: false, guardView: true }
       });
     case "sibe":
       return mergePermissions(createEmptyPermissions(), {
@@ -256,7 +279,10 @@ export function getDefaultPermissionsForRole(role: AppRole): UserPermissions {
           sibe: true,
           admin: false,
           commander: false,
-          texts: false
+          texts: false,
+          simplifiedPublic: false,
+          simplifiedGuard: false,
+          simplifiedReview: false
         },
         visits: {
           read: true,
@@ -284,7 +310,10 @@ export function getDefaultPermissionsForRole(role: AppRole): UserPermissions {
           admin: false,
           sibe: false,
           commander: true,
-          texts: true
+          texts: true,
+          simplifiedPublic: false,
+          simplifiedGuard: false,
+          simplifiedReview: true
         },
         visits: {
           read: true,
@@ -297,6 +326,7 @@ export function getDefaultPermissionsForRole(role: AppRole): UserPermissions {
         },
         texts: { manage: true },
         imports: { execute: true },
+        simplifiedRegistrations: { review: true, guardView: false },
         dashboards: {
           sibe: false,
           commander: true
@@ -324,6 +354,9 @@ export function normalizeUserPermissions(
   normalized.menu.sibe = nextMenuAccess.includes("sibe");
   normalized.menu.commander = nextMenuAccess.includes("kaskdt");
   normalized.menu.texts = nextMenuAccess.includes("texte");
+  normalized.menu.simplifiedPublic = nextMenuAccess.includes("vereinfachte_anmeldung");
+  normalized.menu.simplifiedGuard = nextMenuAccess.includes("vereinfachte_besucher");
+  normalized.menu.simplifiedReview = nextMenuAccess.includes("vereinfachte_genehmigungen");
 
   return normalized;
 }
@@ -352,6 +385,14 @@ export function hasPermission(user: Pick<AuthenticatedUser, "role" | "permission
   }
 
   return readPermissionValue(user.permissions, permission);
+}
+
+export function canReviewSimplifiedRegistrations(user: AuthenticatedUser): boolean {
+  return user.role === "kaskdt" || (user.role === "custom" && hasPermission(user, "simplifiedRegistrations.review"));
+}
+
+export function canViewGuardSimplifiedVisitors(user: AuthenticatedUser): boolean {
+  return Boolean(user.gateId && (user.role === "guard" || (user.role === "custom" && hasPermission(user, "simplifiedRegistrations.guardView"))));
 }
 
 export type AuthenticatedUser = {
