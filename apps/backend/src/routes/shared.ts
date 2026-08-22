@@ -27,6 +27,15 @@ export function issueCsrfToken(response: Response, currentToken?: string): strin
   return token;
 }
 
+export function hasValidCsrfToken(request: Request): boolean {
+  const cookieToken = request.signedCookies?.[csrfCookieName];
+  const headerToken = request.get("x-csrf-token");
+  if (typeof cookieToken !== "string" || typeof headerToken !== "string") return false;
+  const cookie = Buffer.from(cookieToken);
+  const header = Buffer.from(headerToken);
+  return cookie.length === header.length && crypto.timingSafeEqual(cookie, header);
+}
+
 export function getRequestIp(request: Request): string {
   return request.ip || request.socket.remoteAddress || "unknown";
 }

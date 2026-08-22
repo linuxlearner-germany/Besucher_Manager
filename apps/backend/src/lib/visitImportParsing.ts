@@ -127,7 +127,7 @@ function resolveRelationshipTarget(relationshipsPath: string, target: string): s
   return path.posix.normalize(path.posix.join(path.posix.dirname(worksheetPath), target));
 }
 
-async function removeDanglingCommentRelationships(buffer: Buffer): Promise<Buffer> {
+export async function removeDanglingCommentRelationships(buffer: Buffer): Promise<Buffer> {
   const archive = await JSZip.loadAsync(buffer);
   let changed = false;
 
@@ -164,6 +164,13 @@ async function removeDanglingCommentRelationships(buffer: Buffer): Promise<Buffe
   }
 
   return archive.generateAsync({ type: "nodebuffer" });
+}
+
+export async function loadExcelWorkbook(buffer: Buffer): Promise<ExcelJS.Workbook> {
+  const workbook = new ExcelJS.Workbook();
+  const readableBuffer = await removeDanglingCommentRelationships(buffer);
+  await workbook.xlsx.load(readableBuffer as never);
+  return workbook;
 }
 
 function isEmptyRow(row: unknown[]): boolean {
@@ -226,9 +233,7 @@ export async function parseExcelBuffer(buffer: Buffer): Promise<ImportVisitInput
 }
 
 export async function parseExcelBufferWithMetadata(buffer: Buffer): Promise<ParsedExcelImport> {
-  const workbook = new ExcelJS.Workbook();
-  const readableBuffer = await removeDanglingCommentRelationships(buffer);
-  await workbook.xlsx.load(readableBuffer as never);
+  const workbook = await loadExcelWorkbook(buffer);
   const worksheet = workbook.worksheets[0];
   if (!worksheet) {
     return { rows: [], ignoredSampleRows: 0 };

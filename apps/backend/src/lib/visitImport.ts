@@ -11,6 +11,9 @@ import { getVisitCompleteness } from "./guardVisits";
 import type { ImportVisitInput, ImportVisitResult, ImportVisitsResult } from "./visitImportDefinitions";
 import { validateImportedPreRegistrationRows, type PublicFieldKey } from "./publicPreRegistrationSchema";
 import { VISIT_STATUS, type AuthenticatedUser } from "./visitWorkflow";
+import { normalizeIdDocumentType, normalizeImportDateOnly } from "./importNormalization";
+
+export { normalizeIdDocumentType, normalizeImportDateOnly } from "./importNormalization";
 
 export const MISSING_IMPORT_VALUE = "[fehlt]";
 
@@ -26,51 +29,6 @@ export function isMissingImportValue(value: string | null | undefined): boolean 
 
 function requiredOrPlaceholder(value: string | null | undefined): string {
   return cleanRequired(value, MISSING_IMPORT_VALUE);
-}
-
-export function normalizeImportDateOnly(value: string | null | undefined): string | null {
-  const cleaned = cleanOptional(value);
-  if (!cleaned) {
-    return null;
-  }
-
-  const germanDate = cleaned.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
-  if (germanDate) {
-    const [, day, month, year] = germanDate;
-    const normalized = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
-    const parsed = new Date(`${normalized}T00:00:00.000Z`);
-    return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === normalized ? normalized : null;
-  }
-
-  const direct = new Date(cleaned);
-  if (!Number.isNaN(direct.getTime())) {
-    return direct.toISOString().slice(0, 10);
-  }
-
-  return null;
-}
-
-function normalizeIdDocumentType(value: string | null | undefined): string | null {
-  const cleaned = cleanOptional(value);
-  if (!cleaned) {
-    return null;
-  }
-
-  const normalized = cleaned.toLowerCase().replace(/[\s_-]+/g, "");
-  if (["personalausweis", "identitycard", "ausweis", "idcard"].includes(normalized)) {
-    return "identity_card";
-  }
-  if (["reisepass", "pass", "passport"].includes(normalized)) {
-    return "passport";
-  }
-  if (["dienstausweis", "serviceid", "servicecard"].includes(normalized)) {
-    return "service_id";
-  }
-  if (["sonstiges", "sonstige", "other"].includes(normalized)) {
-    return "other";
-  }
-
-  return cleaned;
 }
 
 function todayDateOnly(): string {

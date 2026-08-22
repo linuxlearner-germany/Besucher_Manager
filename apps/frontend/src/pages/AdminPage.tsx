@@ -51,12 +51,15 @@ export function AdminPage() {
   const { setBackgroundMode, setBackgroundImageUrl } = useThemeMode();
   const menuOptions: Array<{ key: AppMenuKey; label: string }> = [
     { key: "voranmeldung", label: "Voranmeldung" },
+    { key: "vereinfachte_anmeldung", label: "Öffentliche vereinfachte Anmeldung" },
     { key: "wache", label: "Wache" },
+    { key: "vereinfachte_besucher", label: "Vereinfachte Besucher (Wache)" },
     { key: "import", label: "Import" },
     { key: "admin", label: "Admin" },
     { key: "sibe", label: "SiBe" },
     { key: "laenderbenachrichtigungen", label: "Länderbenachrichtigungen" },
     { key: "kaskdt", label: "KasKdt" },
+    { key: "vereinfachte_genehmigungen", label: "Vereinfachte Genehmigungen" },
     { key: "texte", label: "Texte" }
   ];
   const permissionGroups: Array<{ title: string; items: Array<{ key: AppPermission; label: string }> }> = [
@@ -76,6 +79,8 @@ export function AdminPage() {
       title: "Verwaltung",
       items: [
         { key: "imports.execute", label: "Import ausführen" },
+        { key: "simplifiedRegistrations.review", label: "Vereinfachte Anmeldungen genehmigen" },
+        { key: "simplifiedRegistrations.guardView", label: "Vereinfachte Besucher im Wachen-Scope sehen" },
         { key: "dashboards.sibe", label: "SiBe-Übersicht" },
         { key: "dashboards.commander", label: "KasKdt-Lagebild" },
         { key: "admin.users", label: "Benutzer verwalten" },

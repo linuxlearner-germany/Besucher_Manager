@@ -55,6 +55,7 @@ const gateCreateSchema = z.object({
   location: z.string().trim().min(1).max(255),
   isActive: z.boolean().optional(),
   sortOrder: z.number().int().min(0).max(9999).optional()
+  , barracksAreaId: z.string().uuid().optional().or(z.literal(""))
 });
 const gateUpdateSchema = gateCreateSchema.partial();
 const permissionFlagsSchema = z.object({
@@ -66,6 +67,7 @@ const permissionFlagsSchema = z.object({
     sibe: z.boolean().optional(),
     commander: z.boolean().optional(),
     texts: z.boolean().optional()
+    , simplifiedPublic: z.boolean().optional(), simplifiedGuard: z.boolean().optional(), simplifiedReview: z.boolean().optional()
   }).optional(),
   visits: z.object({
     read: z.boolean().optional(),
@@ -79,6 +81,7 @@ const permissionFlagsSchema = z.object({
   imports: z.object({
     execute: z.boolean().optional()
   }).optional(),
+  simplifiedRegistrations: z.object({ review: z.boolean().optional(), guardView: z.boolean().optional() }).optional(),
   texts: z.object({ manage: z.boolean().optional() }).optional(),
   dashboards: z.object({
     sibe: z.boolean().optional(),
@@ -431,8 +434,9 @@ adminRouter.get("/api/admin/gates", async (request, response) => {
       location: string | null;
       isActive: boolean;
       sortOrder: number;
+      barracksAreaId: string | null;
     }>(`
-      SELECT id, name, description, location, is_active AS isActive, sort_order AS sortOrder
+      SELECT id, name, description, location, is_active AS isActive, sort_order AS sortOrder, barracks_area_id AS barracksAreaId
       FROM dbo.gates
       ORDER BY sort_order ASC, name ASC
     `);
@@ -458,10 +462,11 @@ adminRouter.post("/api/admin/gates", async (request, response) => {
       .input("location", data.location?.trim() || null)
       .input("isActive", data.isActive ?? true)
       .input("sortOrder", data.sortOrder ?? 100)
+      .input("barracksAreaId", sql.UniqueIdentifier, data.barracksAreaId || null)
       .query<{ id: string }>(`
-        INSERT INTO dbo.gates(name, description, location, is_active, sort_order)
+        INSERT INTO dbo.gates(name, description, location, is_active, sort_order, barracks_area_id)
         OUTPUT inserted.id
-        VALUES(@name, @description, @location, @isActive, @sortOrder)
+        VALUES(@name, @description, @location, @isActive, @sortOrder, @barracksAreaId)
       `);
 
     await writeAuditLog({ user: user.username, action: "ADMIN_GATE_CREATED", objectType: "gate", objectId: created.recordset[0].id, ipAddress: getRequestIp(request) });
@@ -495,6 +500,8 @@ adminRouter.put("/api/admin/gates/:id", async (request, response) => {
       .input("location", data.location?.trim() || null)
       .input("isActive", data.isActive)
       .input("sortOrder", data.sortOrder)
+      .input("barracksAreaId", sql.UniqueIdentifier, data.barracksAreaId === undefined ? null : data.barracksAreaId || null)
+      .input("updateBarracksArea", sql.Bit, data.barracksAreaId === undefined ? 0 : 1)
       .query(`
         UPDATE dbo.gates
         SET
@@ -513,6 +520,7 @@ adminRouter.put("/api/admin/gates/:id", async (request, response) => {
             ELSE deactivated_by
           END,
           sort_order = COALESCE(@sortOrder, sort_order),
+          barracks_area_id = CASE WHEN @updateBarracksArea = 1 THEN @barracksAreaId ELSE barracks_area_id END,
           updated_at = SYSUTCDATETIME()
         WHERE id = @id
       `);
