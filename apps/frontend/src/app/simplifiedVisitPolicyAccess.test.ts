@@ -19,8 +19,10 @@ describe("simplified visit policy access", () => {
     expect(source).toContain('label: "Vereinfachte Besuchsregelung", visible: canUseSimplifiedVisitPolicy(user)');
   });
 
-  it("renders the PDF policy input only for SiBe", () => {
-    const source = readFileSync(`${srcRoot}/pages/ImportPage.tsx`, "utf8");
-    expect(source).toContain('user?.role === "sibe" ? <section className="panel import-card">');
+  it("keeps the simplified visit flow on the manual entry page", () => {
+    const importSource = readFileSync(`${srcRoot}/pages/ImportPage.tsx`, "utf8");
+    const entrySource = readFileSync(`${srcRoot}/pages/SibeSimplifiedEntryPage.tsx`, "utf8");
+    expect(importSource).not.toContain("SimplifiedRule");
+    expect(entrySource).not.toContain('to="/import"');
   });
 });
