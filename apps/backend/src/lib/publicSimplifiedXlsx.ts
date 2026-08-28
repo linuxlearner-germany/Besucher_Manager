@@ -1,7 +1,7 @@
 import ExcelJS from "exceljs";
 import JSZip from "jszip";
 import { findCountryCode } from "./countries";
-import { listActiveGates } from "./publicPreRegistrations";
+import { listActiveGates, type GateSummary } from "./publicPreRegistrations";
 import { cleanOptional } from "./textValues";
 import { normalizeImportDateOnly } from "./visitImport";
 import type { ImportVisitInput } from "./visitImportDefinitions";
@@ -75,24 +75,29 @@ export async function assertSafePublicXlsx(buffer: Buffer): Promise<void> {
   }
 }
 
-export async function parseAndValidatePublicApplicationXlsx(buffer: Buffer): Promise<{ rows: PublicApplicationPreviewRow[]; ignoredSampleRows: number; valid: boolean }> {
+export async function parseAndValidatePublicApplicationXlsx(buffer: Buffer, activeGates?: readonly GateSummary[]): Promise<{ rows: PublicApplicationPreviewRow[]; ignoredSampleRows: number; valid: boolean }> {
   await assertSafePublicXlsx(buffer);
   const parsed = await parseExcelBufferWithMetadata(buffer);
   if (parsed.rows.length === 0) throw new PublicXlsxError("EMPTY_XLSX", "Die Datei enthält keine Besucher.");
   if (parsed.rows.length > PUBLIC_XLSX_LIMITS.maxRows) throw new PublicXlsxError("ROW_LIMIT", `Die Datei enthält mehr als ${PUBLIC_XLSX_LIMITS.maxRows} Personen.`);
-  const gates = await listActiveGates();
+  const gates = activeGates ?? await listActiveGates();
   const rows = parsed.rows.map((row, index) => normalizeRow(row, index, gates));
   return { rows, ignoredSampleRows: parsed.ignoredSampleRows, valid: rows.every((row) => row.errors.length === 0) };
 }
 
-function normalizeRow(row: ImportVisitInput, index: number, gates: Awaited<ReturnType<typeof listActiveGates>>): PublicApplicationPreviewRow {
+function normalizeRow(row: ImportVisitInput, index: number, gates: readonly GateSummary[]): PublicApplicationPreviewRow {
   const rowNumber = row.sourceExcelRowNumber ?? index + 2;
   const errors: string[] = [];
   const warnings: string[] = [];
   const gateNameInput = optional(row.gateName, 120);
   const gate = gates.find((candidate) => candidate.name.localeCompare(gateNameInput ?? "", "de", { sensitivity: "base" }) === 0);
   if (!gateNameInput) errors.push("Wache fehlt.");
-  else if (!gate) errors.push(`Wache „${gateNameInput}“ ist nicht aktiv oder unbekannt.`);
+  else if (!gate) {
+    const examples = gates.slice(0, 3).map((candidate) => `„${candidate.name}“`).join(", ");
+    errors.push(examples
+      ? `Wache „${gateNameInput}“ ist nicht aktiv oder unbekannt. Erwartet wird der exakte Name einer aktiven Wache, zum Beispiel ${examples}.`
+      : `Wache „${gateNameInput}“ ist nicht aktiv oder unbekannt. Derzeit ist keine aktive Wache auswählbar.`);
+  }
   const validFrom = normalizeImportDateOnly(row.validFrom);
   const validUntil = normalizeImportDateOnly(row.validUntil);
   if (!optional(row.validFrom, 40)) errors.push("Gültig von fehlt.");
@@ -102,7 +107,7 @@ function normalizeRow(row: ImportVisitInput, index: number, gates: Awaited<Retur
   if (validFrom && validUntil && validUntil < validFrom) errors.push("Gültig bis liegt vor Gültig von.");
   const nationality = optional(row.nationalityCode, 120);
   const nationalityCode = nationality ? findCountryCode(nationality) : null;
-  if (nationality && !nationalityCode) errors.push("Nationalität ist ungültig.");
+  if (nationality && !nationalityCode) errors.push(`Nationalität „${nationality}“ ist ungültig. Erwartet wird ein zweistelliger ISO-Code oder ein deutscher Ländername, zum Beispiel „DE“ oder „Deutschland“.`);
   const birthDate = normalizeImportDateOnly(row.birthDate);
   if (optional(row.birthDate, 40) && !birthDate) errors.push("Geburtsdatum ist ungültig.");
   const email = optional(row.email, 255)?.toLowerCase() ?? null;
