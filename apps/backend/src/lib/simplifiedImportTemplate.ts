@@ -17,7 +17,11 @@ export async function buildSimplifiedImportTemplate(gates: readonly SimplifiedTe
   const references = workbook.addWorksheet("Referenzwerte", { state: "veryHidden" });
   const gateNames = [...new Set(gates.map((gate) => gate.name.trim()).filter(Boolean))]
     .sort((left, right) => left.localeCompare(right, "de"));
-  const nationalityValues = COUNTRIES.flatMap((country) => [country.name, country.code]);
+  const nationalityValues = [...new Set(
+    COUNTRIES.flatMap((country) => [country.name, country.code])
+      .map((value) => value.trim())
+      .filter(Boolean)
+  )];
 
   sheet.addRow([...SIMPLIFIED_XLSX_HEADERS]);
   const headerRow = sheet.getRow(1);
