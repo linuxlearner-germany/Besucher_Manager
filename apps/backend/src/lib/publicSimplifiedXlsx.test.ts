@@ -68,6 +68,7 @@ test("simplified XLSX template exposes parser-compatible headers and reference v
   assert.equal(sheet.getCell("A2").dataValidation.formulae?.[0], "SimplifiedActiveGates");
   assert.equal(sheet.getCell("E2").dataValidation.formulae?.[0], "SimplifiedNationalities");
   assert.equal(references.getColumn(1).values.includes("Deutschland"), true);
+  assert.equal(references.getColumn(1).values.includes("DE"), true);
   assert.deepEqual((references.getColumn(2).values as unknown[]).filter(Boolean).slice(1), ["Hauptwache", "Nordtor"]);
   assert.equal(references.state, "veryHidden");
 });
@@ -80,6 +81,13 @@ test("generated simplified XLSX template roundtrips through its import validatio
   assert.equal(result.rows[0]?.rowNumber, SIMPLIFIED_XLSX_DATA_START_ROW);
   assert.equal(result.rows[0]?.nationalityCode, "DE");
   assert.equal(result.rows[0]?.gateId, activeGates[0]?.id);
+});
+
+test("generated simplified XLSX template accepts an ISO country code from its validation source", async () => {
+  const { parseAndValidatePublicApplicationXlsx } = await import("./publicSimplifiedXlsx.js");
+  const result = await parseAndValidatePublicApplicationXlsx(await filledGeneratedTemplate(["DE"]), activeGates);
+  assert.equal(result.valid, true);
+  assert.equal(result.rows[0]?.nationalityCode, "DE");
 });
 
 test("simplified XLSX accepts German country names offered by the template", async () => {

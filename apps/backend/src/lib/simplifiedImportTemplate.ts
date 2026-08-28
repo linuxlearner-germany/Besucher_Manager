@@ -17,6 +17,7 @@ export async function buildSimplifiedImportTemplate(gates: readonly SimplifiedTe
   const references = workbook.addWorksheet("Referenzwerte", { state: "veryHidden" });
   const gateNames = [...new Set(gates.map((gate) => gate.name.trim()).filter(Boolean))]
     .sort((left, right) => left.localeCompare(right, "de"));
+  const nationalityValues = COUNTRIES.flatMap((country) => [country.name, country.code]);
 
   sheet.addRow([...SIMPLIFIED_XLSX_HEADERS]);
   const headerRow = sheet.getRow(1);
@@ -29,9 +30,9 @@ export async function buildSimplifiedImportTemplate(gates: readonly SimplifiedTe
   sheet.autoFilter = { from: "A1", to: "Q1" };
 
   references.addRow(["Akzeptierte Nationalitäten", "Aktive Wachen"]);
-  COUNTRIES.forEach((country, index) => { references.getCell(index + 2, 1).value = country.name; });
+  nationalityValues.forEach((nationality, index) => { references.getCell(index + 2, 1).value = nationality; });
   gateNames.forEach((gateName, index) => { references.getCell(index + 2, 2).value = gateName; });
-  workbook.definedNames.add(`Referenzwerte!$A$2:$A$${COUNTRIES.length + 1}`, "SimplifiedNationalities");
+  workbook.definedNames.add(`Referenzwerte!$A$2:$A$${nationalityValues.length + 1}`, "SimplifiedNationalities");
   if (gateNames.length > 0) workbook.definedNames.add(`Referenzwerte!$B$2:$B$${gateNames.length + 1}`, "SimplifiedActiveGates");
 
   const lastDataRow = SIMPLIFIED_XLSX_DATA_START_ROW + 499;
