@@ -226,7 +226,7 @@ export function PublicSimplifiedApplicationPage() {
               <Card>
                 <h3>XLSX-Vorlage herunterladen</h3>
                 <p>Laden Sie zuerst die aktuelle Vorlage herunter und tragen Sie dort die Besucher ein.</p>
-                <p>Mindestens Wache und Besuchszeitraum müssen angegeben werden. Weitere Personen- und Kontaktdaten können ergänzt werden.</p>
+                <p>Mindestens Wache und Besuchszeitraum müssen angegeben werden. Die Vorlage enthält Auswahllisten für die aktuell aktiven Wachen und die akzeptierten Nationalitäten.</p>
                 <a className="button-link" href="/api/public/simplified-applications/template.xlsx" download onClick={() => setTemplateDownloaded(true)}>XLSX-Vorlage herunterladen</a>
                 {templateDownloaded ? <p className="application-inline-status" aria-live="polite"><span aria-hidden="true">✓</span> Download wurde gestartet.</p> : null}
               </Card>
@@ -270,7 +270,7 @@ export function PublicSimplifiedApplicationPage() {
                     <span className="preview-count-error"><strong>{summary?.errorRows}</strong> mit Fehlern</span>
                   </div>
                 </div>
-                {!preview.valid ? <Alert type="error">Der Antrag kann noch nicht abgesendet werden. Bitte korrigieren Sie die markierten Zeilen in der XLSX-Datei und laden Sie sie erneut hoch.</Alert> : null}
+                {!preview.valid ? <Alert type="error">Der Antrag kann noch nicht abgesendet werden. Bitte korrigieren Sie die in der Vorschau aufgeführten Fehler in Ihrer XLSX-Datei und laden Sie sie erneut hoch.</Alert> : null}
                 <DataTable>
                   <thead><tr><th>Excel-Zeile</th><th>Name</th><th>Firma</th><th>Zeitraum</th><th>Wache</th><th>Ansprechpartner</th><th>Prüfstatus</th></tr></thead>
                   <tbody>{preview.rows.map((row) => {

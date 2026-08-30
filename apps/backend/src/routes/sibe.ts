@@ -10,6 +10,7 @@ import { HOST_SIGNATURE_STATUS, VISIT_STATUS } from "../lib/visitWorkflow";
 import { createImportedPreRegistrations, ImportValidationError, validateSimplifiedImportRows } from "../lib/visitImport";
 import { parseExcelBufferWithMetadata } from "../lib/visitImportParsing";
 import { buildSimplifiedImportTemplate } from "../lib/simplifiedImportTemplate";
+import { listActiveGates } from "../lib/publicPreRegistrations";
 import { getRequestIp, getRequestUserAgent, handleUnexpectedError, requireAnyPermission, requirePermission, requireRole, sendError, sendForbidden, sendValidationError } from "./shared";
 import { handleVisitorImportPreview, handleVisitorImportUpload, sendVisitorImportTemplateWorkbook, visitorImportUpload } from "./visitorImport";
 
@@ -670,7 +671,7 @@ sibeRouter.post("/api/sibe/visits/simplified-rule/import", async (request, respo
 sibeRouter.get("/api/sibe/visits/simplified-rule/template.xlsx", async (request, response) => {
   const user = await requireRole(request, response, ["sibe"]);
   if (!user) return;
-  const buffer = await buildSimplifiedImportTemplate();
+  const buffer = await buildSimplifiedImportTemplate(await listActiveGates());
   response.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   response.setHeader("Content-Disposition", 'attachment; filename="vereinfachte-erfassung-vorlage.xlsx"');
   return response.send(buffer);

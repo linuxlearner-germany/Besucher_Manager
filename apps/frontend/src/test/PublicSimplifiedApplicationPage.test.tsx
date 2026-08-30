@@ -38,6 +38,8 @@ describe("PublicSimplifiedApplicationPage", () => {
     expect(await screen.findByRole("heading", { name: "Vereinfachte Besucherregelung" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Vereinfachte Besucherregelung" })).toHaveClass("active-link");
     expect(screen.queryByText("XLSX-Antrag")).not.toBeInTheDocument();
+    expect(screen.getByText(/Auswahllisten für die aktuell aktiven Wachen und die akzeptierten Nationalitäten/)).toBeInTheDocument();
+    expect(screen.queryByText(/markierten Zeilen in der XLSX-Datei/)).not.toBeInTheDocument();
     expect(screen.queryByText("Ihre Kontaktdaten")).not.toBeInTheDocument();
 
     const file = new File(["xlsx"], "eine-sehr-lange-dateibezeichnung-fuer-besucher-im-august.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
