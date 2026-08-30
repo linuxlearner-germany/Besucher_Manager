@@ -12,6 +12,8 @@ uploads/*
 !uploads/ui-backgrounds/
 !uploads/ui-backgrounds/**
 archive/backups/
+runtime/time-sync/*
+!runtime/time-sync/.gitkeep
 config/mail-relay.yml
 config/ca/*.crt
 config/ca/*.pem

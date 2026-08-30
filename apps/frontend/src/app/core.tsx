@@ -619,6 +619,27 @@ export type AdminWorkflowSettings = {
   };
 };
 
+export type AdminTimeSyncSettings = {
+  enabled: boolean;
+  server: string;
+  status: {
+    state: "applied" | "failed";
+    server: string;
+    enabled: boolean;
+    message: string;
+    appliedAt: string;
+  } | null;
+};
+
+export type NtpCheckResult = {
+  server: string;
+  address: string;
+  checkedAt: string;
+  stratum: number;
+  offsetMs: number;
+  roundTripMs: number;
+};
+
 export type AdminUiBackground = {
   id: string;
   name: string;
