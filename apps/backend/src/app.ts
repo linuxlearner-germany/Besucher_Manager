@@ -10,6 +10,7 @@ import { healthRouter } from "./routes/health";
 import { loadSystemSettings, WORKFLOW_SETTING_KEYS } from "./lib/systemSettings";
 import { resolveAuthenticatedUser, sendError } from "./routes/shared";
 import { hasRole } from "./lib/visitWorkflow";
+import { utcDateTimeJsonReplacer } from "./lib/utcDateTimeJson";
 
 function resolveFrontendDist(): string {
   return path.resolve(__dirname, "../../frontend/dist");
@@ -40,6 +41,7 @@ export function createApp() {
   const frontendDist = resolveFrontendDist();
 
   app.disable("x-powered-by");
+  app.set("json replacer", utcDateTimeJsonReplacer);
   if (env.appTrustProxy !== undefined) {
     app.set("trust proxy", env.appTrustProxy);
   }
