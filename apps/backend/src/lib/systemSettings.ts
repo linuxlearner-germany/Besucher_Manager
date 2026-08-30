@@ -19,6 +19,12 @@ export const WORKFLOW_SETTING_KEYS = {
   uiBackgroundImageOriginalFileName: "ui_background_image_original_file_name",
   securityNumber: "security_number",
   maintenanceMode: "maintenance_mode",
+  adminAlertEnabled: "admin_alert_enabled",
+  adminAlertRecipients: "admin_alert_recipients",
+  adminAlertMinimumLevel: "admin_alert_minimum_level",
+  adminAlertLastScanAt: "admin_alert_last_scan_at",
+  adminAlertLastSentAt: "admin_alert_last_sent_at",
+  adminAlertLastCount: "admin_alert_last_count",
   publicXlsxRequireEmailVerification: "public_xlsx_require_email_verification"
 } as const;
 
