@@ -3,6 +3,7 @@ import { createApp } from "./app";
 import { env } from "./config/env";
 import { sendDueVisitReminders } from "./lib/mailRelay";
 import { runRetentionCleanup } from "./lib/retentionCleanup";
+import { runAdminErrorAlertJob } from "./lib/adminAlerting";
 
 export async function startServer() {
   fs.mkdirSync(env.uploadDir, { recursive: true });
@@ -14,6 +15,9 @@ export async function startServer() {
   const runRetentionJob = () => { void runRetentionCleanup().catch((error) => console.error("retention cleanup failed", error)); };
   runRetentionJob();
   setInterval(runRetentionJob, 24 * 60 * 60 * 1000).unref();
+  const runAlertJob = () => { void runAdminErrorAlertJob().catch((error) => console.error("admin error alert job failed", error)); };
+  runAlertJob();
+  setInterval(runAlertJob, 5 * 60 * 1000).unref();
   app.listen(env.APP_PORT, env.APP_HOST, () => {
     console.log(`besucher-manager listening on http://${env.APP_HOST}:${env.APP_PORT}`);
   });

@@ -27,6 +27,7 @@ import {
   type AppMenuKey,
   AppLayout,
   type AdminAuditLog,
+  type AdminAlertSettings,
   type AdminBadgeText,
   type AdminErrorLog,
   type AdminLogDetail,
@@ -118,6 +119,8 @@ export function AdminPage() {
   } | null>(null);
   const [workflowSettings, setWorkflowSettings] = useState<AdminWorkflowSettings | null>(null);
   const [maintenanceMode, setMaintenanceMode] = useState(false);
+  const [adminAlertSettings, setAdminAlertSettings] = useState<AdminAlertSettings | null>(null);
+  const [adminAlertBusy, setAdminAlertBusy] = useState(false);
   const [uiBackgrounds, setUiBackgrounds] = useState<AdminUiBackground[]>([]);
   const [uiBackgroundSaving, setUiBackgroundSaving] = useState(false);
   const [workflowPassword, setWorkflowPassword] = useState("");
@@ -339,7 +342,7 @@ export function AdminPage() {
     setError(null);
     setAdminDataLoading(true);
     try {
-      const [gatePayload, userPayload, textPayload, statusPayload, workflowPayload, backgroundPayload, siteMapPayload, siteMapsPayload, fieldDefinitionsPayload, retentionPayload, maintenancePayload] = await Promise.all([
+      const [gatePayload, userPayload, textPayload, statusPayload, workflowPayload, backgroundPayload, siteMapPayload, siteMapsPayload, fieldDefinitionsPayload, retentionPayload, maintenancePayload, adminAlertPayload] = await Promise.all([
         fetchJson<{ gates: AdminGate[] }>("/api/admin/gates", { method: "GET", headers: {} }),
         fetchJson<{ users: AdminUser[] }>("/api/admin/users", { method: "GET", headers: {} }),
         fetchJson<{ texts: AdminBadgeText[] }>("/api/texts", { method: "GET", headers: {} }),
@@ -350,7 +353,8 @@ export function AdminPage() {
         fetchJson<{ siteMaps: AdminSiteMap[] }>("/api/admin/site-maps", { method: "GET", headers: {} }),
         fetchJson<{ definitions: AdminFieldDefinition[] }>("/api/admin/field-definitions", { method: "GET", headers: {} }),
         fetchJson<AdminRetentionSettings>("/api/admin/data-retention", { method: "GET", headers: {} }),
-        fetchJson<{ maintenanceMode: boolean }>("/api/admin/system-settings/maintenance", { method: "GET", headers: {} })
+        fetchJson<{ maintenanceMode: boolean }>("/api/admin/system-settings/maintenance", { method: "GET", headers: {} }),
+        fetchJson<AdminAlertSettings>("/api/admin/system-settings/admin-alerts", { method: "GET", headers: {} })
       ]);
 
       setGates(gatePayload.gates);
@@ -367,6 +371,7 @@ export function AdminPage() {
       setFieldDefinitions(fieldDefinitionsPayload.definitions);
       setRetentionSettings(retentionPayload);
       setMaintenanceMode(maintenancePayload.maintenanceMode);
+      setAdminAlertSettings(adminAlertPayload);
       setEditableGates(Object.fromEntries(gatePayload.gates.map((gate) => [gate.id, { ...gate }])));
       setEditableUsers(Object.fromEntries(userPayload.users.map((entry) => [entry.id, {
         ...entry,
@@ -408,6 +413,48 @@ export function AdminPage() {
     await fetchJson("/api/admin/system-settings/maintenance", { method: "PUT", body: JSON.stringify({ maintenanceMode: value }) });
     setMaintenanceMode(value);
     setMessage(value ? "Wartungsmodus aktiviert." : "Wartungsmodus deaktiviert.");
+  }
+
+  async function saveAdminAlertSettings() {
+    if (!adminAlertSettings) return;
+    setAdminAlertBusy(true);
+    try {
+      const payload = await fetchJson<AdminAlertSettings>("/api/admin/system-settings/admin-alerts", {
+        method: "PUT",
+        body: JSON.stringify({
+          enabled: adminAlertSettings.enabled,
+          recipients: adminAlertSettings.recipients,
+          minimumLevel: adminAlertSettings.minimumLevel
+        })
+      });
+      setAdminAlertSettings(payload);
+      setMessage("Admin-Fehlerbenachrichtigungen gespeichert.");
+      setError(null);
+    } catch (apiError) {
+      setError((apiError as ApiError).message || "Admin-Fehlerbenachrichtigungen konnten nicht gespeichert werden.");
+    } finally {
+      setAdminAlertBusy(false);
+    }
+  }
+
+  async function sendAdminAlertTest() {
+    if (!adminAlertSettings?.recipients.length) {
+      setError("Bitte geben Sie mindestens eine Empfängeradresse ein.");
+      return;
+    }
+    setAdminAlertBusy(true);
+    try {
+      const payload = await fetchJson<{ message: string }>("/api/admin/system-settings/admin-alerts/test", {
+        method: "POST",
+        body: JSON.stringify({ recipients: adminAlertSettings.recipients })
+      });
+      setMessage(payload.message);
+      setError(null);
+    } catch (apiError) {
+      setError((apiError as ApiError).message || "Die Testbenachrichtigung konnte nicht versendet werden.");
+    } finally {
+      setAdminAlertBusy(false);
+    }
   }
 
   useEffect(() => {
@@ -1267,6 +1314,11 @@ export function AdminPage() {
             sendWorkflowTestMail={sendWorkflowTestMail}
             maintenanceMode={maintenanceMode}
             saveMaintenanceMode={saveMaintenanceMode}
+            adminAlertSettings={adminAlertSettings}
+            setAdminAlertSettings={setAdminAlertSettings}
+            adminAlertBusy={adminAlertBusy}
+            saveAdminAlertSettings={saveAdminAlertSettings}
+            sendAdminAlertTest={sendAdminAlertTest}
           />
         ) : null}
 

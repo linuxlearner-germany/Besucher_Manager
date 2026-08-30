@@ -126,6 +126,18 @@ tar -czf "archive/backups/uploads_$(date +%Y%m%d_%H%M%S).tar.gz" -C uploads .
 
 ## Pruefung nach dem Update
 
+### Admin-Fehlerbenachrichtigungen
+
+Unter **Admin → System → Admin-Fehlerbenachrichtigungen** können bis zu 20 Empfängeradressen hinterlegt werden. Der Versand verwendet das konfigurierte E-Mail-Relay.
+
+- `Nur Fehler` meldet neue Einträge der Stufe `error`.
+- `Fehler und Warnungen` nimmt zusätzlich Hintergrundjob- und Zustellwarnungen auf.
+- Neue Ereignisse werden alle fünf Minuten gesammelt und nach Fehlercode, Pfad und Nachricht gruppiert.
+- Bei einem Relay-Ausfall bleibt der Verarbeitungscursor stehen; nach Wiederherstellung wird die ausstehende Zusammenfassung erneut versucht.
+- Der Versandfehler des Alertings selbst wird nur in das Containerlog geschrieben, damit keine rekursive Fehlerschleife entsteht.
+
+Nach der Konfiguration zuerst **Testmail senden** verwenden. Ein Ausfall des E-Mail-Relays selbst kann nicht über dasselbe Relay zugestellt werden und muss weiterhin über Container-/Infrastrukturmonitoring überwacht werden.
+
 ### Containerstatus
 
 ```bash

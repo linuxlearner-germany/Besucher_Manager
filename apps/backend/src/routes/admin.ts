@@ -41,6 +41,7 @@ import {
 import { getUiBackgroundById, listUiBackgrounds } from "../lib/uiBackgrounds";
 import { listSiteMapCatalog, selectSiteMapCatalogEntry } from "../lib/siteMapCatalog";
 import { APP_VERSION } from "../lib/appVersion";
+import { loadAdminAlertSettings, saveAdminAlertSettings, sendAdminAlertTest } from "../lib/adminAlerting";
 import { parseRedactedLogJson, readLogMetadataString, redactSensitiveText } from "../lib/logRedaction";
 import {
   countUserReferences,
@@ -246,6 +247,18 @@ const uiBackgroundSelectionSchema = z.object({
 const mailRelayTestSchema = z.object({
   recipient: z.string().trim().email("Ungueltige Testadresse.").optional().or(z.literal("")),
   kind: z.enum(["relay", "nationality", "pre_registration", "reminder"]).optional()
+});
+const adminAlertSettingsSchema = z.object({
+  enabled: z.boolean(),
+  recipients: z.array(z.string().trim().email("Ungültige E-Mail-Adresse.").max(320)).max(20),
+  minimumLevel: z.enum(["error", "warning"])
+}).superRefine((value, context) => {
+  if (value.enabled && value.recipients.length === 0) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["recipients"], message: "Mindestens eine Empfängeradresse ist erforderlich." });
+  }
+});
+const adminAlertTestSchema = z.object({
+  recipients: z.array(z.string().trim().email("Ungültige E-Mail-Adresse.").max(320)).min(1).max(20)
 });
 
 export const apiRouter = Router();
@@ -2244,6 +2257,69 @@ adminRouter.put("/api/admin/system-settings/maintenance", async (request, respon
   await upsertSystemSettings({ [WORKFLOW_SETTING_KEYS.maintenanceMode]: String(parsed.data.maintenanceMode) });
   await writeAuditLog({ user: admin.username, userId: admin.id, action: "MAINTENANCE_MODE_UPDATED", objectType: "system_setting", objectId: "maintenance_mode", ipAddress: getRequestIp(request), metadata: parsed.data });
   return response.json({ success: true, ...parsed.data });
+});
+
+adminRouter.get("/api/admin/system-settings/admin-alerts", async (request, response) => {
+  const admin = await requirePermission(request, response, "admin.system");
+  if (!admin) return;
+  try {
+    return response.json(await loadAdminAlertSettings());
+  } catch (error) {
+    return handleUnexpectedError(response, error, "ADMIN_ALERT_SETTINGS_FAILED", "Die Admin-Benachrichtigungen konnten nicht geladen werden.");
+  }
+});
+
+adminRouter.put("/api/admin/system-settings/admin-alerts", async (request, response) => {
+  const admin = await requirePermission(request, response, "admin.system");
+  if (!admin) return;
+  const parsed = adminAlertSettingsSchema.safeParse(request.body ?? {});
+  if (!parsed.success) return sendValidationError(response, parsed.error.flatten());
+  try {
+    const previous = await loadAdminAlertSettings();
+    const settings = await saveAdminAlertSettings(parsed.data);
+    await writeAuditLog({
+      user: admin.username,
+      userId: admin.id,
+      action: "ADMIN_ERROR_ALERT_SETTINGS_UPDATED",
+      objectType: "system_setting",
+      objectId: WORKFLOW_SETTING_KEYS.adminAlertEnabled,
+      ipAddress: getRequestIp(request),
+      userAgent: getRequestUserAgent(request),
+      metadata: {
+        old_enabled: previous.enabled,
+        new_enabled: settings.enabled,
+        old_recipient_count: previous.recipients.length,
+        new_recipient_count: settings.recipients.length,
+        minimum_level: settings.minimumLevel
+      }
+    });
+    return response.json(settings);
+  } catch (error) {
+    return handleUnexpectedError(response, error, "ADMIN_ALERT_SETTINGS_FAILED", "Die Admin-Benachrichtigungen konnten nicht gespeichert werden.");
+  }
+});
+
+adminRouter.post("/api/admin/system-settings/admin-alerts/test", async (request, response) => {
+  const admin = await requirePermission(request, response, "admin.system");
+  if (!admin) return;
+  const parsed = adminAlertTestSchema.safeParse(request.body ?? {});
+  if (!parsed.success) return sendValidationError(response, parsed.error.flatten());
+  try {
+    await sendAdminAlertTest(parsed.data.recipients);
+    await writeAuditLog({
+      user: admin.username,
+      userId: admin.id,
+      action: "ADMIN_ERROR_ALERT_TEST_SENT",
+      objectType: "system_setting",
+      objectId: WORKFLOW_SETTING_KEYS.adminAlertEnabled,
+      ipAddress: getRequestIp(request),
+      userAgent: getRequestUserAgent(request),
+      metadata: { recipient_count: parsed.data.recipients.length }
+    });
+    return response.json({ message: "Testbenachrichtigung wurde versendet." });
+  } catch (error) {
+    return sendError(response, 503, "ADMIN_ALERT_TEST_FAILED", "Die Testbenachrichtigung konnte nicht versendet werden. Bitte prüfen Sie das E-Mail-Relay.");
+  }
 });
 
 adminRouter.post("/api/admin/system-settings/workflow-email/test", async (request, response) => {

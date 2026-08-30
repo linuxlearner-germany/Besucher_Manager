@@ -2,6 +2,7 @@ import { type ChangeEvent, type Dispatch, type DragEvent, type FormEvent, type S
 import { Alert, Card, DataTable, FormField } from "../ui";
 import {
   type AdminAuditLog,
+  type AdminAlertSettings,
   type AdminErrorLog,
   type AdminLogDetail,
   type AdminFieldDefinition,
@@ -856,7 +857,12 @@ export function AdminSystemSection({
   saveSecurityNumber,
   sendWorkflowTestMail,
   maintenanceMode,
-  saveMaintenanceMode
+  saveMaintenanceMode,
+  adminAlertSettings,
+  setAdminAlertSettings,
+  adminAlertBusy,
+  saveAdminAlertSettings,
+  sendAdminAlertTest
 }: {
   systemStatus: {
     app: string;
@@ -884,6 +890,11 @@ export function AdminSystemSection({
   sendWorkflowTestMail: () => Promise<void>;
   maintenanceMode: boolean;
   saveMaintenanceMode: (value: boolean) => Promise<void>;
+  adminAlertSettings: AdminAlertSettings | null;
+  setAdminAlertSettings: Dispatch<SetStateAction<AdminAlertSettings | null>>;
+  adminAlertBusy: boolean;
+  saveAdminAlertSettings: () => Promise<void>;
+  sendAdminAlertTest: () => Promise<void>;
 }) {
   return (
     <Card>
@@ -902,6 +913,56 @@ export function AdminSystemSection({
         <div className="detail-grid">
           <div><dt>Datenbank</dt><dd>{systemStatus?.dbHost || "-"} / {systemStatus?.dbName || "-"}</dd></div>
           <div><dt>Anwendung</dt><dd>v{systemStatus?.appVersion || "-"} · Schema v{systemStatus?.schemaVersion ?? "-"}</dd></div>
+        </div>
+
+        <div className="panel">
+          <h3>Admin-Fehlerbenachrichtigungen</h3>
+          <p>Neue Backendfehler werden alle fünf Minuten gesammelt und nach Fehlerart zusammengefasst. So entsteht keine E-Mail pro Einzelereignis.</p>
+          <div className="form-grid two-columns">
+            <FormField label="Empfängeradressen">
+              <textarea
+                rows={5}
+                value={adminAlertSettings?.recipients.join("\n") ?? ""}
+                onChange={(event) => setAdminAlertSettings((current) => current ? {
+                  ...current,
+                  recipients: event.target.value.split(/[\n,;]+/).map((value) => value.trim()).filter(Boolean)
+                } : current)}
+                placeholder={"admin1@example.org\nadmin2@example.org"}
+                autoComplete="off"
+              />
+            </FormField>
+            <div>
+              <label className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={adminAlertSettings?.enabled ?? false}
+                  onChange={(event) => setAdminAlertSettings((current) => current ? { ...current, enabled: event.target.checked } : current)}
+                />
+                Fehlerbenachrichtigungen aktivieren
+              </label>
+              <FormField label="Mindeststufe">
+                <select
+                  value={adminAlertSettings?.minimumLevel ?? "error"}
+                  onChange={(event) => setAdminAlertSettings((current) => current ? {
+                    ...current,
+                    minimumLevel: event.target.value as "error" | "warning"
+                  } : current)}
+                >
+                  <option value="error">Nur Fehler</option>
+                  <option value="warning">Fehler und Warnungen</option>
+                </select>
+              </FormField>
+            </div>
+          </div>
+          <div className="feedback info">
+            {adminAlertSettings?.lastSentAt
+              ? `Letzter Versand: ${formatDateTime(adminAlertSettings.lastSentAt)} · ${adminAlertSettings.lastCount} Ereignisse`
+              : "Bisher wurde keine Fehlerzusammenfassung versendet."}
+          </div>
+          <div className="row-actions action-bar">
+            <button type="button" className="secondary-button" disabled={adminAlertBusy} onClick={() => void sendAdminAlertTest()}>{adminAlertBusy ? "Bitte warten …" : "Testmail senden"}</button>
+            <button type="button" disabled={adminAlertBusy} onClick={() => void saveAdminAlertSettings()}>Benachrichtigungen speichern</button>
+          </div>
         </div>
 
         <div className="panel">

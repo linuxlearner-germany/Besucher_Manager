@@ -619,6 +619,14 @@ export type AdminWorkflowSettings = {
   };
 };
 
+export type AdminAlertSettings = {
+  enabled: boolean;
+  recipients: string[];
+  minimumLevel: "error" | "warning";
+  lastSentAt: string | null;
+  lastCount: number;
+};
+
 export type AdminUiBackground = {
   id: string;
   name: string;
