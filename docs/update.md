@@ -56,6 +56,33 @@ Das Script `npm run ops:update` fuehrt standardmaessig diese Schritte aus:
 - App mit aktuellen Basisimages neu bauen
 - Container neu starten und den Healthcheck abwarten
 
+## Backup-Internetzeitserver
+
+Die Admin-Weboberfläche kann unter **System → Backup-Internetzeitserver** eine zusätzliche Chrony-Quelle verwalten. Der App-Container verändert die Host-Uhr nicht selbst. Ein einmalig installierter, eingeschränkter systemd-Helfer übernimmt ausschließlich die validierte Quelldatei.
+
+Voraussetzungen auf dem Docker-Host:
+
+- `chrony` und `chronyc` sind installiert;
+- `/etc/chrony/chrony.conf` enthält `sourcedir /etc/chrony/sources.d`;
+- ausgehendes NTP über UDP-Port 123 ist erlaubt.
+
+Helfer nach dem ersten Deployment dieser Funktion einmalig installieren:
+
+```bash
+cd /opt/Besucher_Manager
+sudo bash scripts/ops/install_time_sync_helper.sh
+systemctl status besucher-manager-time-sync.path
+```
+
+Danach kann ein Admin beispielsweise `pool.ntp.org` eintragen, den Server testen und aktivieren. Direkte IP-Adressen, URLs, lokale Namen und Shellzeichen werden abgelehnt. Der Host-Helfer schreibt nur `/etc/chrony/sources.d/besucher-manager.sources`, lädt die Chrony-Quellen neu und meldet Erfolg oder Fehler an die Weboberfläche zurück.
+
+Prüfung auf dem Host:
+
+```bash
+chronyc sources -v
+systemctl status besucher-manager-time-sync.service
+```
+
 ## Manueller Update-Ablauf
 
 Wenn du den Ablauf selbst einzeln steuern willst:

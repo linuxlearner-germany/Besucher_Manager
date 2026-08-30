@@ -41,6 +41,8 @@ import {
 import { getUiBackgroundById, listUiBackgrounds } from "../lib/uiBackgrounds";
 import { listSiteMapCatalog, selectSiteMapCatalogEntry } from "../lib/siteMapCatalog";
 import { APP_VERSION } from "../lib/appVersion";
+import { checkNtpServer, isValidNtpServer, normalizeNtpServer } from "../lib/ntpClient";
+import { loadTimeSyncSettings, saveTimeSyncSettings } from "../lib/timeSync";
 import { parseRedactedLogJson, readLogMetadataString, redactSensitiveText } from "../lib/logRedaction";
 import {
   countUserReferences,
@@ -246,6 +248,21 @@ const uiBackgroundSelectionSchema = z.object({
 const mailRelayTestSchema = z.object({
   recipient: z.string().trim().email("Ungueltige Testadresse.").optional().or(z.literal("")),
   kind: z.enum(["relay", "nationality", "pre_registration", "reminder"]).optional()
+});
+const timeSyncSettingsSchema = z.object({
+  enabled: z.boolean(),
+  server: z.string().trim().max(253)
+}).superRefine((value, context) => {
+  if ((value.enabled || value.server) && !isValidNtpServer(value.server)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["server"],
+      message: "Bitte geben Sie einen gültigen öffentlichen DNS-Hostnamen ein, z. B. pool.ntp.org."
+    });
+  }
+});
+const timeSyncTestSchema = z.object({
+  server: z.string().trim().max(253).refine(isValidNtpServer, "Ungültiger Internet-Zeitserver.")
 });
 
 export const apiRouter = Router();
@@ -2244,6 +2261,81 @@ adminRouter.put("/api/admin/system-settings/maintenance", async (request, respon
   await upsertSystemSettings({ [WORKFLOW_SETTING_KEYS.maintenanceMode]: String(parsed.data.maintenanceMode) });
   await writeAuditLog({ user: admin.username, userId: admin.id, action: "MAINTENANCE_MODE_UPDATED", objectType: "system_setting", objectId: "maintenance_mode", ipAddress: getRequestIp(request), metadata: parsed.data });
   return response.json({ success: true, ...parsed.data });
+});
+
+adminRouter.get("/api/admin/system-settings/time-sync", async (request, response) => {
+  const admin = await requirePermission(request, response, "admin.system");
+  if (!admin) return;
+  try {
+    return response.json(await loadTimeSyncSettings());
+  } catch (error) {
+    return handleUnexpectedError(response, error, "TIME_SYNC_SETTINGS_FAILED", "Die Zeitserver-Einstellung konnte nicht geladen werden.");
+  }
+});
+
+adminRouter.put("/api/admin/system-settings/time-sync", async (request, response) => {
+  const admin = await requirePermission(request, response, "admin.system");
+  if (!admin) return;
+  const parsed = timeSyncSettingsSchema.safeParse(request.body ?? {});
+  if (!parsed.success) return sendValidationError(response, parsed.error.flatten());
+
+  try {
+    const previous = await loadTimeSyncSettings();
+    const settings = await saveTimeSyncSettings(parsed.data.enabled, parsed.data.server);
+    await writeAuditLog({
+      user: admin.username,
+      userId: admin.id,
+      action: "BACKUP_NTP_SERVER_UPDATED",
+      objectType: "system_setting",
+      objectId: WORKFLOW_SETTING_KEYS.backupNtpServer,
+      ipAddress: getRequestIp(request),
+      userAgent: getRequestUserAgent(request),
+      metadata: {
+        old_enabled: previous.enabled,
+        old_server: previous.server,
+        new_enabled: settings.enabled,
+        new_server: settings.server
+      }
+    });
+    return response.json(settings);
+  } catch (error) {
+    return handleUnexpectedError(response, error, "TIME_SYNC_SETTINGS_FAILED", "Der Internet-Zeitserver konnte nicht gespeichert werden.");
+  }
+});
+
+adminRouter.post("/api/admin/system-settings/time-sync/test", async (request, response) => {
+  const admin = await requirePermission(request, response, "admin.system");
+  if (!admin) return;
+  const parsed = timeSyncTestSchema.safeParse(request.body ?? {});
+  if (!parsed.success) return sendValidationError(response, parsed.error.flatten());
+
+  const server = normalizeNtpServer(parsed.data.server);
+  try {
+    const result = await checkNtpServer(server);
+    await writeAuditLog({
+      user: admin.username,
+      userId: admin.id,
+      action: "BACKUP_NTP_SERVER_TESTED",
+      objectType: "system_setting",
+      objectId: WORKFLOW_SETTING_KEYS.backupNtpServer,
+      ipAddress: getRequestIp(request),
+      userAgent: getRequestUserAgent(request),
+      metadata: { server, result: "success", stratum: result.stratum, offset_ms: result.offsetMs }
+    });
+    return response.json(result);
+  } catch (error) {
+    await writeAuditLog({
+      user: admin.username,
+      userId: admin.id,
+      action: "BACKUP_NTP_SERVER_TESTED",
+      objectType: "system_setting",
+      objectId: WORKFLOW_SETTING_KEYS.backupNtpServer,
+      ipAddress: getRequestIp(request),
+      userAgent: getRequestUserAgent(request),
+      metadata: { server, result: "failure" }
+    }).catch(() => undefined);
+    return sendError(response, 400, "NTP_SERVER_UNREACHABLE", "Der Internet-Zeitserver antwortet nicht mit einer gültigen NTP-Antwort.");
+  }
 });
 
 adminRouter.post("/api/admin/system-settings/workflow-email/test", async (request, response) => {

@@ -34,11 +34,13 @@ import {
   type AdminGate,
   type AdminSiteMap,
   type AdminUiBackground,
+  type AdminTimeSyncSettings,
   type AdminWorkflowSettings,
   type AdminUser,
   type ApiError,
   type EditableAdminUser,
   type FieldConfigExportPayload,
+  type NtpCheckResult,
   fetchJson,
   getDefaultPermissionsForRole,
   getAllowedMenuAccessForRole,
@@ -118,6 +120,9 @@ export function AdminPage() {
   } | null>(null);
   const [workflowSettings, setWorkflowSettings] = useState<AdminWorkflowSettings | null>(null);
   const [maintenanceMode, setMaintenanceMode] = useState(false);
+  const [timeSyncSettings, setTimeSyncSettings] = useState<AdminTimeSyncSettings | null>(null);
+  const [ntpCheckResult, setNtpCheckResult] = useState<NtpCheckResult | null>(null);
+  const [timeSyncBusy, setTimeSyncBusy] = useState(false);
   const [uiBackgrounds, setUiBackgrounds] = useState<AdminUiBackground[]>([]);
   const [uiBackgroundSaving, setUiBackgroundSaving] = useState(false);
   const [workflowPassword, setWorkflowPassword] = useState("");
@@ -339,7 +344,7 @@ export function AdminPage() {
     setError(null);
     setAdminDataLoading(true);
     try {
-      const [gatePayload, userPayload, textPayload, statusPayload, workflowPayload, backgroundPayload, siteMapPayload, siteMapsPayload, fieldDefinitionsPayload, retentionPayload, maintenancePayload] = await Promise.all([
+      const [gatePayload, userPayload, textPayload, statusPayload, workflowPayload, backgroundPayload, siteMapPayload, siteMapsPayload, fieldDefinitionsPayload, retentionPayload, maintenancePayload, timeSyncPayload] = await Promise.all([
         fetchJson<{ gates: AdminGate[] }>("/api/admin/gates", { method: "GET", headers: {} }),
         fetchJson<{ users: AdminUser[] }>("/api/admin/users", { method: "GET", headers: {} }),
         fetchJson<{ texts: AdminBadgeText[] }>("/api/texts", { method: "GET", headers: {} }),
@@ -350,7 +355,8 @@ export function AdminPage() {
         fetchJson<{ siteMaps: AdminSiteMap[] }>("/api/admin/site-maps", { method: "GET", headers: {} }),
         fetchJson<{ definitions: AdminFieldDefinition[] }>("/api/admin/field-definitions", { method: "GET", headers: {} }),
         fetchJson<AdminRetentionSettings>("/api/admin/data-retention", { method: "GET", headers: {} }),
-        fetchJson<{ maintenanceMode: boolean }>("/api/admin/system-settings/maintenance", { method: "GET", headers: {} })
+        fetchJson<{ maintenanceMode: boolean }>("/api/admin/system-settings/maintenance", { method: "GET", headers: {} }),
+        fetchJson<AdminTimeSyncSettings>("/api/admin/system-settings/time-sync", { method: "GET", headers: {} })
       ]);
 
       setGates(gatePayload.gates);
@@ -367,6 +373,7 @@ export function AdminPage() {
       setFieldDefinitions(fieldDefinitionsPayload.definitions);
       setRetentionSettings(retentionPayload);
       setMaintenanceMode(maintenancePayload.maintenanceMode);
+      setTimeSyncSettings(timeSyncPayload);
       setEditableGates(Object.fromEntries(gatePayload.gates.map((gate) => [gate.id, { ...gate }])));
       setEditableUsers(Object.fromEntries(userPayload.users.map((entry) => [entry.id, {
         ...entry,
@@ -408,6 +415,46 @@ export function AdminPage() {
     await fetchJson("/api/admin/system-settings/maintenance", { method: "PUT", body: JSON.stringify({ maintenanceMode: value }) });
     setMaintenanceMode(value);
     setMessage(value ? "Wartungsmodus aktiviert." : "Wartungsmodus deaktiviert.");
+  }
+
+  async function testNtpServer() {
+    if (!timeSyncSettings?.server.trim()) {
+      setError("Bitte geben Sie zuerst einen Internet-Zeitserver ein.");
+      return;
+    }
+    setTimeSyncBusy(true);
+    try {
+      const payload = await fetchJson<NtpCheckResult>("/api/admin/system-settings/time-sync/test", {
+        method: "POST",
+        body: JSON.stringify({ server: timeSyncSettings.server })
+      });
+      setNtpCheckResult(payload);
+      setMessage(`Zeitserver ${payload.server} antwortet.`);
+      setError(null);
+    } catch (apiError) {
+      setNtpCheckResult(null);
+      setError((apiError as ApiError).message || "Der Internet-Zeitserver konnte nicht geprüft werden.");
+    } finally {
+      setTimeSyncBusy(false);
+    }
+  }
+
+  async function saveTimeSyncSettings() {
+    if (!timeSyncSettings) return;
+    setTimeSyncBusy(true);
+    try {
+      const payload = await fetchJson<AdminTimeSyncSettings>("/api/admin/system-settings/time-sync", {
+        method: "PUT",
+        body: JSON.stringify({ enabled: timeSyncSettings.enabled, server: timeSyncSettings.server })
+      });
+      setTimeSyncSettings(payload);
+      setMessage(payload.enabled ? "Backup-Zeitserver zur Übernahme vorgemerkt." : "Backup-Zeitserver deaktiviert.");
+      setError(null);
+    } catch (apiError) {
+      setError((apiError as ApiError).message || "Der Internet-Zeitserver konnte nicht gespeichert werden.");
+    } finally {
+      setTimeSyncBusy(false);
+    }
   }
 
   useEffect(() => {
@@ -1267,6 +1314,13 @@ export function AdminPage() {
             sendWorkflowTestMail={sendWorkflowTestMail}
             maintenanceMode={maintenanceMode}
             saveMaintenanceMode={saveMaintenanceMode}
+            timeSyncSettings={timeSyncSettings}
+            setTimeSyncSettings={setTimeSyncSettings}
+            ntpCheckResult={ntpCheckResult}
+            setNtpCheckResult={setNtpCheckResult}
+            timeSyncBusy={timeSyncBusy}
+            testNtpServer={testNtpServer}
+            saveTimeSyncSettings={saveTimeSyncSettings}
           />
         ) : null}
 

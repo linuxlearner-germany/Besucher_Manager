@@ -74,6 +74,7 @@ services:
       UPLOAD_DIR: /app/uploads
       MAIL_RELAY_CONFIG_PATH: ${MAIL_RELAY_CONFIG_PATH:-/app/config/mail-relay.yml}
       MAIL_RELAY_TLS_SERVERNAME: ${MAIL_RELAY_TLS_SERVERNAME:-}
+      TIME_SYNC_REQUEST_PATH: /app/runtime/time-sync/backup-ntp-server.json
       NODE_EXTRA_CA_CERTS: ${NODE_EXTRA_CA_CERTS:-}
       HTTP_PROXY: ${HTTP_PROXY:-}
       HTTPS_PROXY: ${HTTPS_PROXY:-}
@@ -86,6 +87,7 @@ services:
     volumes:
       - ./uploads:/app/uploads
       - ./config:/app/config:ro
+      - ./runtime/time-sync:/app/runtime/time-sync
     healthcheck:
       test:
         [

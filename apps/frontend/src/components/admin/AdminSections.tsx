@@ -8,11 +8,13 @@ import {
   type AdminGate,
   type AdminSiteMap,
   type AdminUiBackground,
+  type AdminTimeSyncSettings,
   type AdminWorkflowSettings,
   type AdminUser,
   type AppPermission,
   type AppMenuKey,
   type EditableAdminUser,
+  type NtpCheckResult,
   formatDateTime,
   formatAuditAction,
   formatFileSize,
@@ -856,7 +858,14 @@ export function AdminSystemSection({
   saveSecurityNumber,
   sendWorkflowTestMail,
   maintenanceMode,
-  saveMaintenanceMode
+  saveMaintenanceMode,
+  timeSyncSettings,
+  setTimeSyncSettings,
+  ntpCheckResult,
+  setNtpCheckResult,
+  timeSyncBusy,
+  testNtpServer,
+  saveTimeSyncSettings
 }: {
   systemStatus: {
     app: string;
@@ -884,6 +893,13 @@ export function AdminSystemSection({
   sendWorkflowTestMail: () => Promise<void>;
   maintenanceMode: boolean;
   saveMaintenanceMode: (value: boolean) => Promise<void>;
+  timeSyncSettings: AdminTimeSyncSettings | null;
+  setTimeSyncSettings: Dispatch<SetStateAction<AdminTimeSyncSettings | null>>;
+  ntpCheckResult: NtpCheckResult | null;
+  setNtpCheckResult: Dispatch<SetStateAction<NtpCheckResult | null>>;
+  timeSyncBusy: boolean;
+  testNtpServer: () => Promise<void>;
+  saveTimeSyncSettings: () => Promise<void>;
 }) {
   return (
     <Card>
@@ -902,6 +918,49 @@ export function AdminSystemSection({
         <div className="detail-grid">
           <div><dt>Datenbank</dt><dd>{systemStatus?.dbHost || "-"} / {systemStatus?.dbName || "-"}</dd></div>
           <div><dt>Anwendung</dt><dd>v{systemStatus?.appVersion || "-"} · Schema v{systemStatus?.schemaVersion ?? "-"}</dd></div>
+        </div>
+
+        <div className="panel">
+          <h3>Backup-Internetzeitserver</h3>
+          <p>Der Server wird als zusätzliche Chrony-Quelle verwendet. Die bestehende automatische Zeitsynchronisierung bleibt aktiv.</p>
+          <div className="form-grid two-columns">
+            <FormField label="NTP-Hostname">
+              <input
+                value={timeSyncSettings?.server ?? ""}
+                onChange={(event) => {
+                  setNtpCheckResult(null);
+                  setTimeSyncSettings((current) => current ? { ...current, server: event.target.value } : current);
+                }}
+                placeholder="z. B. pool.ntp.org"
+                maxLength={253}
+                autoComplete="off"
+              />
+            </FormField>
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={timeSyncSettings?.enabled ?? false}
+                onChange={(event) => setTimeSyncSettings((current) => current ? { ...current, enabled: event.target.checked } : current)}
+              />
+              Backup-Zeitserver aktivieren
+            </label>
+          </div>
+          {ntpCheckResult ? (
+            <div className="feedback success">
+              Antwort von {ntpCheckResult.address} · Stratum {ntpCheckResult.stratum} · Abweichung {ntpCheckResult.offsetMs} ms · Laufzeit {ntpCheckResult.roundTripMs} ms
+            </div>
+          ) : null}
+          {timeSyncSettings?.status ? (
+            <div className={`feedback ${timeSyncSettings.status.state === "applied" ? "success" : "error"}`}>
+              Host-Status: {timeSyncSettings.status.message} ({formatDateTime(timeSyncSettings.status.appliedAt)})
+            </div>
+          ) : (
+            <div className="feedback info">Noch kein Übernahmestatus vom Host-Helfer vorhanden.</div>
+          )}
+          <div className="row-actions action-bar">
+            <button type="button" className="secondary-button" disabled={timeSyncBusy} onClick={() => void testNtpServer()}>{timeSyncBusy ? "Bitte warten …" : "Zeitserver testen"}</button>
+            <button type="button" disabled={timeSyncBusy} onClick={() => void saveTimeSyncSettings()}>Zeitserver speichern</button>
+          </div>
         </div>
 
         <div className="panel">

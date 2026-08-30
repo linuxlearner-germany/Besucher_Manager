@@ -19,6 +19,8 @@ export const WORKFLOW_SETTING_KEYS = {
   uiBackgroundImageOriginalFileName: "ui_background_image_original_file_name",
   securityNumber: "security_number",
   maintenanceMode: "maintenance_mode",
+  backupNtpEnabled: "backup_ntp_enabled",
+  backupNtpServer: "backup_ntp_server",
   publicXlsxRequireEmailVerification: "public_xlsx_require_email_verification"
 } as const;
 

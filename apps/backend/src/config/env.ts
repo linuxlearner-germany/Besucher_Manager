@@ -102,7 +102,8 @@ const envSchema = z.object({
   PUBLIC_FORM_RATE_LIMIT: z.coerce.number().int().positive().default(120),
   PUBLIC_FORM_RATE_WINDOW_SECONDS: z.coerce.number().int().positive().default(60),
   MAIL_RELAY_CONFIG_PATH: z.string().trim().optional(),
-  MAIL_RELAY_TLS_SERVERNAME: optionalTrimmedString
+  MAIL_RELAY_TLS_SERVERNAME: optionalTrimmedString,
+  TIME_SYNC_REQUEST_PATH: z.string().trim().default("./runtime/time-sync/backup-ntp-server.json")
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -117,5 +118,6 @@ export const env = {
   APP_SECURE_COOKIES: parsed.data.APP_SECURE_COOKIES ?? parsed.data.PUBLIC_BASE_URL.startsWith("https://"),
   appTrustProxy: parseTrustProxy(parsed.data.APP_TRUST_PROXY),
   uploadDir: path.resolve(parsed.data.UPLOAD_DIR),
+  timeSyncRequestPath: path.resolve(parsed.data.TIME_SYNC_REQUEST_PATH),
   mailRelayConfigPath: parsed.data.MAIL_RELAY_CONFIG_PATH ? path.resolve(parsed.data.MAIL_RELAY_CONFIG_PATH) : null
 };
