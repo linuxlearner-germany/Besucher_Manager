@@ -47,13 +47,19 @@ test("public update schema rejects mass assignment of status, role, gate and int
 });
 
 test("public edit window closes at visit-day start, check-in, cancellation and rejection", () => {
-  const tomorrow = new Date(Date.now() + 86_400_000);
-  const base = { status: "pre_registered", checkInAt: null, validFrom: tomorrow, cancelledAt: null, rejectedAt: null };
-  assert.equal(getPublicEditMessage(base), null);
-  assert.match(getPublicEditMessage({ ...base, validFrom: new Date(Date.now() - 1) }) ?? "", /Besuchstags/);
-  assert.match(getPublicEditMessage({ ...base, checkInAt: new Date() }) ?? "", /Check-in/);
-  assert.match(getPublicEditMessage({ ...base, status: "cancelled", cancelledAt: new Date() }) ?? "", /widerrufen/);
-  assert.match(getPublicEditMessage({ ...base, status: "rejected", rejectedAt: new Date() }) ?? "", /widerrufen/);
+  const visitDay = new Date("2026-08-30T00:00:00.000Z");
+  const nearUtcMidnight = new Date("2026-08-28T23:59:59.999Z");
+  const immediatelyBeforeVisitDay = new Date("2026-08-29T21:59:59.999Z");
+  const visitDayStart = new Date("2026-08-29T22:00:00.000Z");
+  const lifecycleEventAt = new Date("2026-08-29T20:00:00.000Z");
+  const base = { status: "pre_registered", checkInAt: null, validFrom: visitDay, cancelledAt: null, rejectedAt: null };
+
+  assert.equal(getPublicEditMessage(base, nearUtcMidnight), null);
+  assert.equal(getPublicEditMessage(base, immediatelyBeforeVisitDay), null);
+  assert.match(getPublicEditMessage(base, visitDayStart) ?? "", /Besuchstags/);
+  assert.match(getPublicEditMessage({ ...base, checkInAt: lifecycleEventAt }, nearUtcMidnight) ?? "", /Check-in/);
+  assert.match(getPublicEditMessage({ ...base, status: "cancelled", cancelledAt: lifecycleEventAt }, nearUtcMidnight) ?? "", /widerrufen/);
+  assert.match(getPublicEditMessage({ ...base, status: "rejected", rejectedAt: lifecycleEventAt }, nearUtcMidnight) ?? "", /widerrufen/);
 });
 
 test("record version changes when either public record was concurrently updated", () => {
