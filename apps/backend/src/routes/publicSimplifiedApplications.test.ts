@@ -7,7 +7,9 @@ const route = readFileSync(resolve(__dirname, "publicSimplifiedApplications.ts")
 const service = readFileSync(resolve(__dirname, "../lib/publicSimplifiedApplications.ts"), "utf8");
 const migration = readFileSync(resolve(__dirname, "../../migrations/038_public_simplified_applications.sql"), "utf8");
 const idempotencyMigration = readFileSync(resolve(__dirname, "../../migrations/039_public_simplified_application_idempotency.sql"), "utf8");
+const outboxClaimMigration = readFileSync(resolve(__dirname, "../../migrations/040_public_simplified_mail_outbox_claims.sql"), "utf8");
 const mailRelay = readFileSync(resolve(__dirname, "../lib/mailRelay.ts"), "utf8");
+const simplifiedSibeEntry = readFileSync(resolve(__dirname, "../lib/simplifiedSibeEntry.ts"), "utf8");
 const dockerfile = readFileSync(resolve(__dirname, "../../../../Dockerfile"), "utf8");
 
 test("public workflow reparses XLSX on preview and submit and requires CSRF", () => {
@@ -60,6 +62,24 @@ test("public submit uses a persistent client request id for idempotent retries",
 test("mail TLS verification cannot be bypassed and the runtime image has a CA store", () => {
   assert.doesNotMatch(mailRelay, /rejectUnauthorized\s*:\s*false|allowInvalidCertificate/);
   assert.match(dockerfile, /apt-get install -y --no-install-recommends ca-certificates/);
+});
+
+test("new simplified visits notify nationality subscribers only after commit", () => {
+  assert.match(simplifiedSibeEntry, /await transaction\.commit\(\);[\s\S]*notifyNationalitySubscribers/);
+  assert.match(service, /await tx\.commit\(\);\s*\}[\s\S]*for\(const notification of nationalityNotifications\) void notifyNationalitySubscribers/);
+  assert.match(service, /if\(!entry\.nationality_code\)return null/);
+});
+
+test("mail outbox rows are atomically claimed before transport delivery", () => {
+  assert.match(outboxClaimMigration, /claim_token UNIQUEIDENTIFIER/);
+  assert.match(outboxClaimMigration, /claim_expires_at DATETIME2/);
+  assert.match(service, /FROM dbo\.public_simplified_application_mail_outbox WITH\(UPDLOCK,READPAST,ROWLOCK,READCOMMITTEDLOCK\)/);
+  assert.match(service, /claimTransaction\.begin\(sql\.ISOLATION_LEVEL\.READ_COMMITTED\)/);
+  assert.match(service, /UPDATE claimable/);
+  assert.match(service, /OUTPUT inserted\.id/);
+  assert.match(service, /claim_token=@claimToken/);
+  assert.doesNotMatch(service, /SELECT id,mail_type AS mailType[\s\S]*sent_at IS NULL ORDER BY created_at/);
+  assert.match(service, /deliverApplicationMailOutbox\(applicationId\)\.catch/);
 });
 
 test("verification transport failures use a safe correlated public error", () => {

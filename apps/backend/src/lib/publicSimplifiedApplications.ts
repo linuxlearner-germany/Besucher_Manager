@@ -5,13 +5,15 @@ import { writeAuditLog } from "./auditLog";
 import { generateUniqueBadgeNumber } from "./badgeAllocation";
 import { dateOnlyEnd, dateOnlyStart } from "./dateOnly";
 import { getPool } from "./db";
-import { buildMailHtml, buildPublicSimplifiedVerificationUrl, escapeMailHtml, sendWorkflowMail } from "./mailRelay";
+import { writeErrorLog } from "./errorLogs";
+import { buildMailHtml, buildPublicSimplifiedVerificationUrl, escapeMailHtml, notifyNationalitySubscribers, sendWorkflowMail } from "./mailRelay";
 import type { PublicApplicationPreviewRow } from "./publicSimplifiedXlsx";
 import { cleanOptional } from "./textValues";
 import type { AuthenticatedUser } from "./visitWorkflow";
 
 export type ApplicationStatus = "pending_email_verification" | "submitted" | "partially_approved" | "approved" | "rejected" | "cancelled";
 export type EntryDecision = "approved" | "rejected";
+type NationalityNotification = Parameters<typeof notifyNationalitySubscribers>[0];
 export class PublicApplicationError extends Error {
   constructor(
     public readonly reason: "not_found" | "expired" | "revoked" | "conflict" | "not_ready" | "mail_unavailable",
@@ -106,7 +108,7 @@ export async function createPublicSimplifiedApplication(input: ApplicantInput, r
       await writeAuditLog({ user: "public-xlsx-applicant", action: "PUBLIC_XLSX_APPLICATION_SUBMITTED", objectType: "public_simplified_application", objectId: application.id, ipAddress: context.ip, metadata: { reference, entry_count: rows.length } }, transaction);
     }
     await transaction.commit();
-    if (!requireVerification) void deliverApplicationMailOutbox(application.id);
+    if (!requireVerification) triggerApplicationMailOutbox(application.id);
     return { id: application.id, reference, status, emailVerificationRequired: requireVerification, version: versionString(application.version), entryCount: rows.length };
   } catch (error) { await transaction.rollback(); throw error; }
 }
@@ -158,7 +160,7 @@ export async function verifyPublicSimplifiedApplication(rawToken:string, context
     const rows=await loadPreviewRows(tx,item.applicationId); await enqueueSubmittedMails(tx,item.applicationId,item.reference,{email:item.email,name:item.name,organization:item.organization},rows);
     await writeAuditLog({user:"public-xlsx-applicant",action:"PUBLIC_XLSX_EMAIL_VERIFIED",objectType:"public_simplified_application",objectId:item.applicationId,ipAddress:context.ip,userAgent:context.userAgent,metadata:{reference:item.reference}},tx);
     await writeAuditLog({user:"public-xlsx-applicant",action:"PUBLIC_XLSX_APPLICATION_SUBMITTED",objectType:"public_simplified_application",objectId:item.applicationId,ipAddress:context.ip,metadata:{reference:item.reference,entry_count:rows.length}},tx);
-    await tx.commit(); void deliverApplicationMailOutbox(item.applicationId); return {reference:item.reference,status:"submitted",alreadyVerified:false};
+    await tx.commit(); triggerApplicationMailOutbox(item.applicationId); return {reference:item.reference,status:"submitted",alreadyVerified:false};
   }catch(error){await tx.rollback();throw error;}
 }
 
@@ -186,40 +188,69 @@ export async function getKaskdtApplication(id:string, tx?:sql.Transaction) {
 export async function decideApplicationEntries(user:AuthenticatedUser, applicationId:string, input:{decision:EntryDecision;rejectionReason?:string|null;applicationVersion:string;entryIds?:string[];allPending?:boolean}, context:{ip?:string|null;userAgent?:string|null}) {
   if(input.decision==="rejected"&&!cleanOptional(input.rejectionReason)) throw new Error("rejection_reason_required");
   const pool=await getPool();const tx=new sql.Transaction(pool);await tx.begin(sql.ISOLATION_LEVEL.SERIALIZABLE);
+  const nationalityNotifications: NationalityNotification[]=[];
   try{
     const lock=await new sql.Request(tx).input("id",sql.UniqueIdentifier,applicationId).input("version",sql.VarBinary(8),versionBuffer(input.applicationVersion)).query<{id:string}>("SELECT id FROM dbo.public_simplified_applications WITH(UPDLOCK,HOLDLOCK) WHERE id=@id AND [version]=@version AND submitted_at IS NOT NULL AND finalized_at IS NULL");
     if(!lock.recordset[0]) throw new PublicApplicationError("conflict","application_changed");
-    const all=await new sql.Request(tx).input("id",sql.UniqueIdentifier,applicationId).query<any>("SELECT * FROM dbo.public_simplified_application_entries WITH(UPDLOCK,HOLDLOCK) WHERE application_id=@id ORDER BY source_row_number");
+    const all=await new sql.Request(tx).input("id",sql.UniqueIdentifier,applicationId).query<any>("SELECT e.*,g.name AS gate_name FROM dbo.public_simplified_application_entries e WITH(UPDLOCK,HOLDLOCK) INNER JOIN dbo.gates g ON g.id=e.gate_id WHERE e.application_id=@id ORDER BY e.source_row_number");
     const selected=new Set(input.entryIds??[]); const targets=all.recordset.filter((entry:any)=>entry.status==="pending"&&(input.allPending||selected.has(entry.id)));
     if(!targets.length) throw new PublicApplicationError("not_ready","no_pending_entries");
-    for(const entry of targets){if(input.decision==="approved")await approveEntry(tx,user,entry);else await rejectEntry(tx,user,entry,cleanOptional(input.rejectionReason)!);}
+    for(const entry of targets){if(input.decision==="approved"){const notification=await approveEntry(tx,user,entry);if(notification)nationalityNotifications.push(notification);}else await rejectEntry(tx,user,entry,cleanOptional(input.rejectionReason)!);}
     const counts=await recomputeApplicationStatus(tx,applicationId);
     await writeAuditLog({user:user.username,userId:user.id,action:input.allPending?(input.decision==="approved"?"KSKDT_APPLICATION_BULK_APPROVED":"KSKDT_APPLICATION_BULK_REJECTED"):(input.decision==="approved"?"KSKDT_APPLICATION_ENTRY_APPROVED":"KSKDT_APPLICATION_ENTRY_REJECTED"),objectType:"public_simplified_application",objectId:applicationId,ipAddress:context.ip,userAgent:context.userAgent,metadata:{entry_count:targets.length,decision:input.decision,pending_count:counts.pending}},tx);
-    await tx.commit();return getKaskdtApplication(applicationId);
+    await tx.commit();
   }catch(error){await tx.rollback();throw error;}
+  for(const notification of nationalityNotifications) void notifyNationalitySubscribers(notification);
+  return getKaskdtApplication(applicationId);
 }
 
-async function approveEntry(tx:sql.Transaction,user:AuthenticatedUser,entry:any){
-  if(entry.created_visit_id)return;
+async function approveEntry(tx:sql.Transaction,user:AuthenticatedUser,entry:any):Promise<NationalityNotification|null>{
+  if(entry.created_visit_id)return null;
   const visitor=await new sql.Request(tx).input("first",sql.NVarChar(120),entry.first_name).input("last",sql.NVarChar(120),entry.last_name).input("company",sql.NVarChar(255),entry.company).input("nationality",sql.NChar(2),entry.nationality_code).input("birth",sql.Date,entry.birth_date).input("phone",sql.NVarChar(80),entry.phone).input("email",sql.NVarChar(255),entry.email).query<{id:string}>(`INSERT INTO dbo.visitors(first_name,last_name,company,nationality_code,birth_date,phone_optional,email_optional) OUTPUT inserted.id VALUES(@first,@last,@company,@nationality,@birth,@phone,@email)`);
   const visitorId=visitor.recordset[0]!.id;const badge=await generateUniqueBadgeNumber(tx);
   const visit=await new sql.Request(tx).input("visitor",sql.UniqueIdentifier,visitorId).input("gate",sql.UniqueIdentifier,entry.gate_id).input("host",sql.NVarChar(255),entry.host_name).input("hostPhone",sql.NVarChar(80),entry.host_phone).input("hostEmail",sql.NVarChar(255),entry.host_email).input("department",sql.NVarChar(255),entry.host_department).input("purpose",sql.NVarChar(500),entry.purpose).input("from",sql.DateTime2,dateOnlyStart(entry.valid_from)).input("until",sql.DateTime2,dateOnlyEnd(entry.valid_until)).input("plate",sql.NVarChar(40),entry.license_plate).input("badge",sql.NVarChar(64),badge).input("notes",sql.NVarChar(sql.MAX),entry.notes).input("user",sql.UniqueIdentifier,user.id).query<{id:string}>(`INSERT INTO dbo.visits(visitor_id,gate_id,host_name,host_phone,host_email,host_department,purpose,valid_from,valid_until,license_plate,badge_number,status,created_by,created_via_public_form,notes,source) OUTPUT inserted.id VALUES(@visitor,@gate,@host,@hostPhone,@hostEmail,@department,@purpose,@from,@until,@plate,@badge,N'pre_registered',@user,0,@notes,N'public_simplified_excel')`);
   await new sql.Request(tx).input("entry",sql.UniqueIdentifier,entry.id).input("user",sql.UniqueIdentifier,user.id).input("visit",sql.UniqueIdentifier,visit.recordset[0]!.id).input("visitor",sql.UniqueIdentifier,visitorId).query("UPDATE dbo.public_simplified_application_entries SET status=N'approved',decided_by=@user,decided_at=SYSUTCDATETIME(),created_visit_id=@visit,created_visitor_id=@visitor,updated_at=SYSUTCDATETIME() WHERE id=@entry AND status=N'pending'");
+  if(!entry.nationality_code)return null;
+  return {visitId:visit.recordset[0]!.id,nationalityCode:entry.nationality_code,visitorName:[cleanOptional(entry.first_name),cleanOptional(entry.last_name)].filter(Boolean).join(" ")||"Keine Angabe",company:cleanOptional(entry.company)??"Keine Angabe",validFrom:new Date(entry.valid_from).toISOString().slice(0,10),validUntil:new Date(entry.valid_until).toISOString().slice(0,10),gateName:entry.gate_name??null};
 }
 async function rejectEntry(tx:sql.Transaction,user:AuthenticatedUser,entry:any,reason:string){await new sql.Request(tx).input("entry",sql.UniqueIdentifier,entry.id).input("user",sql.UniqueIdentifier,user.id).input("reason",sql.NVarChar(1000),reason).query("UPDATE dbo.public_simplified_application_entries SET status=N'rejected',rejection_reason=@reason,decided_by=@user,decided_at=SYSUTCDATETIME(),updated_at=SYSUTCDATETIME() WHERE id=@entry AND status=N'pending'");}
 async function recomputeApplicationStatus(tx:sql.Transaction,id:string){const result=await new sql.Request(tx).input("id",sql.UniqueIdentifier,id).query<{pending:number;approved:number;rejected:number}>("SELECT SUM(CASE WHEN status=N'pending' THEN 1 ELSE 0 END) pending,SUM(CASE WHEN status=N'approved' THEN 1 ELSE 0 END) approved,SUM(CASE WHEN status=N'rejected' THEN 1 ELSE 0 END) rejected FROM dbo.public_simplified_application_entries WHERE application_id=@id");const c=result.recordset[0]??{pending:0,approved:0,rejected:0};const status=c.pending>0?"submitted":c.approved>0&&c.rejected>0?"partially_approved":c.approved>0?"approved":"rejected";await new sql.Request(tx).input("id",sql.UniqueIdentifier,id).input("status",sql.NVarChar(40),status).query("UPDATE dbo.public_simplified_applications SET status=@status,decided_at=CASE WHEN @status=N'submitted' THEN NULL ELSE SYSUTCDATETIME() END,updated_at=SYSUTCDATETIME() WHERE id=@id");return c;}
 
 export async function finalizeApplication(user:AuthenticatedUser,id:string,applicationVersion:string,context:{ip?:string|null;userAgent?:string|null}){
-  const pool=await getPool();const tx=new sql.Transaction(pool);await tx.begin(sql.ISOLATION_LEVEL.SERIALIZABLE);try{
-    const app=await new sql.Request(tx).input("id",sql.UniqueIdentifier,id).input("version",sql.VarBinary(8),versionBuffer(applicationVersion)).query<any>("SELECT * FROM dbo.public_simplified_applications WITH(UPDLOCK,HOLDLOCK) WHERE id=@id AND [version]=@version AND submitted_at IS NOT NULL");const item=app.recordset[0];if(!item)throw new PublicApplicationError("conflict","application_changed");if(item.finalized_at){await tx.commit();return getKaskdtApplication(id);}
-    const entries=await new sql.Request(tx).input("id",sql.UniqueIdentifier,id).query<any>("SELECT first_name AS firstName,last_name AS lastName,status,rejection_reason AS rejectionReason FROM dbo.public_simplified_application_entries WHERE application_id=@id ORDER BY source_row_number");if(entries.recordset.some((entry:any)=>entry.status==="pending"))throw new PublicApplicationError("not_ready","pending_entries");
-    await new sql.Request(tx).input("id",sql.UniqueIdentifier,id).query("UPDATE dbo.public_simplified_applications SET finalized_at=SYSUTCDATETIME(),updated_at=SYSUTCDATETIME() WHERE id=@id");await enqueueMail(tx,id,"applicant-decision","decision",[item.applicant_email],{reference:item.public_reference,status:item.status,entries:entries.recordset});
-    await writeAuditLog({user:user.username,userId:user.id,action:"KSKDT_APPLICATION_FINALIZED",objectType:"public_simplified_application",objectId:id,ipAddress:context.ip,userAgent:context.userAgent,metadata:{status:item.status,approved:entries.recordset.filter((e:any)=>e.status==="approved").length,rejected:entries.recordset.filter((e:any)=>e.status==="rejected").length}},tx);await tx.commit();await deliverApplicationMailOutbox(id);return getKaskdtApplication(id);
-  }catch(error){await tx.rollback();throw error;}}
+  const pool=await getPool();const tx=new sql.Transaction(pool);await tx.begin(sql.ISOLATION_LEVEL.SERIALIZABLE);let shouldDeliver=false;
+  try{
+    const app=await new sql.Request(tx).input("id",sql.UniqueIdentifier,id).input("version",sql.VarBinary(8),versionBuffer(applicationVersion)).query<any>("SELECT * FROM dbo.public_simplified_applications WITH(UPDLOCK,HOLDLOCK) WHERE id=@id AND [version]=@version AND submitted_at IS NOT NULL");const item=app.recordset[0];if(!item)throw new PublicApplicationError("conflict","application_changed");
+    if(!item.finalized_at){
+      const entries=await new sql.Request(tx).input("id",sql.UniqueIdentifier,id).query<any>("SELECT first_name AS firstName,last_name AS lastName,status,rejection_reason AS rejectionReason FROM dbo.public_simplified_application_entries WHERE application_id=@id ORDER BY source_row_number");if(entries.recordset.some((entry:any)=>entry.status==="pending"))throw new PublicApplicationError("not_ready","pending_entries");
+      await new sql.Request(tx).input("id",sql.UniqueIdentifier,id).query("UPDATE dbo.public_simplified_applications SET finalized_at=SYSUTCDATETIME(),updated_at=SYSUTCDATETIME() WHERE id=@id");await enqueueMail(tx,id,"applicant-decision","decision",[item.applicant_email],{reference:item.public_reference,status:item.status,entries:entries.recordset});
+      await writeAuditLog({user:user.username,userId:user.id,action:"KSKDT_APPLICATION_FINALIZED",objectType:"public_simplified_application",objectId:id,ipAddress:context.ip,userAgent:context.userAgent,metadata:{status:item.status,approved:entries.recordset.filter((e:any)=>e.status==="approved").length,rejected:entries.recordset.filter((e:any)=>e.status==="rejected").length}},tx);shouldDeliver=true;
+    }
+    await tx.commit();
+  }catch(error){try{await tx.rollback();}catch{}throw error;}
+  if(shouldDeliver)await deliverApplicationMailOutbox(id);
+  return getKaskdtApplication(id);
+}
 
 export async function deliverApplicationMailOutbox(applicationId:string):Promise<void>{
-  const pool=await getPool();const result=await pool.request().input("id",sql.UniqueIdentifier,applicationId).query<any>("SELECT id,mail_type AS mailType,recipients_json AS recipientsJson,payload_json AS payloadJson FROM dbo.public_simplified_application_mail_outbox WHERE application_id=@id AND sent_at IS NULL ORDER BY created_at");
-  for(const row of result.recordset){try{const recipients=JSON.parse(row.recipientsJson) as string[];const payload=JSON.parse(row.payloadJson) as any;const mail=buildOutboxMail(row.mailType,payload);const sent=await sendWorkflowMail({to:recipients,...mail});if(!sent)throw new Error("mail_relay_unavailable");await pool.request().input("id",sql.UniqueIdentifier,row.id).query("UPDATE dbo.public_simplified_application_mail_outbox SET sent_at=SYSUTCDATETIME(),attempts=attempts+1,last_error=NULL,updated_at=SYSUTCDATETIME() WHERE id=@id AND sent_at IS NULL");if(row.mailType==="decision")await writeAuditLog({user:"system",action:"PUBLIC_XLSX_DECISION_EMAIL_SENT",objectType:"public_simplified_application",objectId:applicationId,metadata:{reference:payload.reference}});}catch(error){await pool.request().input("id",sql.UniqueIdentifier,row.id).input("error",sql.NVarChar(500),error instanceof Error?error.message:"mail_failed").query("UPDATE dbo.public_simplified_application_mail_outbox SET attempts=attempts+1,last_error=@error,updated_at=SYSUTCDATETIME() WHERE id=@id");}}
+  const pool=await getPool();const claimToken=crypto.randomUUID();
+  const claimTransaction=new sql.Transaction(pool);await claimTransaction.begin(sql.ISOLATION_LEVEL.READ_COMMITTED);let result:sql.IResult<any>;
+  try{
+    result=await new sql.Request(claimTransaction).input("applicationId",sql.UniqueIdentifier,applicationId).input("claimToken",sql.UniqueIdentifier,claimToken).query<any>(`
+      ;WITH claimable AS (
+        SELECT * FROM dbo.public_simplified_application_mail_outbox WITH(UPDLOCK,READPAST,ROWLOCK,READCOMMITTEDLOCK)
+        WHERE application_id=@applicationId AND sent_at IS NULL
+          AND (claim_token IS NULL OR claim_expires_at<=SYSUTCDATETIME())
+      )
+      UPDATE claimable
+      SET claim_token=@claimToken,claim_expires_at=DATEADD(MINUTE,15,SYSUTCDATETIME()),updated_at=SYSUTCDATETIME()
+      OUTPUT inserted.id,inserted.mail_type AS mailType,inserted.recipients_json AS recipientsJson,inserted.payload_json AS payloadJson
+      `);
+    await claimTransaction.commit();
+  }catch(error){try{await claimTransaction.rollback();}catch{}throw error;}
+  for(const row of result.recordset){try{const recipients=JSON.parse(row.recipientsJson) as string[];const payload=JSON.parse(row.payloadJson) as any;const mail=buildOutboxMail(row.mailType,payload);const sent=await sendWorkflowMail({to:recipients,...mail});if(!sent)throw new Error("mail_relay_unavailable");const update=await pool.request().input("id",sql.UniqueIdentifier,row.id).input("claimToken",sql.UniqueIdentifier,claimToken).query("UPDATE dbo.public_simplified_application_mail_outbox SET sent_at=SYSUTCDATETIME(),attempts=attempts+1,last_error=NULL,claim_token=NULL,claim_expires_at=NULL,updated_at=SYSUTCDATETIME() WHERE id=@id AND sent_at IS NULL AND claim_token=@claimToken");if(update.rowsAffected[0]&&row.mailType==="decision")await writeAuditLog({user:"system",action:"PUBLIC_XLSX_DECISION_EMAIL_SENT",objectType:"public_simplified_application",objectId:applicationId,metadata:{reference:payload.reference}});}catch(error){await pool.request().input("id",sql.UniqueIdentifier,row.id).input("claimToken",sql.UniqueIdentifier,claimToken).input("error",sql.NVarChar(500),error instanceof Error?error.message:"mail_failed").query("UPDATE dbo.public_simplified_application_mail_outbox SET attempts=attempts+1,last_error=@error,claim_token=NULL,claim_expires_at=NULL,updated_at=SYSUTCDATETIME() WHERE id=@id AND sent_at IS NULL AND claim_token=@claimToken");}}
+}
+function triggerApplicationMailOutbox(applicationId:string):void{
+  void deliverApplicationMailOutbox(applicationId).catch((error)=>writeErrorLog({level:"error",errorCode:"PUBLIC_XLSX_MAIL_OUTBOX_DELIVERY_FAILED",message:"Die E-Mail-Outbox konnte nicht verarbeitet werden.",stackTrace:error instanceof Error?error.stack??null:null,metadataJson:JSON.stringify({applicationId})}).catch(()=>undefined));
 }
 function buildOutboxMail(type:string,p:any):{subject:string;text:string;html:string}{
   if(type==="kaskdt_new"){const url=`${env.PUBLIC_BASE_URL.replace(/\/+$/,'')}/kaskdt/antraege/${p.applicationId}`;return{subject:"Neuer Antrag zur vereinfachten Besucherregelung",text:`Referenz: ${p.reference}\nAntragsteller: ${p.applicantName||"–"}\nE-Mail: ${p.applicantEmail}\nOrganisation: ${p.organization||"–"}\nPersonen: ${p.count}\nZeitraum: ${p.period}\n${url}`,html:buildMailHtml({heading:"Neuer Antrag zur vereinfachten Besucherregelung",introduction:"Ein Antrag der vereinfachten Besucherregelung steht zur Prüfung bereit.",details:[{label:"Referenz",value:p.reference},{label:"Antragsteller",value:p.applicantName},{label:"E-Mail",value:p.applicantEmail},{label:"Organisation",value:p.organization},{label:"Personen",value:String(p.count)},{label:"Zeitraum",value:p.period}],detailUrl:url,detailLinkLabel:"Antrag prüfen"})};}

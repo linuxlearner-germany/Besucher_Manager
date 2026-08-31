@@ -3,6 +3,7 @@ import { writeAuditLog } from "./auditLog";
 import { generateUniqueBadgeNumber } from "./badgeAllocation";
 import { dateOnlyEnd, dateOnlyStart } from "./dateOnly";
 import { getPool } from "./db";
+import { notifyNationalitySubscribers } from "./mailRelay";
 import { findActiveGateById } from "./publicPreRegistrations";
 import { canCreateSimplifiedSibeEntry } from "./simplifiedSibeEntryAuthorization";
 import type { SimplifiedSibeEntryInput } from "./simplifiedSibeEntrySchema";
@@ -115,6 +116,17 @@ export async function createSimplifiedSibeEntry(
     }, transaction);
 
     await transaction.commit();
+    if (input.nationalityCode) {
+      void notifyNationalitySubscribers({
+        visitId: visit.id,
+        nationalityCode: input.nationalityCode,
+        visitorName: [cleanOptional(input.firstName), cleanOptional(input.lastName)].filter(Boolean).join(" ") || "Keine Angabe",
+        company: cleanOptional(input.company) ?? "Keine Angabe",
+        validFrom: input.validFrom,
+        validUntil: input.validUntil,
+        gateName: gate.name
+      });
+    }
     return { visitId: visit.id, visitorId, badgeNumber, status: visit.status };
   } catch (error) {
     await transaction.rollback();

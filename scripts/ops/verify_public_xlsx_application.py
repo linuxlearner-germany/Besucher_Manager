@@ -64,6 +64,24 @@ def mail_count(mailpit_url):
     with urllib.request.urlopen(f"{mailpit_url}/api/v1/messages") as response:
         return len(json.load(response).get("messages",[]))
 
+def matching_mail_count(mailpit_url, marker):
+    with urllib.request.urlopen(f"{mailpit_url}/api/v1/messages") as response:
+        messages=json.load(response).get("messages",[])
+    count=0
+    for message in messages:
+        with urllib.request.urlopen(f"{mailpit_url}/api/v1/message/{message['ID']}") as response:
+            detail=json.load(response)
+        haystack=f"{detail.get('Subject','')} {detail.get('Text','')} {detail.get('HTML','')}"
+        if marker in haystack:count+=1
+    return count
+
+def wait_for_mail_count(mailpit_url, marker, expected):
+    for _ in range(40):
+        count=matching_mail_count(mailpit_url,marker)
+        if count==expected:return
+        time.sleep(.25)
+    raise RuntimeError(f"mail count for {marker!r}: expected {expected}, got {matching_mail_count(mailpit_url,marker)}")
+
 def main():
     parser=argparse.ArgumentParser();parser.add_argument("--base-url",required=True);parser.add_argument("--mailpit-url",required=True);args=parser.parse_args();public=Client(args.base_url);sibe=Client(args.base_url);kskdt=Client(args.base_url);guard=Client(args.base_url)
     expect(public.request("GET","/api/public/simplified-applications/template.xlsx")[0],200,"template")
@@ -73,6 +91,11 @@ def main():
     expect(public.request("GET","/api/sibe/settings/public-xlsx-applications")[0],401,"unauth setting")
     guard.login("guard.demo");expect(guard.request("GET","/api/sibe/settings/public-xlsx-applications")[0],403,"guard setting")
     sibe.login("sibe.demo");kskdt.login("kaskdt.demo")
+    expect(sibe.request("PUT","/api/sibe/nationality-subscriptions",{"countryCodes":["DE"]})[0],200,"nationality subscription")
+    direct_marker="E2E Direkt Nationalität"
+    direct_payload={"gateId":preview["rows"][0]["gateId"],"validFrom":"2026-08-14","validUntil":"2026-08-14","firstName":"E2E Direkt","lastName":"Nationalität","company":"Test GmbH","nationalityCode":"DE"}
+    expect(sibe.request("POST","/api/sibe/visits/simplified",direct_payload)[0],201,"direct simplified visit")
+    wait_for_mail_count(args.mailpit_url,direct_marker,1)
     expect(sibe.request("PATCH","/api/sibe/settings/public-xlsx-applications",{"requireEmailVerification":True})[0],200,"enable verification")
     request_id=str(uuid.uuid4());fields={"applicantEmail":"xlsx-verify-e2e@example.test","applicantName":"XLSX Verify E2E","applicantOrganization":"Isolierter Test","clientRequestId":request_id}
     mail_count_before_submit=mail_count(args.mailpit_url)
@@ -96,6 +119,10 @@ def main():
     status,decision_payload=kskdt.request("POST",f"/api/kaskdt/applications/{app_id}/decisions",{"decision":"approved","applicationVersion":detail["version"],"entryIds":[detail["entries"][0]["id"]]})
     if status!=200: raise RuntimeError(f"approve version={detail.get('version')!r}: {status} {decision_payload}")
     detail=decision_payload
+    wait_for_mail_count(args.mailpit_url,"E2E Genehmigt",1)
+    status,_=kskdt.request("POST",f"/api/kaskdt/applications/{app_id}/decisions",{"decision":"approved","applicationVersion":detail["version"],"entryIds":[detail["entries"][0]["id"]]})
+    expect(status,409,"approved entry retry")
+    wait_for_mail_count(args.mailpit_url,"E2E Genehmigt",1)
     pending=[x for x in detail["entries"] if x["status"]=="pending"]
     status,decision_payload=kskdt.request("POST",f"/api/kaskdt/applications/{app_id}/decisions",{"decision":"rejected","rejectionReason":"E2E-Ablehnung","applicationVersion":detail["version"],"entryIds":[pending[0]["id"]]})
     if status!=200: raise RuntimeError(f"reject: {status} {decision_payload}")
