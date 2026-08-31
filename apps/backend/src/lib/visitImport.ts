@@ -20,10 +20,27 @@ export class ImportValidationError extends Error {
   }
 }
 
-export function validateSimplifiedImportRows(rows: ImportVisitInput[]): string[] {
+export function validateSimplifiedImportRows(rows: ImportVisitInput[], activeGateNames?: ReadonlySet<string>): string[] {
   const messages: string[] = [];
   rows.forEach((row, index) => {
     const line = row.sourceExcelRowNumber ?? index + 2;
+    const requiredFields = [
+      [row.gateName, "Wache"],
+      [row.firstName, "Vorname"],
+      [row.lastName, "Nachname"],
+      [row.company, "Firma / Organisation"],
+      [row.hostName, "Ansprechpartner"],
+      [row.purpose, "Besuchszweck"],
+      [row.validFrom, "Gültig von"],
+      [row.validUntil, "Gültig bis"]
+    ] as const;
+    for (const [value, label] of requiredFields) {
+      if (!cleanOptional(value)) messages.push(`Excel-Zeile ${line}: ${label} ist erforderlich.`);
+    }
+    const normalizedGateName = cleanOptional(row.gateName)?.toLocaleLowerCase("de");
+    if (normalizedGateName && activeGateNames && !activeGateNames.has(normalizedGateName)) {
+      messages.push(`Excel-Zeile ${line}: Wache ist nicht aktiv oder unbekannt.`);
+    }
     if (cleanOptional(row.nationalityCode) && !findCountryCode(row.nationalityCode)) {
       messages.push(`Excel-Zeile ${line}: Nationalität ist ungültig.`);
     }

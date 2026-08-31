@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { AppLayout, type ApiError, fetchJson, formatDateTime, formatStatus, hasRole, statusClassName, type SibeSummary, type SibeVisitRow, useAuth } from "../app/core";
+import { AppLayout, type ApiError, fetchJson, formatDateTime, formatStatus, hasPermission, hasRole, statusClassName, type SibeSummary, type SibeVisitRow, useAuth } from "../app/core";
 import { Alert, Button, Card, DataTable } from "../components/ui";
 
 export function SibeDashboardPage() {
   const { user } = useAuth();
+  const canReadVisits = hasPermission(user, "visits.read");
   const [summary, setSummary] = useState<SibeSummary | null>(null);
   const [recentVisits, setRecentVisits] = useState<SibeVisitRow[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -14,7 +15,9 @@ export function SibeDashboardPage() {
       try {
         const [summaryPayload, recentPayload] = await Promise.all([
           fetchJson<SibeSummary>("/api/sibe/summary", { method: "GET", headers: {} }),
-          fetchJson<{ visits: SibeVisitRow[] }>("/api/sibe/visits?status=all", { method: "GET", headers: {} })
+          canReadVisits
+            ? fetchJson<{ visits: SibeVisitRow[] }>("/api/sibe/visits?status=all", { method: "GET", headers: {} })
+            : Promise.resolve({ visits: [] })
         ]);
 
         setSummary(summaryPayload);
@@ -26,7 +29,7 @@ export function SibeDashboardPage() {
     }
 
     void loadDashboard();
-  }, []);
+  }, [canReadVisits]);
 
   const pastVisits = useMemo(
     () => recentVisits
@@ -89,7 +92,7 @@ export function SibeDashboardPage() {
               <div>
                 <h3>Aktuelle Besuche</h3>
               </div>
-              <Link className="button-link" to="/sibe/besucher">Besucherübersicht</Link>
+              {canReadVisits ? <Link className="button-link" to="/sibe/besucher">Besucherübersicht</Link> : null}
             </div>
             <DataTable>
               <thead>
@@ -111,7 +114,7 @@ export function SibeDashboardPage() {
                     <td>{visit.gateName}</td>
                     <td>{formatDateTime(visit.checkInAt || visit.validFrom)}</td>
                     <td>
-                      <Link className="button-link" to={`/sibe/besucher/${visit.id}`}>Details</Link>
+                      {canReadVisits ? <Link className="button-link" to={`/sibe/besucher/${visit.id}`}>Details</Link> : null}
                     </td>
                   </tr>
                 )) : (
@@ -130,7 +133,7 @@ export function SibeDashboardPage() {
               <div>
                 <h3>Vergangene Besuche</h3>
               </div>
-              <Link className="button-link" to="/sibe/besucher">Besucherübersicht</Link>
+              {canReadVisits ? <Link className="button-link" to="/sibe/besucher">Besucherübersicht</Link> : null}
             </div>
             <DataTable>
               <thead>
@@ -150,7 +153,7 @@ export function SibeDashboardPage() {
                     <td><span className={statusClassName(visit.status)}>{formatStatus(visit.status)}</span></td>
                     <td>{formatDateTime(visit.validUntil)}</td>
                     <td>
-                      <Link className="button-link" to={`/sibe/besucher/${visit.id}`}>Details</Link>
+                      {canReadVisits ? <Link className="button-link" to={`/sibe/besucher/${visit.id}`}>Details</Link> : null}
                     </td>
                   </tr>
                 )) : (
@@ -169,7 +172,7 @@ export function SibeDashboardPage() {
               <div>
                 <h3>Kommende Besuche</h3>
               </div>
-              <Link className="button-link" to="/sibe/besucher">Besucherübersicht</Link>
+              {canReadVisits ? <Link className="button-link" to="/sibe/besucher">Besucherübersicht</Link> : null}
             </div>
             <DataTable>
               <thead>
@@ -191,7 +194,7 @@ export function SibeDashboardPage() {
                     <td>{visit.gateName}</td>
                     <td>{formatDateTime(visit.validFrom)}</td>
                     <td>
-                      <Link className="button-link" to={`/sibe/besucher/${visit.id}`}>Details</Link>
+                      {canReadVisits ? <Link className="button-link" to={`/sibe/besucher/${visit.id}`}>Details</Link> : null}
                     </td>
                   </tr>
                 )) : (

@@ -6,7 +6,7 @@ import { getPool } from "../lib/db";
 import { COUNTRIES, getCountryName, normalizeCountryCode } from "../lib/countries";
 import { createSimplifiedSibeEntry } from "../lib/simplifiedSibeEntry";
 import { simplifiedSibeEntrySchema } from "../lib/simplifiedSibeEntrySchema";
-import { HOST_SIGNATURE_STATUS, VISIT_STATUS } from "../lib/visitWorkflow";
+import { hasPermission, HOST_SIGNATURE_STATUS, VISIT_STATUS } from "../lib/visitWorkflow";
 import { createImportedPreRegistrations, ImportValidationError, validateSimplifiedImportRows } from "../lib/visitImport";
 import { parseExcelBufferWithMetadata } from "../lib/visitImportParsing";
 import { buildSimplifiedImportTemplate } from "../lib/simplifiedImportTemplate";
@@ -468,8 +468,9 @@ sibeRouter.get("/api/sibe/visits", async (request, response) => {
 });
 
 sibeRouter.get("/api/kaskdt/simplified-visits", async (request, response) => {
-  const user = await requireRole(request, response, ["admin", "kaskdt"]);
+  const user = await requirePermission(request, response, "dashboards.commander");
   if (!user) return;
+  if (!hasPermission(user, "visits.read")) return sendForbidden(response);
   const page = Math.max(1, Number.parseInt(String(request.query.page ?? "1"), 10) || 1);
   const pageSize = Math.min(100, Math.max(1, Number.parseInt(String(request.query.pageSize ?? "25"), 10) || 25));
   const sortColumns: Record<string, string> = { createdAt: "vt.created_at", validFrom: "vt.valid_from", name: "vis.last_name", gate: "g.name", status: "vt.status" };
@@ -631,7 +632,8 @@ sibeRouter.post("/api/sibe/visits/simplified-rule/preview", async (request, resp
       const { rows, ignoredSampleRows } = await parseExcelBufferWithMetadata(file.buffer);
       if (!rows.length) return sendValidationError(response, { fieldErrors: { file: ["Keine importierbaren Excel-Zeilen gefunden."] } });
       if (rows.length > 250) return sendError(response, 400, "VALIDATION_ERROR", "Bitte maximal 250 Besucher pro Datei importieren.");
-      const errors = validateSimplifiedImportRows(rows);
+      const activeGateNames = new Set((await listActiveGates()).map((gate) => gate.name.trim().toLocaleLowerCase("de")));
+      const errors = validateSimplifiedImportRows(rows, activeGateNames);
       return response.json({ visitors: rows, errors, warnings: ignoredSampleRows ? [`${ignoredSampleRows} Musterzeile(n) wurden ignoriert.`] : [] });
     } catch (parseError) {
       return handleUnexpectedError(
@@ -656,6 +658,9 @@ sibeRouter.post("/api/sibe/visits/simplified-rule/import", async (request, respo
     try {
       const { rows } = await parseExcelBufferWithMetadata(request.file.buffer);
       if (!rows.length || rows.length > 250) return sendValidationError(response, { fieldErrors: { file: ["Die Datei muss 1 bis 250 Datenzeilen enthalten."] } });
+      const activeGateNames = new Set((await listActiveGates()).map((gate) => gate.name.trim().toLocaleLowerCase("de")));
+      const validationErrors = validateSimplifiedImportRows(rows, activeGateNames);
+      if (validationErrors.length) return sendValidationError(response, { fieldErrors: { file: validationErrors } });
       const imported = await createImportedPreRegistrations(rows, {
         source: "simplified_excel", createdBy: user, submittedIpAddress: getRequestIp(request),
         userAgent: getRequestUserAgent(request), fallbackGateId: gateId

@@ -372,6 +372,30 @@ export function hasPermission(user: Pick<AuthenticatedUser, "role" | "roles" | "
   return readPermissionValue(user.permissions, permission);
 }
 
+const customMenuPermissionRequirements: Partial<Record<AppMenuKey, AppPermission[]>> = {
+  wache: ["visits.read"],
+  import: ["imports.execute"],
+  admin: ["admin.users", "admin.guards", "admin.fields", "admin.map", "admin.system", "logs.audit", "logs.errors"],
+  sibe: ["dashboards.sibe"],
+  laenderbenachrichtigungen: ["dashboards.sibe"],
+  kaskdt: ["dashboards.commander"],
+  texte: ["texts.manage"]
+};
+
+export function getCustomMenusMissingEntryPermission(
+  role: AppRole,
+  permissions: UserPermissionsInput | null | undefined,
+  menuAccess: AppMenuKey[]
+): AppMenuKey[] {
+  if (role !== "custom") return [];
+  const normalized = normalizeUserPermissions(role, permissions, menuAccess);
+  const enabled = (permission: AppPermission) => readPermissionValue(normalized, permission);
+  return menuAccess.filter((menuKey) => {
+    const requirements = customMenuPermissionRequirements[menuKey];
+    return Boolean(requirements?.length && !requirements.some(enabled));
+  });
+}
+
 export type AuthenticatedUser = {
   id: string;
   username: string;
@@ -383,6 +407,11 @@ export type AuthenticatedUser = {
   menuAccess: AppMenuKey[];
   permissions: UserPermissions;
 };
+
+export function requiresGuardGateSelection(user: AuthenticatedUser): boolean {
+  return user.role === "guard"
+    || (user.role === "custom" && user.menuAccess.includes("wache") && hasPermission(user, "visits.read"));
+}
 
 export type GuardScopedVisitTarget = {
   gateId: string | null;

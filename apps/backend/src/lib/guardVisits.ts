@@ -296,7 +296,7 @@ function buildTodayQuery(status?: string, search?: string, signatureStatus?: str
 export type GuardVisitScope = "own" | "all";
 
 function createScopeClause(user: AuthenticatedUser, scope: GuardVisitScope): string {
-  if (scope === "own" && user.role === "guard") {
+  if (scope === "own" && user.role !== "admin") {
     return user.gateId ? "v.gate_id = @gateId" : "1 = 0";
   }
 
@@ -312,8 +312,7 @@ function sanitizeSearchText(value: string | null | undefined): string {
 }
 
 export function canUseGuardVisitorSearch(user: Pick<AuthenticatedUser, "role" | "permissions">): boolean {
-  return (user.role === "guard" || user.role === "admin")
-    && Boolean(user.permissions?.visits?.create);
+  return ["admin", "guard", "custom"].includes(user.role) && Boolean(user.permissions?.visits?.create);
 }
 
 export function hasGuardVisitorSearchCriteria(input: GuardVisitorSearchQuery): boolean {
@@ -580,8 +579,8 @@ export async function getTodayVisitsForUser(
   const request = pool.request();
   const search = options.search?.trim();
 
-  const scope = options.scope ?? (user.role === "guard" ? "own" : "all");
-  if (scope === "own" && user.role === "guard" && user.gateId) {
+  const scope = options.scope ?? (user.role === "admin" ? "all" : "own");
+  if (scope === "own" && user.role !== "admin" && user.gateId) {
     request.input("gateId", sql.UniqueIdentifier, user.gateId);
   }
 
@@ -691,10 +690,10 @@ export async function getCalendarVisitsForUser(
 ): Promise<GuardCalendarVisitItem[]> {
   const pool = await getPool();
   const request = pool.request();
-  const scope = options.scope ?? (user.role === "guard" ? "own" : "all");
+  const scope = options.scope ?? (user.role === "admin" ? "all" : "own");
   const conditions = [createScopeClause(user, scope)];
 
-  if (scope === "own" && user.role === "guard" && user.gateId) {
+  if (scope === "own" && user.role !== "admin" && user.gateId) {
     request.input("gateId", sql.UniqueIdentifier, user.gateId);
   }
 
@@ -761,9 +760,11 @@ export async function getVisitDetailForUser(user: AuthenticatedUser, visitId: st
     request.input("gateId", sql.UniqueIdentifier, user.gateId);
   }
 
-  const scopeClause = user.role === "admin" || user.role === "guard"
+  const scopeClause = user.role === "admin"
     ? "1 = 1"
-    : `(v.gate_id = @gateId OR (v.gate_id IS NULL AND ${normalizedStatusSql} = '${VISIT_STATUS.PRE_REGISTERED}'))`;
+    : user.gateId
+      ? `(v.gate_id = @gateId OR (v.gate_id IS NULL AND ${normalizedStatusSql} = '${VISIT_STATUS.PRE_REGISTERED}'))`
+      : "1 = 0";
   const visitResult = await request.query<VisitDetail>(`
     SELECT
       v.id,

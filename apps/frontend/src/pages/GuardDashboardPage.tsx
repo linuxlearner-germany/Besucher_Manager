@@ -11,6 +11,7 @@ import {
   formatPersonName,
   formatSignatureStatus,
   formatStatus,
+  hasPermission,
   statusClassName,
   toDateInputValue,
   useAuth,
@@ -208,6 +209,10 @@ function applyVisitorToWalkInForm(current: WalkInFormState, visitor: GuardVisito
 export function GuardDashboardPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const canCreateVisits = hasPermission(user, "visits.create");
+  const canCheckInVisits = hasPermission(user, "visits.checkIn");
+  const canCheckOutVisits = hasPermission(user, "visits.checkOut");
+  const canPrintVisits = hasPermission(user, "visits.printBadge");
   const isGuardUser = user?.role === "guard";
   const [visits, setVisits] = useState<VisitRow[]>([]);
   const [statsVisits, setStatsVisits] = useState<VisitRow[]>([]);
@@ -645,14 +650,14 @@ export function GuardDashboardPage() {
             <h2>Wache</h2>
           </div>
           <div className="section-tabs">
-            <button type="button" className="secondary-button" onClick={() => {
+            {canCreateVisits ? <button type="button" className="secondary-button" onClick={() => {
               setWalkInError(null);
               setWalkInFieldErrors({});
               setWalkInSearchOpen(true);
               setWalkInOpen(true);
             }}>
               Spontanbesucher anmelden
-            </button>
+            </button> : null}
             <button type="button" className={`tab-button ${activeView === "list" ? "tab-active" : ""}`} onClick={() => setActiveView("list")}>
               Tagesliste
             </button>
@@ -729,7 +734,7 @@ export function GuardDashboardPage() {
           <div className="toolbar guard-created-actions">
             <span className="badge status-active">Neue Besuchsnummer: {recentWalkInResult.badgeNumber}</span>
             <Link className="button-link" to={`/wache/besuche/${recentWalkInResult.visitId}`}>Details öffnen</Link>
-            <Link className="button-link" to={`/wache/besuche/${recentWalkInResult.visitId}/druck`}>Besucherschein drucken</Link>
+            {canPrintVisits ? <Link className="button-link" to={`/wache/besuche/${recentWalkInResult.visitId}/druck`}>Besucherschein drucken</Link> : null}
           </div>
         ) : null}
         {error ? <div className="feedback error">{error}</div> : null}
@@ -777,7 +782,7 @@ export function GuardDashboardPage() {
                       <td className="actions-cell">
                         <div className="action-row guard-action-row">
                           <div className="guard-action-strip">
-                            {visit.status === "pre_registered" ? (
+                            {visit.status === "pre_registered" && canCheckInVisits ? (
                               <button type="button" className="guard-primary-action" onClick={() => void handleCheckIn(visit.id)}>
                                 Einchecken
                               </button>
@@ -787,14 +792,14 @@ export function GuardDashboardPage() {
                               Details
                             </Link>
 
-                            {visit.status === "pre_registered" || visit.status === "checked_in" || visit.status === "checked_out" ? (
+                            {canPrintVisits && (visit.status === "pre_registered" || visit.status === "checked_in" || visit.status === "checked_out") ? (
                               <Link className="button-link" to={`/wache/besuche/${visit.id}/druck`}>
                                 Drucken
                               </Link>
                             ) : null}
                           </div>
 
-                          {visit.status === "checked_in" ? (
+                          {visit.status === "checked_in" && canCheckOutVisits ? (
                             <div className="checkout-box">
                               <input
                                 className="guard-badge-input"

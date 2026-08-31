@@ -14,6 +14,7 @@ import { checkRateLimit } from "../lib/rateLimit";
 import { findUserById, findUserForLogin, hashPassword, verifyPassword } from "../lib/users";
 import { ImportValidationError, createImportedPreRegistrations } from "../lib/visitImport";
 import { loadWorkflowSettings } from "../lib/systemSettings";
+import { hasPermission } from "../lib/visitWorkflow";
 import { APP_VERSION } from "../lib/appVersion";
 import {
   getRequestIp,
@@ -36,6 +37,7 @@ import { sibeRouter } from "./sibe";
 import { publicSimplifiedApplicationsRouter } from "./publicSimplifiedApplications";
 import { bundeswehrEmailSchema } from "../lib/emailPolicy";
 import { sendGroupPreRegistrationConfirmation } from "../lib/mailRelay";
+import { requiresGuardGateSelection } from "../lib/visitWorkflow";
 import {
   getPublicPreRegistration,
   hashPublicAccessToken,
@@ -288,10 +290,16 @@ apiRouter.post("/api/auth/login", async (request, response) => {
       return sendError(response, 401, "INVALID_CREDENTIALS", "Benutzername oder Passwort ist ungueltig.");
     }
 
+    const fullUser = await findUserById(candidate.id);
+    if (!fullUser) {
+      return sendError(response, 401, "INVALID_CREDENTIALS", "Benutzername oder Passwort ist ungueltig.");
+    }
+
     let activeGateId = candidate.gateId;
     let activeGateName: string | null = null;
+    const needsGuardGate = requiresGuardGateSelection(fullUser);
 
-    if (candidate.role === "guard") {
+    if (needsGuardGate) {
       const requestedGateId = parsed.data.gateId?.trim() || "";
 
       if (!requestedGateId) {
@@ -330,17 +338,28 @@ apiRouter.post("/api/auth/login", async (request, response) => {
       gateId: activeGateId
     });
 
-    const fullUser = await findUserById(candidate.id);
-    const menuAccess = fullUser?.menuAccess ?? [];
-    const redirectTarget = menuAccess.includes("admin")
+    const menuAccess = fullUser.menuAccess;
+    const redirectTarget = menuAccess.includes("admin") && (
+      hasPermission(fullUser, "admin.users")
+      || hasPermission(fullUser, "admin.guards")
+      || hasPermission(fullUser, "admin.fields")
+      || hasPermission(fullUser, "admin.map")
+      || hasPermission(fullUser, "admin.system")
+      || hasPermission(fullUser, "logs.audit")
+      || hasPermission(fullUser, "logs.errors")
+    )
       ? "/admin"
-      : menuAccess.includes("wache")
+      : menuAccess.includes("wache") && hasPermission(fullUser, "visits.read")
         ? "/wache"
-        : menuAccess.includes("sibe")
+        : menuAccess.includes("sibe") && hasPermission(fullUser, "dashboards.sibe")
           ? "/sibe"
-          : menuAccess.includes("kaskdt")
+          : menuAccess.includes("kaskdt") && hasPermission(fullUser, "dashboards.commander")
             ? "/kaskdt"
-            : "/";
+            : menuAccess.includes("import") && hasPermission(fullUser, "imports.execute")
+              ? "/import"
+              : menuAccess.includes("texte") && hasPermission(fullUser, "texts.manage")
+                ? "/texte"
+                : "/";
 
     await writeAuditLog({
       user: candidate.username,
@@ -357,7 +376,7 @@ apiRouter.post("/api/auth/login", async (request, response) => {
         httpStatus: 200,
         result: "success",
         source: "authentication",
-        roles: fullUser?.roles ?? candidate.roles,
+        roles: fullUser.roles ?? candidate.roles,
         gateId: activeGateId
       }
     });
@@ -368,12 +387,12 @@ apiRouter.post("/api/auth/login", async (request, response) => {
         username: candidate.username,
         displayName: candidate.username,
         role: candidate.role,
-        roles: fullUser?.roles ?? candidate.roles,
+        roles: fullUser.roles ?? candidate.roles,
         gateId: activeGateId,
         gateName: activeGateName,
-        groups: fullUser?.groups ?? [],
+        groups: fullUser.groups,
         menuAccess,
-        permissions: fullUser?.permissions
+        permissions: fullUser.permissions
       },
       redirectTo: redirectTarget || redirectTo
     });

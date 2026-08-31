@@ -369,10 +369,6 @@ guardRouter.post("/api/guard/visits/walk-in", async (request, response) => {
     return;
   }
 
-  if (user.role !== "guard" && user.role !== "admin") {
-    return sendForbidden(response);
-  }
-
   const parsed = guardWalkInCreateSchema.safeParse(request.body);
   if (!parsed.success) {
     return sendValidationError(response, parsed.error.flatten());
@@ -758,7 +754,7 @@ guardRouter.post("/api/guard/visits/:id/cancel", async (request, response) => {
       return sendError(response, 404, "NOT_FOUND", "Der Besuch wurde nicht gefunden.");
     }
 
-    if (user.role === "guard" && user.gateId !== visit.gateId) {
+    if (user.role !== "admin" && user.gateId !== visit.gateId) {
       return sendForbidden(response);
     }
 

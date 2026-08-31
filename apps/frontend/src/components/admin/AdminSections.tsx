@@ -307,6 +307,28 @@ export function AdminUsersSection({
     return summary.slice(0, 3).join(", ") + (summary.length > 3 ? ` +${summary.length - 3}` : "");
   }
 
+  const menuPermissionRequirements: Partial<Record<AppMenuKey, AppPermission[]>> = {
+    wache: ["visits.read"],
+    import: ["imports.execute"],
+    admin: ["admin.users", "admin.guards", "admin.fields", "admin.map", "admin.system", "logs.audit", "logs.errors"],
+    sibe: ["dashboards.sibe"],
+    laenderbenachrichtigungen: ["dashboards.sibe"],
+    kaskdt: ["dashboards.commander"],
+    texte: ["texts.manage"]
+  };
+
+  function missingMenuPermissions(menuAccess: AppMenuKey[], permissions: UserPermissions): string[] {
+    return menuAccess.flatMap((menuKey) => {
+      const requirements = menuPermissionRequirements[menuKey];
+      if (!requirements?.length || requirements.some((permission) => isPermissionEnabled(permissions, permission))) return [];
+      const menuLabel = menuOptions.find((option) => option.key === menuKey)?.label ?? menuKey;
+      const rightLabels = permissionGroups.flatMap((group) => group.items)
+        .filter((item) => requirements.includes(item.key))
+        .map((item) => item.label);
+      return [`${menuLabel}: ${rightLabels.join(" oder ")}`];
+    });
+  }
+
   return (
     <Card className="admin-section-stack">
       <div className="section-header">
@@ -385,6 +407,10 @@ export function AdminUsersSection({
             {newUser.role === "custom" ? (
               <div>
                 <div className="admin-subsection-title">Berechtigungen</div>
+                <p className="section-copy">Menüzugriffe und Funktionsrechte werden getrennt vergeben. Für jeden gewählten Bereich ist mindestens das angezeigte Einstiegsrecht erforderlich.</p>
+                {missingMenuPermissions(newUser.menuAccess, newUser.permissions).length ? (
+                  <Alert type="warning">Noch fehlende Rechte: {missingMenuPermissions(newUser.menuAccess, newUser.permissions).join("; ")}</Alert>
+                ) : null}
                 <div className="permission-group-grid">
                   {permissionGroups.map((group) => (
                     <div key={group.title} className="permission-group-card">
@@ -589,6 +615,10 @@ export function AdminUsersSection({
               {selectedUser.role === "custom" ? (
                 <div>
                   <div className="admin-subsection-title">Berechtigungen</div>
+                  <p className="section-copy">Menüzugriffe und Funktionsrechte werden getrennt vergeben. Für jeden gewählten Bereich ist mindestens das angezeigte Einstiegsrecht erforderlich.</p>
+                  {missingMenuPermissions(selectedUser.menuAccess, selectedUser.permissions).length ? (
+                    <Alert type="warning">Noch fehlende Rechte: {missingMenuPermissions(selectedUser.menuAccess, selectedUser.permissions).join("; ")}</Alert>
+                  ) : null}
                   <div className="permission-group-grid">
                     {permissionGroups.map((group) => (
                       <div key={group.title} className="permission-group-card">

@@ -105,6 +105,11 @@ function normalizeRow(row: ImportVisitInput, index: number, gates: readonly Gate
   if (!optional(row.validUntil, 40)) errors.push("Gültig bis fehlt.");
   else if (!validUntil) errors.push("Gültig bis ist ungültig.");
   if (validFrom && validUntil && validUntil < validFrom) errors.push("Gültig bis liegt vor Gültig von.");
+  if (!optional(row.firstName, 120)) errors.push("Vorname fehlt.");
+  if (!optional(row.lastName, 120)) errors.push("Nachname fehlt.");
+  if (!optional(row.company, 255)) errors.push("Firma / Organisation fehlt.");
+  if (!optional(row.hostName, 255)) errors.push("Ansprechpartner fehlt.");
+  if (!optional(row.purpose, 500)) errors.push("Besuchszweck fehlt.");
   const nationality = optional(row.nationalityCode, 120);
   const nationalityCode = nationality ? findCountryCode(nationality) : null;
   if (nationality && !nationalityCode) errors.push(`Nationalität „${nationality}“ ist ungültig. Erwartet wird ein zweistelliger ISO-Code oder ein deutscher Ländername, zum Beispiel „DE“ oder „Deutschland“.`);
@@ -115,7 +120,6 @@ function normalizeRow(row: ImportVisitInput, index: number, gates: readonly Gate
   const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   if (email && !emailPattern.test(email)) errors.push("E-Mail ist ungültig.");
   if (hostEmail && !emailPattern.test(hostEmail)) errors.push("Ansprechpartner-E-Mail ist ungültig.");
-  if (!optional(row.firstName, 120) && !optional(row.lastName, 120)) warnings.push("Kein Besuchername angegeben.");
   return {
     rowNumber, firstName: optional(row.firstName, 120), lastName: optional(row.lastName, 120), company: optional(row.company, 255),
     nationalityCode, birthDate, phone: optional(row.phone, 80), email, licensePlate: optional(row.licensePlate, 40), gateId: gate?.id ?? null,

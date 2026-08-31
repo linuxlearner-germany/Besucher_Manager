@@ -24,12 +24,12 @@ import {
   getAllowedMenuAccessForRole,
   getDefaultMenuAccessForRole,
   getDefaultMenuAccessForRoles,
+  getCustomMenusMissingEntryPermission,
   normalizeRoles,
   HOST_SIGNATURE_STATUS,
   VISIT_STATUS,
   parsePermissionsJson,
   type AppMenuKey,
-  type AppPermission,
   type AuthenticatedUser
 } from "../lib/visitWorkflow";
 import {
@@ -1044,11 +1044,15 @@ adminRouter.post("/api/admin/users", async (request, response) => {
 
     const gateId: string | null = null;
 
+    const normalizedMenuAccess = data.menuAccess?.length ? data.menuAccess : getDefaultMenuAccessForRoles(roles);
+    const missingMenuPermissions = getCustomMenusMissingEntryPermission(primaryRole, data.permissions, normalizedMenuAccess);
+    if (missingMenuPermissions.length) {
+      return sendValidationError(response, { fieldErrors: { permissions: [`Für diese Menüzugriffe fehlt mindestens ein erforderliches Recht: ${missingMenuPermissions.join(", ")}.`] } });
+    }
+    const permissionsJson = normalizePermissionsPayload(primaryRole, data.permissions, normalizedMenuAccess);
+
     const transaction = new sql.Transaction(pool);
     await transaction.begin();
-
-    const normalizedMenuAccess = data.menuAccess?.length ? data.menuAccess : getDefaultMenuAccessForRoles(roles);
-    const permissionsJson = normalizePermissionsPayload(primaryRole, data.permissions, normalizedMenuAccess);
 
     const created = await new sql.Request(transaction)
       .input("username", sql.NVarChar(120), data.username)
@@ -1126,9 +1130,14 @@ adminRouter.put("/api/admin/users/:id", async (request, response) => {
       : currentUser.role === nextRole
         ? currentMenuAccess
         : getDefaultMenuAccessForRoles(nextRoles);
+    const permissionSource = data.permissions ?? parsePermissionsJson(currentUser.permissionsJson) ?? undefined;
+    const missingMenuPermissions = getCustomMenusMissingEntryPermission(nextRole, permissionSource, nextMenuAccess);
+    if (missingMenuPermissions.length) {
+      return sendValidationError(response, { fieldErrors: { permissions: [`Für diese Menüzugriffe fehlt mindestens ein erforderliches Recht: ${missingMenuPermissions.join(", ")}.`] } });
+    }
     const permissionsJson = normalizePermissionsPayload(
       nextRole,
-      data.permissions ?? parsePermissionsJson(currentUser.permissionsJson) ?? undefined,
+      permissionSource,
       nextMenuAccess
     );
 
@@ -1137,7 +1146,7 @@ adminRouter.put("/api/admin/users/:id", async (request, response) => {
     }
 
     if (nextRoles.includes("sibe") && !nextEmail) {
-      return sendError(response, 400, "VALIDATION_ERROR", "Fuer SiBe ist eine E-Mail-Adresse erforderlich.");
+      return sendValidationError(response, { fieldErrors: { email: ["Für SiBe ist eine E-Mail-Adresse erforderlich."] } });
     }
 
     if (admin.id === request.params.id && (!nextActive || nextRole !== "admin")) {

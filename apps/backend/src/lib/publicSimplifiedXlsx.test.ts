@@ -51,7 +51,7 @@ async function filledGeneratedTemplate(nationalities: readonly string[], gateNam
   assert.ok(sheet);
   nationalities.forEach((nationality, index) => {
     const row = sheet.getRow(SIMPLIFIED_XLSX_DATA_START_ROW + index);
-    row.values = [gateName, `Vorname ${index + 1}`, `Nachname ${index + 1}`, "Musterfirma", nationality, "01.09.2026", "", "", "", "", "", "", "", "Montage", "01.09.2026", "30.09.2026", ""];
+    row.values = [gateName, `Vorname ${index + 1}`, `Nachname ${index + 1}`, "Musterfirma", nationality, "01.09.2026", "", "", "", "Maria Muster", "", "", "", "Montage", "01.09.2026", "30.09.2026", ""];
   });
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }
@@ -129,6 +129,16 @@ test("generated simplified XLSX template roundtrips through its import validatio
   assert.equal(result.rows[0]?.rowNumber, SIMPLIFIED_XLSX_DATA_START_ROW);
   assert.equal(result.rows[0]?.nationalityCode, "DE");
   assert.equal(result.rows[0]?.gateId, activeGates[0]?.id);
+});
+
+test("public simplified XLSX rejects rows without identity and visit data", async () => {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(await buildSimplifiedImportTemplate(activeGates) as never);
+  workbook.getWorksheet("Vereinfachte Erfassung")!.getRow(2).values = ["Hauptwache", "", "", "", "", "", "", "", "", "", "", "", "", "", "01.09.2026", "01.09.2026", ""];
+  const { parseAndValidatePublicApplicationXlsx } = await import("./publicSimplifiedXlsx.js");
+  const result = await parseAndValidatePublicApplicationXlsx(Buffer.from(await workbook.xlsx.writeBuffer()), activeGates);
+  assert.equal(result.valid, false);
+  assert.deepEqual(result.rows[0]?.errors, ["Vorname fehlt.", "Nachname fehlt.", "Firma / Organisation fehlt.", "Ansprechpartner fehlt.", "Besuchszweck fehlt."]);
 });
 
 test("older offline XLSX files with ISO country codes remain server-compatible", async () => {

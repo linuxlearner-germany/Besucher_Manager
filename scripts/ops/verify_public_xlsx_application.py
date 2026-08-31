@@ -93,7 +93,7 @@ def main():
     sibe.login("sibe.demo");kskdt.login("kaskdt.demo")
     expect(sibe.request("PUT","/api/sibe/nationality-subscriptions",{"countryCodes":["DE"]})[0],200,"nationality subscription")
     direct_marker="E2E Direkt Nationalität"
-    direct_payload={"gateId":preview["rows"][0]["gateId"],"validFrom":"2026-08-14","validUntil":"2026-08-14","firstName":"E2E Direkt","lastName":"Nationalität","company":"Test GmbH","nationalityCode":"DE"}
+    direct_payload={"gateId":preview["rows"][0]["gateId"],"validFrom":"2026-08-14","validUntil":"2026-08-14","firstName":"E2E Direkt","lastName":"Nationalität","company":"Test GmbH","hostName":"Kontakt","purpose":"E2E Antrag","nationalityCode":"DE"}
     expect(sibe.request("POST","/api/sibe/visits/simplified",direct_payload)[0],201,"direct simplified visit")
     wait_for_mail_count(args.mailpit_url,direct_marker,1)
     expect(sibe.request("PATCH","/api/sibe/settings/public-xlsx-applications",{"requireEmailVerification":True})[0],200,"enable verification")

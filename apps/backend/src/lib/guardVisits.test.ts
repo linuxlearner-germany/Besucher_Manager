@@ -238,7 +238,7 @@ test("completeness blocks missing nationality", () => {
   assert.equal(completeness.errors.some((issue: { field: string }) => issue.field === "Nationalität"), true);
 });
 
-test("guard visitor search is allowed for guard and admin only", () => {
+test("guard visitor search is allowed for guard, admin and authorized custom users", () => {
   const { canUseGuardVisitorSearch } = require("./guardVisits");
   const basePermissions = {
     visits: { create: true }
@@ -246,6 +246,7 @@ test("guard visitor search is allowed for guard and admin only", () => {
 
   assert.equal(canUseGuardVisitorSearch({ role: "guard", permissions: basePermissions }), true);
   assert.equal(canUseGuardVisitorSearch({ role: "admin", permissions: basePermissions }), true);
+  assert.equal(canUseGuardVisitorSearch({ role: "custom", permissions: basePermissions }), true);
   assert.equal(canUseGuardVisitorSearch({ role: "sibe", permissions: basePermissions }), false);
   assert.equal(canUseGuardVisitorSearch({ role: "guard", permissions: { visits: { create: false } } }), false);
 });

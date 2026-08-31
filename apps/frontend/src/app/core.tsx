@@ -947,6 +947,9 @@ export function getDefaultRouteForUser(user: User): string {
   if (hasMenuAccess(user, "kaskdt") && hasPermission(user, "dashboards.commander")) {
     return "/kaskdt";
   }
+  if (hasMenuAccess(user, "import") && hasPermission(user, "imports.execute")) {
+    return "/import";
+  }
   if (hasMenuAccess(user, "texte") && hasPermission(user, "texts.manage")) {
     return "/texte";
   }
@@ -1042,19 +1045,19 @@ export function buildCheckoutStateFromVisit(visit: VisitDetail): CheckoutFormSta
 
 export function buildGuardVisitEditState(visit: VisitDetail): GuardVisitEditState {
   return {
-    firstName: visit.firstName,
-    lastName: visit.lastName,
+    firstName: visit.firstName || "",
+    lastName: visit.lastName || "",
     birthDate: visit.birthDate || "",
-    company: visit.company,
+    company: visit.company || "",
     nationalityCode: visit.nationalityCode || "DE",
     phone: visit.visitorPhone || "",
     email: visit.visitorEmail || "",
     licensePlate: visit.licensePlate || "",
-    hostName: visit.hostName,
+    hostName: visit.hostName || "",
     hostEmail: visit.hostEmail || "",
     hostPhone: visit.hostPhone || "",
-    hostDepartment: visit.hostDepartment,
-    purpose: visit.purpose,
+    hostDepartment: visit.hostDepartment || "",
+    purpose: visit.purpose || "",
     gateId: visit.gateId || "",
     validFrom: toDateInputValue(new Date(visit.validFrom)),
     validUntil: toDateInputValue(new Date(visit.validUntil)),

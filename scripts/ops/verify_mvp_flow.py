@@ -494,12 +494,21 @@ def main() -> int:
     if imported_sibe_visit.get("status") != "pre_registered":
         raise RuntimeError("Importierter Besuch ist in SiBe nicht vorangemeldet.")
 
-    print("8/16 SiBe legt einen Besuch ohne Personendaten an...")
+    print("8/16 SiBe legt einen vereinfachten Besuch mit Pflichtdaten an...")
     today = dt.date.today().isoformat()
     simplified_visit = sibe_client.request(
         "POST",
         "/api/sibe/visits/simplified",
-        payload={"gateId": gate["id"], "validFrom": today, "validUntil": today},
+        payload={
+            "gateId": gate["id"],
+            "validFrom": today,
+            "validUntil": today,
+            "firstName": "Vereinfacht",
+            "lastName": f"Besucher-{suffix}",
+            "company": "Test Vereinfachte Regelung GmbH",
+            "hostName": "Test Ansprechpartner",
+            "purpose": "Automatischer MVP-Check",
+        },
     )
     simplified_visit_id = simplified_visit["visitId"]
     require_visit(
@@ -660,7 +669,14 @@ def main() -> int:
     dual_client.request("GET", "/api/sibe/summary")
     dual_client.request("GET", "/api/kaskdt/simplified-visits?page=1&pageSize=5")
     dual_visit = dual_client.request("POST", "/api/sibe/visits/simplified", payload={
-        "gateId": gate["id"], "validFrom": today, "validUntil": today,
+        "gateId": gate["id"],
+        "validFrom": today,
+        "validUntil": today,
+        "firstName": "Doppelrolle",
+        "lastName": f"Besucher-{suffix}",
+        "company": "Test Doppelrolle GmbH",
+        "hostName": "Test Ansprechpartner",
+        "purpose": "Automatischer Doppelrollen-Check",
     })
     if not dual_visit.get("visitId"):
         raise RuntimeError("Doppelrollen-Benutzer konnte keinen vereinfachten Besuch anlegen.")

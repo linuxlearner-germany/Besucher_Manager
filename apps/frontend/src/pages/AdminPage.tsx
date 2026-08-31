@@ -38,11 +38,13 @@ import {
   type AdminUser,
   type ApiError,
   type EditableAdminUser,
+  extractFieldErrors,
   type FieldConfigExportPayload,
   fetchJson,
   getDefaultPermissionsForRole,
   getAllowedMenuAccessForRole,
   hasPermission,
+  hasRole,
   type UserPermissions,
   useAuth,
   useThemeMode
@@ -245,7 +247,7 @@ export function AdminPage() {
   }, [searchParams]);
 
   useEffect(() => {
-    if (!selectedAuditLogId) {
+    if (!selectedAuditLogId || !hasPermission(currentUser, "logs.audit")) {
       setSelectedAuditLog(null);
       setAuditDetailError(null);
       setAuditDetailLoading(false);
@@ -265,10 +267,10 @@ export function AdminPage() {
       if (!controller.signal.aborted) setAuditDetailLoading(false);
     });
     return () => controller.abort();
-  }, [describeLogDetailError, selectedAuditLogId]);
+  }, [currentUser, describeLogDetailError, selectedAuditLogId]);
 
   useEffect(() => {
-    if (!selectedErrorLogId) {
+    if (!selectedErrorLogId || !hasPermission(currentUser, "logs.errors")) {
       setSelectedErrorLog(null);
       setErrorDetailError(null);
       setErrorDetailLoading(false);
@@ -288,7 +290,7 @@ export function AdminPage() {
       if (!controller.signal.aborted) setErrorDetailLoading(false);
     });
     return () => controller.abort();
-  }, [describeLogDetailError, selectedErrorLogId]);
+  }, [currentUser, describeLogDetailError, selectedErrorLogId]);
 
   const selectAdminSection = useCallback((section: AdminSectionKey) => {
     setActiveSection(section);
@@ -339,18 +341,19 @@ export function AdminPage() {
     setError(null);
     setAdminDataLoading(true);
     try {
+      const can = (permission: AppPermission) => hasPermission(currentUser, permission);
       const [gatePayload, userPayload, textPayload, statusPayload, workflowPayload, backgroundPayload, siteMapPayload, siteMapsPayload, fieldDefinitionsPayload, retentionPayload, maintenancePayload] = await Promise.all([
-        fetchJson<{ gates: AdminGate[] }>("/api/admin/gates", { method: "GET", headers: {} }),
-        fetchJson<{ users: AdminUser[] }>("/api/admin/users", { method: "GET", headers: {} }),
-        fetchJson<{ texts: AdminBadgeText[] }>("/api/texts", { method: "GET", headers: {} }),
-        fetchJson<{ app: string; appVersion: string; schemaVersion: number; activeVisits: number; activeGates: number; openPreRegistrationsToday: number; signaturesPending: number; signaturesFollowUp: number; signaturesExceptions: number; dbHost?: string; dbName?: string }>("/api/admin/system-status", { method: "GET", headers: {} }),
-        fetchJson<AdminWorkflowSettings>("/api/admin/system-settings/workflow-email", { method: "GET", headers: {} }),
-        fetchJson<{ backgrounds: AdminUiBackground[] }>("/api/admin/ui-backgrounds", { method: "GET", headers: {} }),
-        fetchJson<{ siteMap: AdminSiteMap | null }>("/api/admin/site-map", { method: "GET", headers: {} }),
-        fetchJson<{ siteMaps: AdminSiteMap[] }>("/api/admin/site-maps", { method: "GET", headers: {} }),
-        fetchJson<{ definitions: AdminFieldDefinition[] }>("/api/admin/field-definitions", { method: "GET", headers: {} }),
-        fetchJson<AdminRetentionSettings>("/api/admin/data-retention", { method: "GET", headers: {} }),
-        fetchJson<{ maintenanceMode: boolean }>("/api/admin/system-settings/maintenance", { method: "GET", headers: {} })
+        can("admin.guards") ? fetchJson<{ gates: AdminGate[] }>("/api/admin/gates", { method: "GET", headers: {} }) : Promise.resolve({ gates: [] }),
+        can("admin.users") ? fetchJson<{ users: AdminUser[] }>("/api/admin/users", { method: "GET", headers: {} }) : Promise.resolve({ users: [] }),
+        can("texts.manage") ? fetchJson<{ texts: AdminBadgeText[] }>("/api/texts", { method: "GET", headers: {} }) : Promise.resolve({ texts: [] }),
+        can("admin.system") ? fetchJson<{ app: string; appVersion: string; schemaVersion: number; activeVisits: number; activeGates: number; openPreRegistrationsToday: number; signaturesPending: number; signaturesFollowUp: number; signaturesExceptions: number; dbHost?: string; dbName?: string }>("/api/admin/system-status", { method: "GET", headers: {} }) : Promise.resolve(null),
+        can("admin.system") ? fetchJson<AdminWorkflowSettings>("/api/admin/system-settings/workflow-email", { method: "GET", headers: {} }) : Promise.resolve(null),
+        can("admin.system") ? fetchJson<{ backgrounds: AdminUiBackground[] }>("/api/admin/ui-backgrounds", { method: "GET", headers: {} }) : Promise.resolve({ backgrounds: [] }),
+        can("admin.map") ? fetchJson<{ siteMap: AdminSiteMap | null }>("/api/admin/site-map", { method: "GET", headers: {} }) : Promise.resolve({ siteMap: null }),
+        can("admin.map") ? fetchJson<{ siteMaps: AdminSiteMap[] }>("/api/admin/site-maps", { method: "GET", headers: {} }) : Promise.resolve({ siteMaps: [] }),
+        can("admin.fields") ? fetchJson<{ definitions: AdminFieldDefinition[] }>("/api/admin/field-definitions", { method: "GET", headers: {} }) : Promise.resolve({ definitions: [] }),
+        can("admin.system") ? fetchJson<AdminRetentionSettings>("/api/admin/data-retention", { method: "GET", headers: {} }) : Promise.resolve(null),
+        can("admin.system") ? fetchJson<{ maintenanceMode: boolean }>("/api/admin/system-settings/maintenance", { method: "GET", headers: {} }) : Promise.resolve({ maintenanceMode: false })
       ]);
 
       setGates(gatePayload.gates);
@@ -359,8 +362,10 @@ export function AdminPage() {
       setSystemStatus(statusPayload);
       setWorkflowSettings(workflowPayload);
       setUiBackgrounds(backgroundPayload.backgrounds);
-      setBackgroundMode(workflowPayload.backgroundMode);
-      setBackgroundImageUrl(workflowPayload.backgroundImageUrl);
+      if (workflowPayload) {
+        setBackgroundMode(workflowPayload.backgroundMode);
+        setBackgroundImageUrl(workflowPayload.backgroundImageUrl);
+      }
       setWorkflowPassword("");
       setActiveSiteMap(siteMapPayload.siteMap);
       setSiteMaps(siteMapsPayload.siteMaps);
@@ -378,8 +383,8 @@ export function AdminPage() {
       }])));
       setEditableFieldDefinitions(Object.fromEntries(fieldDefinitionsPayload.definitions.map((field) => [field.id, { ...field }])));
       await Promise.all([
-        loadAuditLogs(auditFilters),
-        loadErrorLogs(errorLogFilters)
+        can("logs.audit") ? loadAuditLogs(auditFilters) : Promise.resolve(),
+        can("logs.errors") ? loadErrorLogs(errorLogFilters) : Promise.resolve()
       ]);
     } catch (apiError) {
       const payload = apiError as ApiError;
@@ -387,7 +392,7 @@ export function AdminPage() {
     } finally {
       setAdminDataLoading(false);
     }
-  }, [auditFilters, errorLogFilters, loadAuditLogs, loadErrorLogs, setBackgroundImageUrl, setBackgroundMode]);
+  }, [auditFilters, currentUser, errorLogFilters, loadAuditLogs, loadErrorLogs, setBackgroundImageUrl, setBackgroundMode]);
 
   async function saveRetentionSettings() {
     if (!retentionSettings) return;
@@ -450,6 +455,10 @@ export function AdminPage() {
 
   async function createUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (newUser.roles.includes("sibe") && !newUser.email.trim()) {
+      setError("Für SiBe ist eine E-Mail-Adresse erforderlich.");
+      return;
+    }
     try {
       await fetchJson("/api/admin/users", {
         method: "POST",
@@ -483,7 +492,8 @@ export function AdminPage() {
       await loadAll();
     } catch (apiError) {
       const payload = apiError as ApiError;
-      setError(payload.message || "Benutzer konnte nicht angelegt werden.");
+      const fieldErrors = extractFieldErrors(payload);
+      setError(fieldErrors.email || fieldErrors.permissions || payload.message || "Benutzer konnte nicht angelegt werden.");
     }
   }
 
@@ -756,7 +766,8 @@ export function AdminPage() {
       setUserSaveState({ userId, kind: "success", message: "Benutzer wurde erfolgreich aktualisiert." });
     } catch (apiError) {
       const payload = apiError as ApiError;
-      const saveError = payload.message || "Benutzer konnte nicht aktualisiert werden.";
+      const fieldErrors = extractFieldErrors(payload);
+      const saveError = fieldErrors.email || fieldErrors.permissions || payload.message || "Benutzer konnte nicht aktualisiert werden.";
       setError(saveError);
       setUserSaveState({ userId, kind: "error", message: saveError });
     }
@@ -1107,7 +1118,7 @@ export function AdminPage() {
   }
 
   const sectionTabs = [
-    { key: "dashboard" as const, label: "Dashboard", visible: true },
+    { key: "dashboard" as const, label: "Dashboard", visible: hasRole(currentUser, "admin") },
     { key: "wachen" as const, label: "Wachen", visible: Boolean(currentUser && hasPermission(currentUser, "admin.guards")) },
     { key: "benutzer" as const, label: "Benutzer", visible: Boolean(currentUser && hasPermission(currentUser, "admin.users")) },
     { key: "texte" as const, label: "Texte", visible: Boolean(currentUser && hasPermission(currentUser, "texts.manage")) },

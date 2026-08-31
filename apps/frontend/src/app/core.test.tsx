@@ -3,11 +3,13 @@ import {
   formatDateOnly,
   formatPersonName,
   formatStatus,
+  buildGuardVisitEditState,
   getDefaultRouteForUser,
   getRootRedirectForUser,
   hasPermission,
   hasRole,
-  type User
+  type User,
+  type VisitDetail
 } from "./core";
 
 const user: User = {
@@ -38,6 +40,25 @@ describe("frontend core helpers", () => {
   it("formats missing visitor names without leaking undefined", () => {
     expect(formatPersonName("", "")).toBe("Ohne Namensangabe");
     expect(formatPersonName("Erika", "Muster")).toBe("Erika Muster");
+  });
+
+  it("normalizes nullable database values before a guard update is submitted", () => {
+    const form = buildGuardVisitEditState({
+      firstName: null,
+      lastName: null,
+      company: null,
+      hostName: null,
+      hostDepartment: null,
+      purpose: null,
+      validFrom: "2026-08-31T00:00:00.000Z",
+      validUntil: "2026-08-31T23:59:59.999Z"
+    } as unknown as VisitDetail);
+    expect(form.firstName).toBe("");
+    expect(form.lastName).toBe("");
+    expect(form.company).toBe("");
+    expect(form.hostName).toBe("");
+    expect(form.hostDepartment).toBe("");
+    expect(form.purpose).toBe("");
   });
 
   it("uses the explicit permission model", () => {

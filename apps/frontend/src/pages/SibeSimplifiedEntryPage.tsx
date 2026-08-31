@@ -92,7 +92,7 @@ export function SibeSimplifiedEntryPage() {
         <section className="page-hero">
           <div className="page-hero-content">
             <h2>Besucher vereinfacht erfassen</h2>
-            <p>Nur Wache und Gültigkeitszeitraum sind erforderlich. Fehlende Personendaten können vor dem Check-in ergänzt werden.</p>
+            <p>Wache, Gültigkeitszeitraum, Besucheridentität, Ansprechpartner und Besuchszweck sind erforderlich. Weitere Angaben können vor dem Check-in ergänzt werden.</p>
           </div>
         </section>
 
@@ -118,8 +118,8 @@ export function SibeSimplifiedEntryPage() {
               <FormField label="Gültig bis" required error={fieldErrors.validUntil}>
                 <input required type="date" value={form.validUntil} onChange={(event) => update("validUntil", event.target.value)} />
               </FormField>
-              <FormField label="Ansprechpartner" error={fieldErrors.hostName}>
-                <input maxLength={255} value={form.hostName} onChange={(event) => update("hostName", event.target.value)} />
+              <FormField label="Ansprechpartner" required error={fieldErrors.hostName}>
+                <input required maxLength={255} value={form.hostName} onChange={(event) => update("hostName", event.target.value)} />
               </FormField>
               <FormField label="Ansprechpartner Telefon" error={fieldErrors.hostPhone}>
                 <input maxLength={80} value={form.hostPhone} onChange={(event) => update("hostPhone", event.target.value)} />
@@ -130,8 +130,8 @@ export function SibeSimplifiedEntryPage() {
               <FormField label="Geschäftsfeld" error={fieldErrors.hostDepartment}>
                 <input maxLength={255} value={form.hostDepartment} onChange={(event) => update("hostDepartment", event.target.value)} />
               </FormField>
-              <FormField label="Besuchszweck" error={fieldErrors.purpose}>
-                <input maxLength={500} value={form.purpose} onChange={(event) => update("purpose", event.target.value)} />
+              <FormField label="Besuchszweck" required error={fieldErrors.purpose}>
+                <input required maxLength={500} value={form.purpose} onChange={(event) => update("purpose", event.target.value)} />
               </FormField>
               <FormField label="Kennzeichen" error={fieldErrors.licensePlate}>
                 <input maxLength={40} value={form.licensePlate} onChange={(event) => update("licensePlate", event.target.value)} />
@@ -145,16 +145,16 @@ export function SibeSimplifiedEntryPage() {
           </Card>
 
           <Card>
-            <div className="section-header"><h3>Optionale Personendaten</h3></div>
+            <div className="section-header"><h3>Besucheridentität</h3></div>
             <div className="form-grid two-columns">
-              <FormField label="Vorname" error={fieldErrors.firstName}>
-                <input maxLength={120} value={form.firstName} onChange={(event) => update("firstName", event.target.value)} />
+              <FormField label="Vorname" required error={fieldErrors.firstName}>
+                <input required maxLength={120} value={form.firstName} onChange={(event) => update("firstName", event.target.value)} />
               </FormField>
-              <FormField label="Nachname" error={fieldErrors.lastName}>
-                <input maxLength={120} value={form.lastName} onChange={(event) => update("lastName", event.target.value)} />
+              <FormField label="Nachname" required error={fieldErrors.lastName}>
+                <input required maxLength={120} value={form.lastName} onChange={(event) => update("lastName", event.target.value)} />
               </FormField>
-              <FormField label="Firma / Organisation" error={fieldErrors.company}>
-                <input maxLength={255} value={form.company} onChange={(event) => update("company", event.target.value)} />
+              <FormField label="Firma / Organisation" required error={fieldErrors.company}>
+                <input required maxLength={255} value={form.company} onChange={(event) => update("company", event.target.value)} />
               </FormField>
               <FormField label="Nationalität" error={fieldErrors.nationalityCode}>
                 <CountrySelect value={form.nationalityCode} onChange={(value) => update("nationalityCode", value)} />

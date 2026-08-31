@@ -2,9 +2,9 @@ import ExcelJS from "exceljs";
 import { COUNTRIES } from "./countries";
 
 export const SIMPLIFIED_XLSX_HEADERS = [
-  "Wache [notwendig]", "Vorname", "Nachname", "Firma / Organisation", "Nationalität", "Geburtsdatum",
+  "Wache [notwendig]", "Vorname [notwendig]", "Nachname [notwendig]", "Firma / Organisation [notwendig]", "Nationalität", "Geburtsdatum",
   "Telefon", "E-Mail", "Kennzeichen", "Ansprechpartner", "Ansprechpartner Telefon",
-  "Ansprechpartner E-Mail", "Abteilung / Bereich", "Besuchszweck", "Gültig von [notwendig]", "Gültig bis [notwendig]", "Bemerkung"
+  "Ansprechpartner E-Mail", "Abteilung / Bereich", "Besuchszweck [notwendig]", "Gültig von [notwendig]", "Gültig bis [notwendig]", "Bemerkung"
 ] as const;
 
 export const SIMPLIFIED_XLSX_DATA_START_ROW = 2;
