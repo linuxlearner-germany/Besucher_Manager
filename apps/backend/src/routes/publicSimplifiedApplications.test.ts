@@ -4,7 +4,9 @@ import { resolve } from "node:path";
 import test from "node:test";
 
 const route = readFileSync(resolve(__dirname, "publicSimplifiedApplications.ts"), "utf8");
+const sibeRoute = readFileSync(resolve(__dirname, "sibe.ts"), "utf8");
 const service = readFileSync(resolve(__dirname, "../lib/publicSimplifiedApplications.ts"), "utf8");
+const gateService = readFileSync(resolve(__dirname, "../lib/publicPreRegistrations.ts"), "utf8");
 const migration = readFileSync(resolve(__dirname, "../../migrations/038_public_simplified_applications.sql"), "utf8");
 const idempotencyMigration = readFileSync(resolve(__dirname, "../../migrations/039_public_simplified_application_idempotency.sql"), "utf8");
 const outboxClaimMigration = readFileSync(resolve(__dirname, "../../migrations/040_public_simplified_mail_outbox_claims.sql"), "utf8");
@@ -16,6 +18,13 @@ test("public workflow reparses XLSX on preview and submit and requires CSRF", ()
   assert.equal((route.match(/parseAndValidatePublicApplicationXlsx\(file\.buffer\)/g) ?? []).length, 2);
   assert.match(route, /hasValidCsrfToken/);
   assert.match(route, /X-Application-Verification-Token/i);
+});
+
+test("public and internal template downloads use the same generator with freshly queried active gates", () => {
+  assert.match(route, /buildSimplifiedImportTemplate\(await listActiveGates\(\)\)/);
+  assert.match(sibeRoute, /buildSimplifiedImportTemplate\(await listActiveGates\(\)\)/);
+  assert.match(gateService, /FROM dbo\.gates\s+WHERE is_active = 1\s+ORDER BY sort_order ASC, name ASC/);
+  assert.doesNotMatch(gateService, /cachedActiveGates|activeGatesCache/i);
 });
 
 test("SiBe setting and KSKdt decisions use role guards and strict schemas", () => {
