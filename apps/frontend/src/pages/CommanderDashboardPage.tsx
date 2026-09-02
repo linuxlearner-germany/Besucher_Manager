@@ -8,6 +8,7 @@ export function CommanderDashboardPage() {
   const canReadVisits = hasPermission(user, "visits.read");
   const [summary, setSummary] = useState<SibeSummary | null>(null);
   const [recentVisits, setRecentVisits] = useState<SibeVisitRow[]>([]);
+  const [openApplications, setOpenApplications] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -30,6 +31,16 @@ export function CommanderDashboardPage() {
 
     void loadDashboard();
   }, [canReadVisits]);
+
+  useEffect(() => {
+    if (!user || (!hasRole(user, "admin") && !hasRole(user, "kaskdt"))) {
+      return;
+    }
+
+    void fetchJson<{ total: number }>("/api/kaskdt/applications?status=open&page=1&pageSize=1", { headers: {} })
+      .then((payload) => setOpenApplications(payload.total))
+      .catch(() => setOpenApplications(null));
+  }, [user]);
 
   const currentVisits = useMemo(
     () => recentVisits
@@ -85,8 +96,8 @@ export function CommanderDashboardPage() {
 
         {error ? <Alert type="error">{error}</Alert> : null}
 
-        {hasRole(user, "kaskdt") ? (
-          <Card><div className="section-header"><div><h3>Anträge – Vereinfachte Besucherregelung</h3><p>Neue Anträge prüfen, Personen entscheiden und eine zusammenfassende Entscheidung versenden.</p></div><Link className="button-link" to="/kaskdt/antraege">Anträge öffnen</Link></div></Card>
+        {user && (hasRole(user, "admin") || hasRole(user, "kaskdt")) ? (
+          <Card><div className="section-header"><div><h3>Genehmigungen – Vereinfachte Besucheranmeldung</h3><p><strong>{openApplications ?? "–"} offen</strong> · Eingereichte Anträge prüfen, Personen genehmigen oder ablehnen und die Entscheidung versenden.</p></div><Link className="button-link" to="/kaskdt/antraege">Genehmigungen öffnen</Link></div></Card>
         ) : null}
 
         <div className="split-card-grid">

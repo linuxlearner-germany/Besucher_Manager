@@ -33,6 +33,7 @@ function mockApi(user: User) {
     else if (path === "/api/ui-settings") payload = { backgroundMode: "plain", backgroundImageUrl: "", securityNumber: "BM2026" };
     else if (path === "/api/sibe/summary") payload = { visitorsTotal: 0, todaysVisits: 0, checkedInVisitors: 0, usersTotal: 0, activeUsers: 0, signaturesPending: 0, signaturesFollowUp: 0, signaturesExceptions: 0 };
     else if (path === "/api/sibe/visits?status=all") payload = { visits: [] };
+    else if (path === "/api/kaskdt/applications?status=open&page=1&pageSize=1") payload = { applications: [], total: 1 };
     else throw new Error(`Unexpected request: ${path}`);
     return new Response(JSON.stringify(payload), { status: 200, headers: { "Content-Type": "application/json" } });
   }));
@@ -57,14 +58,15 @@ afterEach(() => {
 });
 
 describe("KSKdt application navigation", () => {
-  it("does not offer the KSKdt application workflow to an admin without that role", async () => {
+  it("offers the KSKdt application workflow to an administrator", async () => {
     renderDashboard(makeUser("admin"));
     expect(await screen.findByRole("heading", { name: "KSKdt-Übersicht" })).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "Anträge öffnen" })).not.toBeInTheDocument();
+    expect(await screen.findByText(/1 offen/)).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "Genehmigungen öffnen" })).toHaveAttribute("href", "/kaskdt/antraege");
   });
 
   it("keeps the application link available to the KSKdt role", async () => {
     renderDashboard(makeUser("kaskdt"));
-    expect(await screen.findByRole("link", { name: "Anträge öffnen" })).toHaveAttribute("href", "/kaskdt/antraege");
+    expect(await screen.findByRole("link", { name: "Genehmigungen öffnen" })).toHaveAttribute("href", "/kaskdt/antraege");
   });
 });

@@ -30,8 +30,7 @@ test("public and internal template downloads use the same generator with freshly
 test("SiBe setting and KSKdt decisions use role guards and strict schemas", () => {
   assert.match(route, /settingSchema=.*\.strict\(\)/);
   assert.match(route, /requireRole\(request,response,\["sibe"\]\)/);
-  assert.match(route, /requireRole\(request,response,\["kaskdt"\]\)/);
-  assert.doesNotMatch(route, /requireRole\(request,response,\["admin","kaskdt"\]\)/);
+  assert.equal((route.match(/requireRole\(request,response,\["admin","kaskdt"\]\)/g) ?? []).length, 5);
 });
 
 test("public bootstrap exposes the persisted verification mode read-only", () => {

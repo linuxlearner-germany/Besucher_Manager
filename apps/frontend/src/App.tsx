@@ -128,8 +128,8 @@ function AppRoutes() {
           </RequireRoles>
         }
       />
-      <Route path="/kaskdt/antraege" element={<RequireRoles allowedRoles={["kaskdt"]} redirectTo="/"><KaskdtApplicationsPage /></RequireRoles>} />
-      <Route path="/kaskdt/antraege/:id" element={<RequireRoles allowedRoles={["kaskdt"]} redirectTo="/"><KaskdtApplicationDetailPage /></RequireRoles>} />
+      <Route path="/kaskdt/antraege" element={<RequireRoles allowedRoles={["admin", "kaskdt"]} requiredMenuKey="kaskdt" redirectTo="/"><KaskdtApplicationsPage /></RequireRoles>} />
+      <Route path="/kaskdt/antraege/:id" element={<RequireRoles allowedRoles={["admin", "kaskdt"]} requiredMenuKey="kaskdt" redirectTo="/"><KaskdtApplicationDetailPage /></RequireRoles>} />
       <Route
         path="/kasernenkommandant"
         element={
