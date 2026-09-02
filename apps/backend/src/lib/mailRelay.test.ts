@@ -70,5 +70,19 @@ test("visit mail previews provide text and HTML content", () => {
     const preview = buildMailRelayPreviewContent(kind);
     assert.match(preview.text, /Max Mustermann/);
     assert.match(preview.html, /Voranmeldung bestätigt|Erinnerung an Ihren Besuch/);
+    assert.match(preview.text, /Voranmeldung ansehen und Angaben korrigieren/);
+    assert.match(preview.html, /Voranmeldung ansehen und bearbeiten/);
+    assert.match(preview.text, /\/visit\/confirmation#/);
+    assert.doesNotMatch(preview.text, /\/sibe\/besucher/);
+    assert.doesNotMatch(preview.text, /Besuchs-ID/);
   }
+});
+
+test("public confirmation link keeps the token out of the request path", () => {
+  const { buildPublicConfirmationUrl } = loadModule();
+  const token = "A".repeat(43);
+  const url = buildPublicConfirmationUrl(token);
+  assert.match(url, /\/visit\/confirmation#A{43}$/);
+  assert.equal(new URL(url).pathname.includes(token), false);
+  assert.equal(new URL(url).hash.slice(1), token);
 });

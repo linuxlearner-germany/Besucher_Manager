@@ -3,12 +3,16 @@ import assert from "node:assert/strict";
 import {
   getDefaultMenuAccessForRole,
   getDefaultPermissionsForRole,
+  getCustomMenusMissingEntryPermission,
   assertCanCheckIn,
   assertCanCheckOut,
   assertReturnedBadgeNumberMatches,
   assertCanUpdateHostSignature,
   canAccessGate,
   canManageGuardScopedVisit,
+  normalizeRoles,
+  requiresGuardGateSelection,
+  hasRole,
   HOST_SIGNATURE_STATUS,
   VISIT_STATUS,
   type AuthenticatedUser
@@ -103,6 +107,26 @@ test("guard users are restricted to their own gate", () => {
   assert.equal(canAccessGate(guard, "gate-2"), false);
 });
 
+test("custom guard permissions use the selected gate without gaining admin scope", () => {
+  const custom = makeUser("custom", "gate-1");
+  custom.menuAccess = ["wache"];
+  custom.permissions.menu.guard = true;
+  custom.permissions.visits.read = true;
+
+  assert.equal(canAccessGate(custom, "gate-1"), true);
+  assert.equal(canAccessGate(custom, "gate-2"), false);
+  assert.equal(canManageGuardScopedVisit(custom, { gateId: "gate-1", status: VISIT_STATUS.PRE_REGISTERED }), true);
+  assert.equal(canManageGuardScopedVisit(custom, { gateId: "gate-2", status: VISIT_STATUS.PRE_REGISTERED }), false);
+  assert.equal(requiresGuardGateSelection(custom), true);
+});
+
+test("custom users without guard entry permission do not receive a gate-selection prompt", () => {
+  const custom = makeUser("custom", null);
+  custom.menuAccess = ["wache"];
+  custom.permissions.menu.guard = true;
+  assert.equal(requiresGuardGateSelection(custom), false);
+});
+
 test("sibe has no implicit guard scope access", () => {
   const sibe = makeUser("sibe", null);
 
@@ -123,4 +147,28 @@ test("default menu access gives KasKdt text management and import", () => {
   assert.equal(getDefaultMenuAccessForRole("kaskdt").includes("texte"), true);
   assert.equal(getDefaultPermissionsForRole("kaskdt").texts.manage, true);
   assert.equal(getDefaultPermissionsForRole("kaskdt").imports.execute, true);
+});
+
+test("only SiBe plus KasKdt forms a supported multi-role identity", () => {
+  assert.deepEqual(normalizeRoles(["sibe", "kaskdt"], "sibe"), ["sibe", "kaskdt"]);
+  assert.deepEqual(normalizeRoles(["admin", "sibe"], "admin"), ["admin"]);
+  const dual: AuthenticatedUser = { ...makeUser("sibe", null), roles: ["sibe", "kaskdt"] };
+  assert.equal(hasRole(dual, "sibe"), true);
+  assert.equal(hasRole(dual, "kaskdt"), true);
+  assert.equal(hasRole(dual, "admin"), false);
+});
+
+test("custom menus require an explicit entry permission", () => {
+  assert.deepEqual(
+    getCustomMenusMissingEntryPermission("custom", null, ["wache", "sibe", "kaskdt", "texte", "import"]),
+    ["wache", "sibe", "kaskdt", "texte", "import"]
+  );
+  assert.deepEqual(getCustomMenusMissingEntryPermission("custom", {
+    visits: { read: true },
+    dashboards: { sibe: true, commander: true },
+    texts: { manage: true },
+    imports: { execute: true }
+  }, ["wache", "sibe", "kaskdt", "texte", "import"]), []);
+  assert.deepEqual(getCustomMenusMissingEntryPermission("custom", { logs: { audit: true } }, ["admin"]), []);
+  assert.deepEqual(getCustomMenusMissingEntryPermission("guard", null, ["wache", "import"]), []);
 });

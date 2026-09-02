@@ -190,10 +190,9 @@ Typischer Ablauf:
 
 ```bash
 cd ~/Besucher_Manager
-git pull
-docker compose down --remove-orphans
-docker compose build --no-cache
-docker compose up -d
+git pull --ff-only
+docker compose build
+docker compose up -d --remove-orphans
 docker compose logs -f app
 ```
 

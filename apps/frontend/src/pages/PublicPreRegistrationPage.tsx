@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { ImportReviewModal } from "../components/ImportReviewModal";
+import { NormalVisitorImportSection } from "../components/import/NormalVisitorImportSection";
 import { Alert, FieldLabel, FormField } from "../components/ui";
 import { CountrySelect } from "../components/CountrySelect";
 import {
@@ -459,6 +460,8 @@ export function PublicPreRegistrationPage() {
             onClose={() => setGroupResult(null)}
           />
         ) : null}
+
+        <NormalVisitorImportSection publicMode csrfToken={csrfToken} />
       </main>
     </AppLayout>
   );

@@ -5,19 +5,14 @@ import test from "node:test";
 
 const source = readFileSync(resolve(__dirname, "admin.ts"), "utf8");
 
-test("creating a guard requires and persists an active gate", () => {
-  assert.match(source, /value\.role === "guard" && !value\.gateId/);
+test("creating a guard does not persist a gate assignment", () => {
   const endpoint = source.match(/adminRouter\.post\("\/api\/admin\/users"[\s\S]*?adminRouter\.put\("\/api\/admin\/users\/:id"/)?.[0] ?? "";
-  assert.match(endpoint, /data\.role === "guard"/);
-  assert.match(endpoint, /FROM dbo\.gates WHERE id = @gateId AND is_active = 1/);
-  assert.match(endpoint, /\.input\("gateId", sql\.UniqueIdentifier, gateId\)/);
-  assert.doesNotMatch(endpoint, /\.input\("gateId", sql\.UniqueIdentifier, null\)/);
+  assert.match(endpoint, /const gateId: string \| null = null/);
+  assert.doesNotMatch(endpoint, /Fuer ein Wache-Konto muss eine aktive Wache/);
 });
 
-test("updating a guard persists the requested gate and clears it for other roles", () => {
+test("updating a guard clears legacy gate assignments", () => {
   const endpoint = source.match(/adminRouter\.put\("\/api\/admin\/users\/:id"[\s\S]*?adminRouter\.delete\("\/api\/admin\/users\/:id"/)?.[0] ?? "";
-  assert.match(endpoint, /data\.gateId !== undefined \? data\.gateId : currentUser\.gateId/);
-  assert.match(endpoint, /if \(nextRole === "guard"\)/);
-  assert.match(endpoint, /FROM dbo\.gates WHERE id = @gateId AND is_active = 1/);
+  assert.match(endpoint, /const nextGateId: string \| null = null/);
   assert.match(endpoint, /\.input\("gateId", sql\.UniqueIdentifier, nextGateId\)/);
 });

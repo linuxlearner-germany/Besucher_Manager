@@ -502,6 +502,7 @@ docker compose logs --tail=200 app
 
 ```bash
 npm run ops:backup
+npm run ops:backup:restore-test
 ```
 
 Standardziel:
@@ -509,6 +510,18 @@ Standardziel:
 ```text
 archive/backups/<datenbank>_YYYYMMDD_HHMMSS.bak
 ```
+
+Jede neue Sicherung wird mit SQL Server `RESTORE VERIFYONLY ... WITH CHECKSUM` geprüft. Anschließend muss der SHA-256-Wert der aus dem Container kopierten Datei dem geprüften Original entsprechen. Nur dann werden ein `.verified.sha256`-Marker und der erfolgreiche Status geschrieben.
+
+Die Retention verwaltet ausschließlich Sicherungen mit gültigem Prüfsummenmarker im markierten Backup-Verzeichnis. Sie behält mindestens die sieben neuesten Sicherungen, je einen Tagesstand für 14 Tage und je einen Wochenstand für acht Wochen. Unverifizierte oder fremd benannte Dateien bleiben unangetastet. Vorschau ohne Löschung:
+
+```bash
+npm run ops:backup:retention-check
+```
+
+Der Restore-Test startet einen isolierten SQL-Server ohne veröffentlichten Port, stellt das neueste verifizierte Backup in eine separate Testdatenbank wieder her und prüft Migrationen, Benutzer, Besucher, Besuche sowie Audit- und Fehlerlogs. Container und Volume tragen explizite Testlabels; die zentrale Docker-Schutzfunktion verweigert das Cleanup bei unpassenden Namen oder Labels.
+
+Für die regelmäßige Ausführung sollte der Host-Scheduler die beiden Befehle mit absolutem Arbeitsverzeichnis und einem nur für den Betreiber lesbaren Log aufrufen, beispielsweise täglich das Backup und wöchentlich den Restore-Test. Die konkrete Uhrzeit wird bewusst durch den Betreiber festgelegt, damit sie zum Lastprofil und zur externen Kopie der Sicherungen passt. Die letzten erfolgreichen Läufe werden ohne Zugangsdaten in `backup-status.json` und `restore-status.json` im ignorierten Backup-Verzeichnis dokumentiert. Diese Statusdateien werden nicht in der Weboberfläche veröffentlicht, weil das Archiv nicht in den App-Container eingebunden ist.
 
 Zusätzlich sollten die Backups regelmäßig auf ein externes, gesichertes Ziel übertragen werden.
 

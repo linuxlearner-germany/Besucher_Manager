@@ -19,21 +19,14 @@ function makeUser(role: AuthenticatedUser["role"]): AuthenticatedUser {
   };
 }
 
-test("SiBe can create a simplified visit without personal data", () => {
+test("simplified SiBe entry rejects missing identity and visit data", () => {
   const parsed = simplifiedSibeEntrySchema.safeParse({
     gateId,
     validFrom: "2026-08-10",
     validUntil: "2026-08-11"
   });
-
-  assert.equal(parsed.success, true);
-  if (parsed.success) {
-    assert.equal(parsed.data.firstName, "");
-    assert.equal(parsed.data.lastName, "");
-    assert.equal(parsed.data.company, "");
-    assert.equal(parsed.data.nationalityCode, null);
-    assert.equal(parsed.data.idDocumentNumber, "");
-  }
+  assert.equal(parsed.success, false);
+  if (!parsed.success) assert.deepEqual(Object.keys(parsed.error.flatten().fieldErrors).sort(), ["company", "firstName", "hostName", "lastName", "purpose"]);
 });
 
 test("SiBe can provide optional personal data", () => {
@@ -44,6 +37,8 @@ test("SiBe can provide optional personal data", () => {
     firstName: "Erika",
     lastName: "Muster",
     company: "Beispiel GmbH",
+    hostName: "Maria Muster",
+    purpose: "Besprechung",
     nationalityCode: "DE",
     idDocumentType: "identity_card",
     idDocumentNumber: "freiwillig"
@@ -71,6 +66,12 @@ test("only the SiBe role can use simplified entry", () => {
 
   sibe.permissions.visits.create = false;
   assert.equal(canCreateSimplifiedSibeEntry(sibe), true);
+});
+
+test("the supported SiBe and KasKdt dual role keeps SiBe write access", () => {
+  const user = makeUser("sibe");
+  user.roles = ["sibe", "kaskdt"];
+  assert.equal(canCreateSimplifiedSibeEntry(user), true);
 });
 
 test("a client flag cannot enable simplified validation for the public schema", () => {

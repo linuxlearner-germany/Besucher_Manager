@@ -2,6 +2,7 @@ import { z } from "zod";
 import { normalizeCountryCode } from "./countries";
 
 const optionalText = (maximum: number) => z.string().trim().max(maximum).optional().default("");
+const requiredText = (maximum: number, message: string) => z.string().trim().min(1, message).max(maximum);
 const optionalEmail = z.string().trim().email("Ungültige E-Mail-Adresse.").optional().or(z.literal(""));
 
 function isValidDateOnly(value: string): boolean {
@@ -15,9 +16,9 @@ export const simplifiedSibeEntrySchema = z.object({
   validFrom: z.string().trim().refine(isValidDateOnly, "Bitte ein gültiges Startdatum angeben."),
   validUntil: z.string().trim().refine(isValidDateOnly, "Bitte ein gültiges Enddatum angeben."),
   expectedArrivalTime: z.string().trim().regex(/^$|^([01]\d|2[0-3]):[0-5]\d$/, "Bitte eine gültige Ankunftszeit angeben.").optional().default(""),
-  firstName: optionalText(120),
-  lastName: optionalText(120),
-  company: optionalText(255),
+  firstName: requiredText(120, "Bitte einen Vornamen angeben."),
+  lastName: requiredText(120, "Bitte einen Nachnamen angeben."),
+  company: requiredText(255, "Bitte eine Firma oder Organisation angeben."),
   nationalityCode: z.string().trim().optional().default("").transform((value, context) => {
     if (!value) return null;
     const normalized = normalizeCountryCode(value);
@@ -38,11 +39,11 @@ export const simplifiedSibeEntrySchema = z.object({
   idDocumentValidUntil: z.string().trim().optional().default(""),
   idDocumentNumber: optionalText(120),
   licensePlate: optionalText(40),
-  hostName: optionalText(255),
+  hostName: requiredText(255, "Bitte einen Ansprechpartner angeben."),
   hostEmail: optionalEmail,
   hostPhone: optionalText(80),
   hostDepartment: optionalText(255),
-  purpose: optionalText(500),
+  purpose: requiredText(500, "Bitte einen Besuchszweck angeben."),
   notes: optionalText(4000)
 }).superRefine((value, context) => {
   if (isValidDateOnly(value.validFrom) && isValidDateOnly(value.validUntil) && value.validUntil < value.validFrom) {

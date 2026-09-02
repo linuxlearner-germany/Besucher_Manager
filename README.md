@@ -49,6 +49,8 @@ Die Anwendung bildet den vollständigen Ablauf vom Erfassen eines Besuchs über 
 - Tagesliste und Kalenderansicht
 - Suche und Statusfilter
 - Spontane Besucheraufnahme
+- Aktive Wache als Sitzungskontext; Konten speichern keine dauerhafte Wachen-Zuordnung
+- Spontanerfassung ohne personenbezogene Pflichtangaben, Zeitraum automatisch am lokalen Kalendertag
 - Nachbearbeitung von Voranmeldungen
 - Check-in anhand konfigurierter Pflichtfelder
 - Besucherscheindruck in A5 oder A4
@@ -65,6 +67,7 @@ Die Anwendung bildet den vollständigen Ablauf vom Erfassen eines Besuchs über 
 - „Alle auswählen“ und „Alle abwählen“
 - E-Mail-Benachrichtigung für abonnierte Nationalitäten
 - Höchstens eine Länder-E-Mail je Besuch und SiBe-Benutzer
+- Vereinfachte Web-Erfassung und manipulationssicher erneut geprüfter XLSX-Import
 
 ### KasKdt und Textverwaltung
 
@@ -73,6 +76,7 @@ Die Anwendung bildet den vollständigen Ablauf vom Erfassen eines Besuchs über 
 - Aktivieren und Deaktivieren
 - Vorschau und Druckvorschau
 - Zugriff für Admin und KasKdt über `texts.manage`
+- Lesende, filter- und sortierbare Liste ausschließlich vereinfachter Web-/XLSX-Erfassungen
 
 ### Administration
 
@@ -86,6 +90,8 @@ Die Anwendung bildet den vollständigen Ablauf vom Erfassen eines Besuchs über 
 - SMTP-Konfiguration und Testmails
 - Audit- und Fehlerlog
 - Systemstatus
+- Bestätigte Benutzerlöschung (physisch oder pseudonymisierter Tombstone) und Wartungsmodus
+- Unterstützte Doppelrolle `sibe|kaskdt`; alle anderen Rollen bleiben exklusiv
 
 ## Besuchsworkflow
 
@@ -531,9 +537,10 @@ Für den lokalen Compose-SQL-Server:
 
 ```bash
 npm run ops:backup
+npm run ops:backup:restore-test
 ```
 
-Backups werden standardmäßig nach `archive/backups/` geschrieben.
+Backups werden standardmäßig nach `archive/backups/` außerhalb des SQL-Docker-Volumes geschrieben. Das Backup gilt erst nach SQL-Server-`RESTORE VERIFYONLY`, SQL-Checksum-Prüfung und identischem SHA-256-Wert der kopierten Datei als erfolgreich. Die automatische Retention behält die sieben neuesten Sicherungen sowie Tagesstände für 14 Tage und Wochenstände für acht Wochen; unverifizierte Altdateien werden niemals automatisch entfernt. Der Restore-Test verwendet einen kurzlebigen, markierten SQL-Container mit eigenem Volume und überschreibt keine Betriebsdatenbank.
 
 ### Häufige Ursachen
 

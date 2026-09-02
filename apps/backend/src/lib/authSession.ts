@@ -10,11 +10,12 @@ type SessionPayload = {
   userId: string;
   username: string;
   role: AuthenticatedUser["role"];
+  roles?: AuthenticatedUser["roles"];
   gateId: string | null;
   exp: number;
 };
 
-type SessionUser = Pick<AuthenticatedUser, "id" | "username" | "role" | "gateId">;
+type SessionUser = Pick<AuthenticatedUser, "id" | "username" | "role" | "gateId"> & { roles?: AuthenticatedUser["roles"] };
 
 function toBase64Url(value: string): string {
   return Buffer.from(value, "utf8").toString("base64url");
@@ -33,6 +34,7 @@ export function createSessionToken(user: SessionUser): string {
     userId: user.id,
     username: user.username,
     role: user.role,
+    roles: user.roles,
     gateId: user.gateId,
     exp: Date.now() + sessionTtlHours * 60 * 60 * 1000
   };
@@ -69,6 +71,7 @@ export function readSessionToken(token: string | undefined): SessionUser | null 
     id: payload.userId,
     username: payload.username,
     role: payload.role,
+    roles: payload.roles ?? [payload.role],
     gateId: payload.gateId
   };
 }

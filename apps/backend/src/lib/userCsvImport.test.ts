@@ -29,6 +29,7 @@ test("user csv export contains account data without passwords and escapes cells"
   const csv = buildUserExportCsv([{
     username: "sibe.demo",
     role: "sibe",
+    roles: ["sibe", "kaskdt"],
     displayName: "SiBe, Demo",
     email: "sibe@example.local",
     gate: null,
@@ -41,5 +42,6 @@ test("user csv export contains account data without passwords and escapes cells"
   assert.match(csv, /^\uFEFFusername,role,displayName,email,gate,groups,menuAccess,isActive,lastLoginAt/);
   assert.match(csv, /"SiBe, Demo"/);
   assert.match(csv, /Sicherheit\|Schicht A/);
+  assert.match(csv, /sibe\|kaskdt/);
   assert.equal(csv.includes("password"), false);
 });

@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 function createBaseVisit() {
   return {
@@ -31,6 +33,76 @@ function createBaseVisit() {
     idDocumentIssuingPlace: "Berlin" as string | null
   };
 }
+
+function loadWalkInSchema() {
+  process.env.APP_SECRET = process.env.APP_SECRET || "test-secret";
+  process.env.MSSQL_HOST = process.env.MSSQL_HOST || "localhost";
+  process.env.MSSQL_DATABASE = process.env.MSSQL_DATABASE || "testdb";
+  process.env.MSSQL_USER = process.env.MSSQL_USER || "sa";
+  process.env.MSSQL_PASSWORD = process.env.MSSQL_PASSWORD || "Password123!";
+  return require("../routes/guard").guardWalkInCreateSchema;
+}
+
+function createBrowserWalkInPayload() {
+  return {
+    clientRequestId: "walkin-browser-request-1",
+    existingVisitorId: null,
+    gateId: "",
+    action: "save",
+    firstName: "",
+    lastName: "",
+    company: "",
+    nationalityCode: "",
+    birthDate: "",
+    phone: "",
+    email: "",
+    licensePlate: "",
+    hostName: "",
+    hostEmail: "",
+    hostPhone: "",
+    hostDepartment: "",
+    purpose: "",
+    validFrom: "",
+    validUntil: "",
+    notes: "",
+    visitorStreet: "",
+    visitorHouseNumber: "",
+    visitorPostalCode: "",
+    visitorCity: "",
+    idDocumentType: "",
+    idDocumentValidUntil: "",
+    idDocumentNumber: "",
+    devicePhotoApp: false,
+    deviceFilmApp: false,
+    deviceVideoCamera: false,
+    deviceManufacturer: "",
+    deviceSerialNumber: "",
+    deviceAccessories: "",
+    deviceDepositNote: ""
+  };
+}
+
+test("walk-in schema accepts the browser payload for a new visitor with optional fields empty", () => {
+  const schema = loadWalkInSchema();
+  const parsed = schema.safeParse(createBrowserWalkInPayload());
+  assert.equal(parsed.success, true, parsed.success ? undefined : JSON.stringify(parsed.error.flatten()));
+});
+
+test("walk-in schema reports invalid populated values on their fields", () => {
+  const schema = loadWalkInSchema();
+  const parsed = schema.safeParse({
+    ...createBrowserWalkInPayload(),
+    email: "ungueltig",
+    nationalityCode: "unbekannt",
+    validFrom: "2026-99-99"
+  });
+  assert.equal(parsed.success, false);
+  if (parsed.success) return;
+  const fields = parsed.error.flatten().fieldErrors;
+  assert.ok(fields.email?.length);
+  assert.ok(fields.nationalityCode?.length);
+  assert.ok(fields.validFrom?.length);
+});
 
 test("completeness detects missing host phone and blocks check-in", () => {
   process.env.APP_SECRET = process.env.APP_SECRET || "test-secret";
@@ -166,7 +238,7 @@ test("completeness blocks missing nationality", () => {
   assert.equal(completeness.errors.some((issue: { field: string }) => issue.field === "Nationalität"), true);
 });
 
-test("guard visitor search is allowed for guard and admin only", () => {
+test("guard visitor search is allowed for guard, admin and authorized custom users", () => {
   const { canUseGuardVisitorSearch } = require("./guardVisits");
   const basePermissions = {
     visits: { create: true }
@@ -174,6 +246,7 @@ test("guard visitor search is allowed for guard and admin only", () => {
 
   assert.equal(canUseGuardVisitorSearch({ role: "guard", permissions: basePermissions }), true);
   assert.equal(canUseGuardVisitorSearch({ role: "admin", permissions: basePermissions }), true);
+  assert.equal(canUseGuardVisitorSearch({ role: "custom", permissions: basePermissions }), true);
   assert.equal(canUseGuardVisitorSearch({ role: "sibe", permissions: basePermissions }), false);
   assert.equal(canUseGuardVisitorSearch({ role: "guard", permissions: { visits: { create: false } } }), false);
 });
@@ -187,4 +260,15 @@ test("guard visitor search ignores empty and too-short criteria", () => {
   assert.equal(hasGuardVisitorSearchCriteria({ birthDate: "2026-07-14" }), true);
   assert.equal(hasGuardVisitorSearchCriteria({ firstName: "Al" }), true);
   assert.equal(hasGuardVisitorSearchCriteria({ email: "ab" }), true);
+});
+
+test("walk-in idempotency lookup uses the visits table alias for normalized status", () => {
+  const source = readFileSync(resolve(__dirname, "guardVisits.ts"), "utf8");
+  const start = source.indexOf("const existingRequest");
+  const end = source.indexOf("let visitorId", start);
+  assert.ok(start >= 0 && end > start, "walk-in idempotency query should be present");
+  const query = source.slice(start, end);
+  assert.match(query, /normalizedStatusForAlias\("v"\)/);
+  assert.match(query, /FROM dbo\.visits v/);
+  assert.doesNotMatch(query, /normalizedStatusForAlias\("dbo\.visits"\)/);
 });

@@ -44,7 +44,7 @@ export function LoginPage() {
       }
 
       setUser(payload.user);
-      navigate((location.state as { from?: string } | null)?.from || payload.redirectTo || getDefaultRouteForUser(payload.user), { replace: true });
+      navigate((location.state as { from?: string } | null)?.from || getDefaultRouteForUser(payload.user), { replace: true });
     } catch (apiError) {
       const errorPayload = apiError as ApiError;
       setError(errorPayload.message || "Benutzername oder Passwort ist falsch.");
@@ -85,7 +85,7 @@ export function LoginPage() {
       setPendingLogin(null);
       setAvailableGates([]);
       setSelectedGateId("");
-      navigate((location.state as { from?: string } | null)?.from || payload.redirectTo || getDefaultRouteForUser(payload.user), { replace: true });
+      navigate((location.state as { from?: string } | null)?.from || getDefaultRouteForUser(payload.user), { replace: true });
     } catch (apiError) {
       const errorPayload = apiError as ApiError;
       setError(errorPayload.message || "Die Wache konnte nicht gesetzt werden.");
@@ -138,10 +138,10 @@ export function LoginPage() {
             ) : (
               <form className="pre-registration-form login-form" onSubmit={handleSubmit}>
                 <FormField label="Benutzername" required>
-                  <input required value={username} onChange={(event) => setUsername(event.target.value)} />
+                  <input required name="username" autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} />
                 </FormField>
                 <FormField label="Passwort" required>
-                  <input required type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
+                  <input required name="password" autoComplete="current-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
                 </FormField>
                 <div className="form-actions">
                   <button type="submit" disabled={submitting}>

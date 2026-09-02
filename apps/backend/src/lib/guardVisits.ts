@@ -32,7 +32,7 @@ export type GuardWalkInVisitInput = {
   firstName: string;
   lastName: string;
   company: string;
-  nationalityCode: string;
+  nationalityCode: string | null;
   birthDate?: string | null;
   phone?: string | null;
   email?: string | null;
@@ -296,7 +296,7 @@ function buildTodayQuery(status?: string, search?: string, signatureStatus?: str
 export type GuardVisitScope = "own" | "all";
 
 function createScopeClause(user: AuthenticatedUser, scope: GuardVisitScope): string {
-  if (scope === "own" && user.role === "guard") {
+  if (scope === "own" && user.role !== "admin") {
     return user.gateId ? "v.gate_id = @gateId" : "1 = 0";
   }
 
@@ -312,8 +312,7 @@ function sanitizeSearchText(value: string | null | undefined): string {
 }
 
 export function canUseGuardVisitorSearch(user: Pick<AuthenticatedUser, "role" | "permissions">): boolean {
-  return (user.role === "guard" || user.role === "admin")
-    && Boolean(user.permissions?.visits?.create);
+  return ["admin", "guard", "custom"].includes(user.role) && Boolean(user.permissions?.visits?.create);
 }
 
 export function hasGuardVisitorSearchCriteria(input: GuardVisitorSearchQuery): boolean {
@@ -580,8 +579,8 @@ export async function getTodayVisitsForUser(
   const request = pool.request();
   const search = options.search?.trim();
 
-  const scope = options.scope ?? (user.role === "guard" ? "own" : "all");
-  if (scope === "own" && user.role === "guard" && user.gateId) {
+  const scope = options.scope ?? (user.role === "admin" ? "all" : "own");
+  if (scope === "own" && user.role !== "admin" && user.gateId) {
     request.input("gateId", sql.UniqueIdentifier, user.gateId);
   }
 
@@ -691,10 +690,10 @@ export async function getCalendarVisitsForUser(
 ): Promise<GuardCalendarVisitItem[]> {
   const pool = await getPool();
   const request = pool.request();
-  const scope = options.scope ?? (user.role === "guard" ? "own" : "all");
+  const scope = options.scope ?? (user.role === "admin" ? "all" : "own");
   const conditions = [createScopeClause(user, scope)];
 
-  if (scope === "own" && user.role === "guard" && user.gateId) {
+  if (scope === "own" && user.role !== "admin" && user.gateId) {
     request.input("gateId", sql.UniqueIdentifier, user.gateId);
   }
 
@@ -761,9 +760,11 @@ export async function getVisitDetailForUser(user: AuthenticatedUser, visitId: st
     request.input("gateId", sql.UniqueIdentifier, user.gateId);
   }
 
-  const scopeClause = user.role === "admin" || user.role === "guard"
+  const scopeClause = user.role === "admin"
     ? "1 = 1"
-    : `(v.gate_id = @gateId OR (v.gate_id IS NULL AND ${normalizedStatusSql} = '${VISIT_STATUS.PRE_REGISTERED}'))`;
+    : user.gateId
+      ? `(v.gate_id = @gateId OR (v.gate_id IS NULL AND ${normalizedStatusSql} = '${VISIT_STATUS.PRE_REGISTERED}'))`
+      : "1 = 0";
   const visitResult = await request.query<VisitDetail>(`
     SELECT
       v.id,
@@ -1324,8 +1325,8 @@ export async function createWalkInVisit(
   userAgent?: string | null
 ): Promise<{ visitId: string; visitorId: string; badgeNumber: string; status: string; warnings: string[]; alreadyExisted?: boolean }> {
   const requestedGateId = cleanOptional(input.gateId);
-  const gateId = user.role === "admin" ? requestedGateId || user.gateId : user.gateId;
-  if (!gateId || (user.role !== "admin" && requestedGateId && requestedGateId !== user.gateId)) {
+  const gateId = user.gateId;
+  if (!gateId || (requestedGateId && requestedGateId !== user.gateId)) {
     throw new Error("visit_gate_required_for_checkin");
   }
 
@@ -1341,6 +1342,11 @@ export async function createWalkInVisit(
   await transaction.begin();
 
   try {
+    const localToday = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Europe/Berlin", year: "numeric", month: "2-digit", day: "2-digit"
+    }).format(new Date());
+    const validFrom = cleanOptional(input.validFrom) ?? localToday;
+    const validUntil = cleanOptional(input.validUntil) ?? localToday;
     const documentExpiry = new Date(`${input.idDocumentValidUntil}T23:59:59.999Z`);
     const warnings = !Number.isNaN(documentExpiry.getTime()) && documentExpiry < new Date()
       ? ["Ausweisdokument ist abgelaufen."]
@@ -1358,8 +1364,8 @@ export async function createWalkInVisit(
             id,
             visitor_id AS visitorId,
             badge_number AS badgeNumber,
-            ${normalizedStatusForAlias("dbo.visits")} AS status
-          FROM dbo.visits
+            ${normalizedStatusForAlias("v")} AS status
+          FROM dbo.visits v
           WHERE client_request_id = @clientRequestId
           ORDER BY created_at DESC
         `);
@@ -1398,9 +1404,9 @@ export async function createWalkInVisit(
 
       await new sql.Request(transaction)
         .input("visitorId", sql.UniqueIdentifier, visitorId)
-        .input("firstName", sql.NVarChar(120), input.firstName.trim())
-        .input("lastName", sql.NVarChar(120), input.lastName.trim())
-        .input("company", sql.NVarChar(255), input.company.trim())
+        .input("firstName", sql.NVarChar(120), cleanOptional(input.firstName))
+        .input("lastName", sql.NVarChar(120), cleanOptional(input.lastName))
+        .input("company", sql.NVarChar(255), cleanOptional(input.company))
         .input("nationalityCode", sql.NChar(2), input.nationalityCode)
         .input("birthDate", sql.Date, cleanOptional(input.birthDate))
         .input("phone", sql.NVarChar(80), cleanOptional(input.phone))
@@ -1450,20 +1456,20 @@ export async function createWalkInVisit(
       );
     } else {
       const visitorInsert = await new sql.Request(transaction)
-        .input("firstName", sql.NVarChar(120), input.firstName.trim())
-        .input("lastName", sql.NVarChar(120), input.lastName.trim())
-        .input("company", sql.NVarChar(255), input.company.trim())
+        .input("firstName", sql.NVarChar(120), cleanOptional(input.firstName))
+        .input("lastName", sql.NVarChar(120), cleanOptional(input.lastName))
+        .input("company", sql.NVarChar(255), cleanOptional(input.company))
         .input("nationalityCode", sql.NChar(2), input.nationalityCode)
         .input("birthDate", sql.Date, cleanOptional(input.birthDate))
         .input("phone", sql.NVarChar(80), cleanOptional(input.phone))
         .input("email", sql.NVarChar(255), cleanOptional(input.email))
-        .input("visitorStreet", sql.NVarChar(255), input.visitorStreet.trim())
-        .input("visitorHouseNumber", sql.NVarChar(40), input.visitorHouseNumber.trim())
-        .input("visitorPostalCode", sql.NVarChar(20), input.visitorPostalCode.trim())
-        .input("visitorCity", sql.NVarChar(120), input.visitorCity.trim())
-        .input("idDocumentType", sql.NVarChar(40), input.idDocumentType.trim())
-        .input("idDocumentValidUntil", sql.Date, input.idDocumentValidUntil.trim())
-        .input("idDocumentNumber", sql.NVarChar(120), input.idDocumentNumber.trim())
+        .input("visitorStreet", sql.NVarChar(255), cleanOptional(input.visitorStreet))
+        .input("visitorHouseNumber", sql.NVarChar(40), cleanOptional(input.visitorHouseNumber))
+        .input("visitorPostalCode", sql.NVarChar(20), cleanOptional(input.visitorPostalCode))
+        .input("visitorCity", sql.NVarChar(120), cleanOptional(input.visitorCity))
+        .input("idDocumentType", sql.NVarChar(40), cleanOptional(input.idDocumentType))
+        .input("idDocumentValidUntil", sql.Date, cleanOptional(input.idDocumentValidUntil))
+        .input("idDocumentNumber", sql.NVarChar(120), cleanOptional(input.idDocumentNumber))
         .query<{ id: string }>(`
           INSERT INTO dbo.visitors (
             first_name,
@@ -1528,13 +1534,13 @@ export async function createWalkInVisit(
       .input("clientRequestId", sql.NVarChar(64), clientRequestId)
       .input("visitorId", sql.UniqueIdentifier, visitorId)
       .input("gateId", sql.UniqueIdentifier, gateId)
-      .input("hostName", sql.NVarChar(255), input.hostName.trim())
+      .input("hostName", sql.NVarChar(255), cleanOptional(input.hostName))
       .input("hostEmail", sql.NVarChar(255), cleanOptional(input.hostEmail))
-      .input("hostPhone", sql.NVarChar(80), input.hostPhone.trim())
+      .input("hostPhone", sql.NVarChar(80), cleanOptional(input.hostPhone))
       .input("hostDepartment", sql.NVarChar(255), cleanOptional(input.hostDepartment))
-      .input("purpose", sql.NVarChar(500), input.purpose.trim())
-      .input("validFrom", sql.DateTime2, dateOnlyStart(input.validFrom))
-      .input("validUntil", sql.DateTime2, dateOnlyEnd(input.validUntil))
+      .input("purpose", sql.NVarChar(500), cleanOptional(input.purpose))
+      .input("validFrom", sql.DateTime2, dateOnlyStart(validFrom))
+      .input("validUntil", sql.DateTime2, dateOnlyEnd(validUntil))
       .input("licensePlate", sql.NVarChar(40), cleanOptional(input.licensePlate))
       .input("badgeNumber", sql.NVarChar(64), badgeNumber)
       .input("notes", sql.NVarChar(sql.MAX), cleanOptional(input.notes))
@@ -1572,7 +1578,8 @@ export async function createWalkInVisit(
           device_accessories,
           device_deposit_note,
           check_in_at,
-          check_in_by
+          check_in_by,
+          source
         )
         OUTPUT inserted.id, inserted.status
         VALUES (
@@ -1600,7 +1607,8 @@ export async function createWalkInVisit(
           @deviceAccessories,
           @deviceDepositNote,
           ${action === "save" ? "NULL" : "SYSUTCDATETIME()"},
-          ${action === "save" ? "NULL" : "@checkInBy"}
+          ${action === "save" ? "NULL" : "@checkInBy"},
+          N'guard_walk_in'
         )
       `);
 
@@ -1652,13 +1660,13 @@ export async function createWalkInVisit(
     }
 
     await transaction.commit();
-    void notifyNationalitySubscribers({
+    if (input.nationalityCode) void notifyNationalitySubscribers({
       visitId: visit.id,
       nationalityCode: input.nationalityCode,
       visitorName: `${input.firstName.trim()} ${input.lastName.trim()}`,
       company: input.company.trim(),
-      validFrom: input.validFrom,
-      validUntil: input.validUntil,
+      validFrom,
+      validUntil,
       gateName: user.gateName ?? null
     });
     return {

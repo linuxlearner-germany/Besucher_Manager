@@ -17,8 +17,10 @@ describe("simplified SiBe entry", () => {
     expect(formSource).toContain('label="Wache" required');
     expect(formSource).toContain('label="Gültig von" required');
     expect(formSource).toContain('label="Gültig bis" required');
-    expect(formSource).toContain('label="Vorname" error=');
-    expect(formSource).not.toContain('label="Vorname" required');
-    expect(formSource).not.toContain('label="Nachname" required');
+    expect(formSource).toContain('label="Vorname" required');
+    expect(formSource).toContain('label="Nachname" required');
+    expect(formSource).toContain('label="Firma / Organisation" required');
+    expect(formSource).toContain('label="Ansprechpartner" required');
+    expect(formSource).toContain('label="Besuchszweck" required');
   });
 });

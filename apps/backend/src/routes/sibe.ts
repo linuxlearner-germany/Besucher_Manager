@@ -6,18 +6,18 @@ import { getPool } from "../lib/db";
 import { COUNTRIES, getCountryName, normalizeCountryCode } from "../lib/countries";
 import { createSimplifiedSibeEntry } from "../lib/simplifiedSibeEntry";
 import { simplifiedSibeEntrySchema } from "../lib/simplifiedSibeEntrySchema";
-import { HOST_SIGNATURE_STATUS, VISIT_STATUS } from "../lib/visitWorkflow";
-import { createImportedPreRegistrations, ImportValidationError } from "../lib/visitImport";
-import type { ImportVisitInput } from "../lib/visitImportDefinitions";
-import { parseSimplifiedVisitorRulePdf } from "../lib/simplifiedVisitorRulePdf";
+import { hasPermission, HOST_SIGNATURE_STATUS, VISIT_STATUS } from "../lib/visitWorkflow";
+import { createImportedPreRegistrations, ImportValidationError, validateSimplifiedImportRows } from "../lib/visitImport";
+import { parseExcelBufferWithMetadata } from "../lib/visitImportParsing";
+import { buildSimplifiedImportTemplate } from "../lib/simplifiedImportTemplate";
+import { listActiveGates } from "../lib/publicPreRegistrations";
 import { getRequestIp, getRequestUserAgent, handleUnexpectedError, requireAnyPermission, requirePermission, requireRole, sendError, sendForbidden, sendValidationError } from "./shared";
-import { handleVisitorImportUpload, sendVisitorImportTemplateWorkbook, visitorImportUpload } from "./visitorImport";
+import { handleVisitorImportPreview, handleVisitorImportUpload, sendVisitorImportTemplateWorkbook, visitorImportUpload } from "./visitorImport";
 
 export const sibeRouter = Router();
 
 const sibeReadRoles = ["admin", "sibe", "kaskdt"] as const;
 const sibeWriteRoles = ["admin", "sibe"] as const;
-const importRoles = ["admin", "guard", "sibe"] as const;
 const sibeVisitNotesSchema = z.object({
   notes: z.string().trim().max(4000, "Die Anmerkung darf maximal 4000 Zeichen enthalten.").optional().or(z.literal(""))
 });
@@ -33,22 +33,6 @@ const nationalitySubscriptionsSchema = z.object({
     }
     return Array.from(new Set(normalized as string[]));
   })
-});
-const simplifiedVisitorRuleImportSchema = z.object({
-  gateId: z.string().uuid().optional().or(z.literal("")),
-  visitors: z.array(z.object({
-    sourceExcelRowNumber: z.number().int().positive().optional(),
-    firstName: z.string().trim().max(120).optional(),
-    lastName: z.string().trim().max(120).optional(),
-    company: z.string().trim().max(255).optional(),
-    nationalityCode: z.string().trim().max(8).optional(),
-    hostName: z.string().trim().max(255).optional(),
-    hostPhone: z.string().trim().max(80).optional(),
-    purpose: z.string().trim().max(500).optional(),
-    validFrom: z.string().trim().max(40).optional(),
-    validUntil: z.string().trim().max(40).optional(),
-    notes: z.string().trim().max(4000).optional()
-  })).min(1).max(45)
 });
 
 function csvEscape(value: unknown): string {
@@ -109,7 +93,7 @@ sibeRouter.get("/api/sibe/summary", async (request, response) => {
       pool.request().query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.visitors WHERE is_deleted = 0"),
       pool.request().query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.visitors WHERE is_deleted = 0 AND is_active = 1"),
       pool.request().query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.visits WHERE CAST(valid_from AS date) = CAST(SYSUTCDATETIME() AS date)"),
-      pool.request().query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.visits WHERE status = 'checked_in'"),
+      pool.request().query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.visits WHERE status = 'checked_in' AND check_out_at IS NULL"),
       pool.request().query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.users"),
       pool.request().query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.users WHERE is_active = 1"),
       pool.request().query<{ count: number }>(`SELECT COUNT(*) AS count FROM dbo.visits WHERE ISNULL(host_signature_status, '${HOST_SIGNATURE_STATUS.PENDING}') = '${HOST_SIGNATURE_STATUS.PENDING}'`),
@@ -483,6 +467,49 @@ sibeRouter.get("/api/sibe/visits", async (request, response) => {
   }
 });
 
+sibeRouter.get("/api/kaskdt/simplified-visits", async (request, response) => {
+  const user = await requirePermission(request, response, "dashboards.commander");
+  if (!user) return;
+  if (!hasPermission(user, "visits.read")) return sendForbidden(response);
+  const page = Math.max(1, Number.parseInt(String(request.query.page ?? "1"), 10) || 1);
+  const pageSize = Math.min(100, Math.max(1, Number.parseInt(String(request.query.pageSize ?? "25"), 10) || 25));
+  const sortColumns: Record<string, string> = { createdAt: "vt.created_at", validFrom: "vt.valid_from", name: "vis.last_name", gate: "g.name", status: "vt.status" };
+  const sortBy = sortColumns[String(request.query.sortBy ?? "createdAt")] ?? sortColumns.createdAt;
+  const sortDirection = String(request.query.sortDirection).toLowerCase() === "asc" ? "ASC" : "DESC";
+  const conditions = ["vt.source IN (N'simplified_web', N'simplified_excel', N'public_simplified_excel')"];
+  const dbRequest = (await getPool()).request();
+  const search = typeof request.query.search === "string" ? request.query.search.trim() : "";
+  const gateId = typeof request.query.gateId === "string" ? request.query.gateId.trim() : "";
+  const status = typeof request.query.status === "string" ? request.query.status.trim() : "";
+  const from = typeof request.query.from === "string" ? request.query.from.trim() : "";
+  const to = typeof request.query.to === "string" ? request.query.to.trim() : "";
+  if (search) { dbRequest.input("search", sql.NVarChar(255), `%${search}%`); conditions.push("CONCAT(vis.first_name, N' ', vis.last_name, N' ', vis.company, N' ', vt.host_name, N' ', vt.purpose) LIKE @search"); }
+  if (gateId) { dbRequest.input("gateId", sql.UniqueIdentifier, gateId); conditions.push("vt.gate_id = @gateId"); }
+  if (status) { dbRequest.input("status", sql.NVarChar(32), status); conditions.push("vt.status = @status"); }
+  if (from) { dbRequest.input("from", sql.Date, from); conditions.push("CAST(vt.valid_from AS date) >= @from"); }
+  if (to) { dbRequest.input("to", sql.Date, to); conditions.push("CAST(vt.valid_until AS date) <= @to"); }
+  dbRequest.input("offset", sql.Int, (page - 1) * pageSize).input("pageSize", sql.Int, pageSize);
+  try {
+    const result = await dbRequest.query<{
+      total: number; id: string; firstName: string | null; lastName: string | null; company: string | null;
+      hostName: string | null; purpose: string | null; gateName: string | null; status: string; source: string;
+      validFrom: string; validUntil: string; createdAt: string;
+    }>(`
+      SELECT COUNT(*) OVER() AS total, vt.id, vis.first_name AS firstName, vis.last_name AS lastName,
+        vis.company, vt.host_name AS hostName, vt.purpose, g.name AS gateName, vt.status, vt.source,
+        CONVERT(NVARCHAR(30), vt.valid_from, 127) AS validFrom,
+        CONVERT(NVARCHAR(30), vt.valid_until, 127) AS validUntil,
+        CONVERT(NVARCHAR(30), vt.created_at, 127) AS createdAt
+      FROM dbo.visits vt INNER JOIN dbo.visitors vis ON vis.id = vt.visitor_id LEFT JOIN dbo.gates g ON g.id = vt.gate_id
+      WHERE ${conditions.join(" AND ")}
+      ORDER BY ${sortBy} ${sortDirection}, vt.id DESC OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY
+    `);
+    return response.json({ visits: result.recordset, page, pageSize, total: result.recordset[0]?.total ?? 0 });
+  } catch (error) {
+    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die vereinfachten Einträge konnten nicht geladen werden.");
+  }
+});
+
 sibeRouter.get("/api/sibe/visits/export", async (request, response) => {
   const user = await requirePermission(request, response, "visits.read");
   if (!user) return;
@@ -581,28 +608,39 @@ sibeRouter.post("/api/sibe/visits/import", async (request, response) => {
   });
 });
 
+sibeRouter.post("/api/sibe/visits/import/preview", async (request, response) => {
+  const user = await requirePermission(request, response, "imports.execute");
+  if (!user) return;
+
+  return handleVisitorImportPreview(request, response);
+});
+
 sibeRouter.post("/api/sibe/visits/simplified-rule/preview", async (request, response) => {
   const user = await requireRole(request, response, ["sibe"]);
   if (!user) return;
 
   return visitorImportUpload.single("file")(request, response, async (error) => {
     if (error) {
-      return sendError(response, 400, "UPLOAD_ERROR", "Die PDF-Datei konnte nicht gelesen werden.");
+      return sendError(response, 400, "UPLOAD_ERROR", "Die XLSX-Datei konnte nicht gelesen werden.");
     }
     const file = request.file;
-    if (!file || !/\.pdf$/i.test(file.originalname)) {
-      return sendValidationError(response, { fieldErrors: { file: ["Bitte eine PDF-Datei der vereinfachten Besucherregelung auswählen."] } });
+    if (!file || !/\.xlsx$/i.test(file.originalname)) {
+      return sendValidationError(response, { fieldErrors: { file: ["Bitte eine XLSX-Datei auswählen."] } });
     }
 
     try {
-      const preview = await parseSimplifiedVisitorRulePdf(file.buffer, file.originalname);
-      return response.json(preview);
+      const { rows, ignoredSampleRows } = await parseExcelBufferWithMetadata(file.buffer);
+      if (!rows.length) return sendValidationError(response, { fieldErrors: { file: ["Keine importierbaren Excel-Zeilen gefunden."] } });
+      if (rows.length > 250) return sendError(response, 400, "VALIDATION_ERROR", "Bitte maximal 250 Besucher pro Datei importieren.");
+      const activeGateNames = new Set((await listActiveGates()).map((gate) => gate.name.trim().toLocaleLowerCase("de")));
+      const errors = validateSimplifiedImportRows(rows, activeGateNames);
+      return response.json({ visitors: rows, errors, warnings: ignoredSampleRows ? [`${ignoredSampleRows} Musterzeile(n) wurden ignoriert.`] : [] });
     } catch (parseError) {
       return handleUnexpectedError(
         response,
         parseError,
-        "PDF_IMPORT_PARSE_FAILED",
-        "Die PDF-Datei konnte nicht als vereinfachte Besucherregelung gelesen werden."
+        "XLSX_IMPORT_PARSE_FAILED",
+        "Die XLSX-Datei konnte nicht als vereinfachte Erfassung gelesen werden."
       );
     }
   });
@@ -612,34 +650,40 @@ sibeRouter.post("/api/sibe/visits/simplified-rule/import", async (request, respo
   const user = await requireRole(request, response, ["sibe"]);
   if (!user) return;
 
-  const parsed = simplifiedVisitorRuleImportSchema.safeParse(request.body);
-  if (!parsed.success) return sendValidationError(response, parsed.error.flatten());
+  return visitorImportUpload.single("file")(request, response, async (uploadError) => {
+    if (uploadError) return sendError(response, 400, "UPLOAD_ERROR", "Die XLSX-Datei konnte nicht gelesen werden.");
+    const gateId = typeof request.body?.gateId === "string" ? request.body.gateId.trim() : "";
+    if (!request.file || !/\.xlsx$/i.test(request.file.originalname)) return sendValidationError(response, { fieldErrors: { file: ["Bitte eine XLSX-Datei auswählen."] } });
+    if (!z.string().uuid().safeParse(gateId).success) return sendValidationError(response, { fieldErrors: { gateId: ["Bitte eine aktive Wache auswählen."] } });
+    try {
+      const { rows } = await parseExcelBufferWithMetadata(request.file.buffer);
+      if (!rows.length || rows.length > 250) return sendValidationError(response, { fieldErrors: { file: ["Die Datei muss 1 bis 250 Datenzeilen enthalten."] } });
+      const activeGateNames = new Set((await listActiveGates()).map((gate) => gate.name.trim().toLocaleLowerCase("de")));
+      const validationErrors = validateSimplifiedImportRows(rows, activeGateNames);
+      if (validationErrors.length) return sendValidationError(response, { fieldErrors: { file: validationErrors } });
+      const imported = await createImportedPreRegistrations(rows, {
+        source: "simplified_excel", createdBy: user, submittedIpAddress: getRequestIp(request),
+        userAgent: getRequestUserAgent(request), fallbackGateId: gateId
+      });
+      return response.status(201).json({ message: `${imported.imported} vereinfachte Besucher importiert.`, ...imported });
+    } catch (importError) {
+      if (importError instanceof ImportValidationError) return sendValidationError(response, { fieldErrors: { file: importError.messages } });
+      return handleUnexpectedError(response, importError, "IMPORT_ERROR", "Die XLSX-Datei konnte nicht importiert werden.");
+    }
+  });
+});
 
-  try {
-    const imported = await createImportedPreRegistrations(parsed.data.visitors as ImportVisitInput[], {
-      source: "file_import",
-      createdBy: user,
-      submittedIpAddress: getRequestIp(request),
-      userAgent: getRequestUserAgent(request),
-      fallbackGateId: parsed.data.gateId || (user.role === "guard" ? user.gateId : null)
-    });
-    return response.status(201).json({
-      message: `${imported.imported} Besucher aus der vereinfachten Besucherregelung importiert.`,
-      ...imported
-    });
-  } catch (importError) {
-    if (importError instanceof ImportValidationError) {
-      return sendValidationError(response, { fieldErrors: { visitors: importError.messages } });
-    }
-    if (importError instanceof Error && importError.message === "invalid_import_nationalities") {
-      return sendValidationError(response, { fieldErrors: { visitors: ["Die Nationalität eines Besuchers ist ungültig."] } });
-    }
-    return handleUnexpectedError(response, importError, "IMPORT_ERROR", "Die Besucherregelung konnte nicht importiert werden.");
-  }
+sibeRouter.get("/api/sibe/visits/simplified-rule/template.xlsx", async (request, response) => {
+  const user = await requireRole(request, response, ["sibe"]);
+  if (!user) return;
+  const buffer = await buildSimplifiedImportTemplate(await listActiveGates());
+  response.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  response.setHeader("Content-Disposition", 'attachment; filename="vereinfachte-erfassung-vorlage.xlsx"');
+  return response.send(buffer);
 });
 
 sibeRouter.get("/api/sibe/visits/import-template.xlsx", async (request, response) => {
-  const user = await requireRole(request, response, [...importRoles]);
+  const user = await requirePermission(request, response, "imports.execute");
   if (!user) return;
 
   return sendVisitorImportTemplateWorkbook(response);
@@ -716,7 +760,8 @@ sibeRouter.get("/api/sibe/visits/:id", async (request, response) => {
           vt.badge_number AS badgeNumber,
           vt.rejection_note AS rejectionNote,
           CONVERT(NVARCHAR(30), vt.rejected_at, 127) AS rejectedAt,
-          rejecter.username AS rejectedBy
+          rejecter.username AS rejectedBy,
+          CONVERT(NVARCHAR(30), vt.public_recipient_updated_at, 127) AS publicRecipientUpdatedAt
         FROM dbo.visits vt
         INNER JOIN dbo.visitors vis ON vis.id = vt.visitor_id
         LEFT JOIN dbo.gates g ON g.id = vt.gate_id

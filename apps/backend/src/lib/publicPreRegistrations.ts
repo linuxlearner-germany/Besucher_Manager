@@ -7,6 +7,7 @@ import { dateOnlyEnd, dateOnlyStart } from "./dateOnly";
 import type { PublicPreRegistrationInput } from "./publicPreRegistrationSchema";
 import { cleanOptional } from "./textValues";
 import { VISIT_STATUS } from "./visitWorkflow";
+import { createPublicVisitAccessToken, getGermanVisitDayEnd } from "./publicPreRegistrationAccess";
 
 export type GateSummary = {
   id: string;
@@ -24,6 +25,7 @@ export type CreatedPreRegistration = {
   visitId: string;
   visitorId: string;
   status: string;
+  confirmationToken: string;
 };
 
 export async function listActiveGates(): Promise<GateSummary[]> {
@@ -197,6 +199,8 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
       throw new Error("visit_insert_failed");
     }
 
+    const confirmationToken = await createPublicVisitAccessToken(transaction, visit.id, getGermanVisitDayEnd(validUntilDate));
+
     await writeAuditLog(
       {
         user: `public:${cleanOptional(input.submittedIpAddress ?? undefined) ?? "unknown"}`,
@@ -225,7 +229,8 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
         validFrom: validFromDate,
         validUntil: validUntilDate,
         gateName: gate?.name ?? null,
-        visitId: visit.id
+        visitId: visit.id,
+        confirmationToken
       }).then(async (delivered) => {
         if (delivered) {
           const pool = await getPool();
@@ -249,7 +254,8 @@ export async function createPreRegistration(input: CreatePreRegistrationInput): 
     return {
       visitId: visit.id,
       visitorId,
-      status: visit.status
+      status: visit.status,
+      confirmationToken
     };
   } catch (error) {
     await transaction.rollback();

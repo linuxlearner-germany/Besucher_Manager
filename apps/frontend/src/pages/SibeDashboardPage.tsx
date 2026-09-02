@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { AppLayout, type ApiError, fetchJson, formatDateTime, formatStatus, statusClassName, type SibeSummary, type SibeVisitRow } from "../app/core";
-import { Alert, Card, DataTable } from "../components/ui";
+import { AppLayout, type ApiError, fetchJson, formatDateTime, formatStatus, hasPermission, hasRole, statusClassName, type SibeSummary, type SibeVisitRow, useAuth } from "../app/core";
+import { Alert, Button, Card, DataTable } from "../components/ui";
 
 export function SibeDashboardPage() {
+  const { user } = useAuth();
+  const canReadVisits = hasPermission(user, "visits.read");
   const [summary, setSummary] = useState<SibeSummary | null>(null);
   const [recentVisits, setRecentVisits] = useState<SibeVisitRow[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -13,7 +15,9 @@ export function SibeDashboardPage() {
       try {
         const [summaryPayload, recentPayload] = await Promise.all([
           fetchJson<SibeSummary>("/api/sibe/summary", { method: "GET", headers: {} }),
-          fetchJson<{ visits: SibeVisitRow[] }>("/api/sibe/visits?status=all", { method: "GET", headers: {} })
+          canReadVisits
+            ? fetchJson<{ visits: SibeVisitRow[] }>("/api/sibe/visits?status=all", { method: "GET", headers: {} })
+            : Promise.resolve({ visits: [] })
         ]);
 
         setSummary(summaryPayload);
@@ -25,7 +29,7 @@ export function SibeDashboardPage() {
     }
 
     void loadDashboard();
-  }, []);
+  }, [canReadVisits]);
 
   const pastVisits = useMemo(
     () => recentVisits
@@ -80,13 +84,15 @@ export function SibeDashboardPage() {
 
         {error ? <Alert type="error">{error}</Alert> : null}
 
+        {hasRole(user, "sibe") ? <PublicXlsxSettings /> : null}
+
         <div className="split-card-grid">
           <Card>
             <div className="section-header">
               <div>
                 <h3>Aktuelle Besuche</h3>
               </div>
-              <Link className="button-link" to="/sibe/besucher">Besucherübersicht</Link>
+              {canReadVisits ? <Link className="button-link" to="/sibe/besucher">Besucherübersicht</Link> : null}
             </div>
             <DataTable>
               <thead>
@@ -108,7 +114,7 @@ export function SibeDashboardPage() {
                     <td>{visit.gateName}</td>
                     <td>{formatDateTime(visit.checkInAt || visit.validFrom)}</td>
                     <td>
-                      <Link className="button-link" to={`/sibe/besucher/${visit.id}`}>Details</Link>
+                      {canReadVisits ? <Link className="button-link" to={`/sibe/besucher/${visit.id}`}>Details</Link> : null}
                     </td>
                   </tr>
                 )) : (
@@ -127,7 +133,7 @@ export function SibeDashboardPage() {
               <div>
                 <h3>Vergangene Besuche</h3>
               </div>
-              <Link className="button-link" to="/sibe/besucher">Besucherübersicht</Link>
+              {canReadVisits ? <Link className="button-link" to="/sibe/besucher">Besucherübersicht</Link> : null}
             </div>
             <DataTable>
               <thead>
@@ -147,7 +153,7 @@ export function SibeDashboardPage() {
                     <td><span className={statusClassName(visit.status)}>{formatStatus(visit.status)}</span></td>
                     <td>{formatDateTime(visit.validUntil)}</td>
                     <td>
-                      <Link className="button-link" to={`/sibe/besucher/${visit.id}`}>Details</Link>
+                      {canReadVisits ? <Link className="button-link" to={`/sibe/besucher/${visit.id}`}>Details</Link> : null}
                     </td>
                   </tr>
                 )) : (
@@ -166,7 +172,7 @@ export function SibeDashboardPage() {
               <div>
                 <h3>Kommende Besuche</h3>
               </div>
-              <Link className="button-link" to="/sibe/besucher">Besucherübersicht</Link>
+              {canReadVisits ? <Link className="button-link" to="/sibe/besucher">Besucherübersicht</Link> : null}
             </div>
             <DataTable>
               <thead>
@@ -188,7 +194,7 @@ export function SibeDashboardPage() {
                     <td>{visit.gateName}</td>
                     <td>{formatDateTime(visit.validFrom)}</td>
                     <td>
-                      <Link className="button-link" to={`/sibe/besucher/${visit.id}`}>Details</Link>
+                      {canReadVisits ? <Link className="button-link" to={`/sibe/besucher/${visit.id}`}>Details</Link> : null}
                     </td>
                   </tr>
                 )) : (
@@ -203,4 +209,13 @@ export function SibeDashboardPage() {
       </main>
     </AppLayout>
   );
+}
+
+function PublicXlsxSettings() {
+  const [required, setRequired] = useState<boolean | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  useEffect(() => { void fetchJson<{ requireEmailVerification: boolean }>("/api/sibe/settings/public-xlsx-applications", { headers: {} }).then((value) => setRequired(value.requireEmailVerification)).catch(() => setMessage("Die Einstellung konnte nicht geladen werden.")); }, []);
+  async function toggle() { if (required === null) return; setSaving(true); setMessage(null); try { const value = await fetchJson<{ requireEmailVerification: boolean }>("/api/sibe/settings/public-xlsx-applications", { method: "PATCH", body: JSON.stringify({ requireEmailVerification: !required }) }); setRequired(value.requireEmailVerification); setMessage("Einstellung gespeichert."); } catch (error) { setMessage((error as ApiError).message || "Die Einstellung konnte nicht gespeichert werden."); } finally { setSaving(false); } }
+  return <Card><div className="section-header"><div><h3>Öffentliche Anträge – Vereinfachte Besucherregelung</h3><p><strong>E-Mail-Adresse des Antragstellers bestätigen lassen</strong></p><p>Wenn aktiviert, wird ein öffentlicher Antrag erst nach Bestätigung der angegebenen E-Mail-Adresse an KSKdt zur Genehmigung weitergeleitet.</p></div><span className={`badge ${required ? "checked_in" : "checked_out"}`}>{required === null ? "Wird geladen" : required ? "Aktiviert" : "Deaktiviert"}</span></div><Button type="button" disabled={saving || required === null} onClick={() => void toggle()}>{saving ? "Wird gespeichert …" : required ? "Bestätigung deaktivieren" : "Bestätigung aktivieren"}</Button>{message ? <p aria-live="polite">{message}</p> : null}</Card>;
 }

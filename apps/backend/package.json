@@ -13,6 +13,7 @@
     "create-admin:compiled": "node dist/scripts/createAdmin.js",
     "seed:sample": "DOTENV_CONFIG_PATH=../../.env node -r dotenv/config --import tsx src/scripts/seedSampleData.ts",
     "seed:sample:compiled": "DOTENV_CONFIG_PATH=../../.env node -r dotenv/config dist/scripts/seedSampleData.js",
+    "verify:public-confirmation:compiled": "node dist/scripts/verifyPublicConfirmationFlow.js",
     "test": "bash ../../scripts/ops/fix_node_permissions.sh && node --import tsx --test src/**/*.test.ts",
     "typecheck": "node ../../node_modules/typescript/bin/tsc --noEmit -p tsconfig.json"
   },
@@ -28,7 +29,6 @@
     "mssql": "^11.0.1",
     "multer": "^2.2.0",
     "nodemailer": "^9.0.3",
-    "pdf-lib": "^1.17.1",
     "yaml": "^2.9.0",
     "zod": "^3.24.1"
   },

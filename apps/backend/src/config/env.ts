@@ -48,6 +48,11 @@ const optionalBooleanish = z.preprocess((value) => {
   return value;
 }, z.boolean().optional());
 
+const optionalTrimmedString = z.preprocess(
+  (value) => typeof value === "string" && value.trim() === "" ? undefined : value,
+  z.string().trim().min(1).optional()
+);
+
 function parseTrustProxy(value: string | undefined): boolean | number | string | undefined {
   if (typeof value !== "string") {
     return undefined;
@@ -96,7 +101,8 @@ const envSchema = z.object({
   UPLOAD_DIR: z.string().default("./uploads"),
   PUBLIC_FORM_RATE_LIMIT: z.coerce.number().int().positive().default(120),
   PUBLIC_FORM_RATE_WINDOW_SECONDS: z.coerce.number().int().positive().default(60),
-  MAIL_RELAY_CONFIG_PATH: z.string().trim().optional()
+  MAIL_RELAY_CONFIG_PATH: z.string().trim().optional(),
+  MAIL_RELAY_TLS_SERVERNAME: optionalTrimmedString
 });
 
 const parsed = envSchema.safeParse(process.env);

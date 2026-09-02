@@ -5,6 +5,8 @@ import {
   APP_MENU_KEYS,
   getAllowedMenuAccessForRole,
   getDefaultMenuAccessForRole,
+  getDefaultMenuAccessForRoles,
+  normalizeRoles,
   normalizeUserPermissions,
   parsePermissionsJson,
   type AppMenuKey,
@@ -22,7 +24,46 @@ type DbUserRow = {
   gateId: string | null;
   isActive: boolean;
   permissionsJson?: string | null;
+  roles: AppRole[];
 };
+
+export async function loadUserRoles(userIds: string[], transaction?: sql.Transaction): Promise<Record<string, AppRole[]>> {
+  const ids = Array.from(new Set(userIds.filter(Boolean)));
+  const rolesByUserId = Object.fromEntries(ids.map((id) => [id, [] as AppRole[]]));
+  if (ids.length === 0) return rolesByUserId;
+  const idsSql = ids.map((id) => `'${id.replace(/'/g, "''")}'`).join(",");
+  const request = transaction ? new sql.Request(transaction) : (await getPool()).request();
+  const result = await request.query<{ userId: string; role: AppRole }>(`
+    SELECT user_id AS userId, role FROM dbo.user_roles WHERE user_id IN (${idsSql})
+  `);
+  for (const row of result.recordset) rolesByUserId[row.userId]?.push(row.role);
+  return rolesByUserId;
+}
+
+export function assertValidRoleCombination(roles: AppRole[]): AppRole[] {
+  const unique = Array.from(new Set(roles));
+  const valid = unique.length === 1 || (unique.length === 2 && unique.includes("sibe") && unique.includes("kaskdt"));
+  if (!valid) throw new Error("invalid_role_combination");
+  return unique;
+}
+
+export async function replaceUserRoles(userId: string, roles: AppRole[], transaction: sql.Transaction): Promise<void> {
+  const normalized = assertValidRoleCombination(roles);
+  await new sql.Request(transaction).input("userId", sql.UniqueIdentifier, userId)
+    .query("DELETE FROM dbo.user_roles WHERE user_id = @userId");
+  for (const role of normalized) {
+    await new sql.Request(transaction).input("userId", sql.UniqueIdentifier, userId).input("role", sql.NVarChar(32), role)
+      .query("INSERT INTO dbo.user_roles(user_id, role) VALUES(@userId, @role)");
+  }
+}
+
+async function replaceSingleUserRole(userId: string, role: AppRole): Promise<void> {
+  const pool = await getPool();
+  await pool.request().input("userId", sql.UniqueIdentifier, userId).input("role", sql.NVarChar(32), role).query(`
+    DELETE FROM dbo.user_roles WHERE user_id = @userId;
+    INSERT INTO dbo.user_roles(user_id, role) VALUES(@userId, @role);
+  `);
+}
 
 type UserNotificationRow = {
   id: string;
@@ -194,7 +235,10 @@ export async function findUserForLogin(username: string): Promise<DbUserRow | nu
     WHERE username = @username
   `);
 
-  return result.recordset[0] ?? null;
+  const user = result.recordset[0];
+  if (!user) return null;
+  const rolesByUserId = await loadUserRoles([user.id]);
+  return { ...user, roles: normalizeRoles(rolesByUserId[user.id], user.role) };
 }
 
 export async function findUserById(id: string): Promise<AuthenticatedUser | null> {
@@ -217,25 +261,35 @@ export async function findUserById(id: string): Promise<AuthenticatedUser | null
     return null;
   }
 
-  const { groupsByUserId, menuAccessByUserId } = await loadUserGroupsAndMenuAccess([user.id]);
+  const [{ groupsByUserId, menuAccessByUserId }, rolesByUserId] = await Promise.all([
+    loadUserGroupsAndMenuAccess([user.id]),
+    loadUserRoles([user.id])
+  ]);
+  const roles = normalizeRoles(rolesByUserId[user.id], user.role);
 
-  const effectiveMenuAccess = normalizeMenuAccess(
-    user.role,
-    menuAccessByUserId[user.id]?.length ? menuAccessByUserId[user.id] : getDefaultMenuAccessForRole(user.role)
-  );
+  const effectiveMenuAccess = Array.from(new Set([
+    ...(menuAccessByUserId[user.id] ?? []),
+    ...getDefaultMenuAccessForRoles(roles)
+  ]));
+  const rolePermissions = roles.map((role) => normalizePermissions(role, parsePermissionsJson(user.permissionsJson), effectiveMenuAccess));
+  const combinedPermissions = rolePermissions.reduce((combined, current) => {
+    for (const section of Object.keys(combined) as Array<keyof UserPermissions>) {
+      const target = combined[section] as Record<string, boolean>;
+      const source = current[section] as Record<string, boolean>;
+      for (const [key, value] of Object.entries(source)) target[key] = target[key] || value;
+    }
+    return combined;
+  }, normalizePermissions(roles[0] ?? user.role, null, effectiveMenuAccess));
 
   return {
     id: user.id,
     username: user.username,
     role: user.role,
+    roles,
     gateId: user.gateId,
     groups: groupsByUserId[user.id] ?? [],
     menuAccess: effectiveMenuAccess,
-    permissions: normalizePermissions(
-      user.role,
-      parsePermissionsJson(user.permissionsJson),
-      effectiveMenuAccess
-    )
+    permissions: combinedPermissions
   };
 }
 
@@ -275,56 +329,63 @@ export async function listNotificationEmailsByMenuAccess(menuKey: AppMenuKey): P
   );
 }
 
-export async function createOrUpdateAdmin(input: CreateAdminInput): Promise<{ created: boolean; userId: string }> {
+/**
+ * Creates the configured startup administrator only when the username is absent.
+ *
+ * Startup/bootstrap must never be a credential synchronizer. Existing profile
+ * data, including the password hash, is left untouched.
+ */
+export async function createAdminIfMissing(input: CreateAdminInput): Promise<{ created: boolean; userId: string }> {
   const pool = await getPool();
-  const passwordHash = await hashPassword(input.password);
-  const existing = await findUserForLogin(input.username);
+  const transaction = new sql.Transaction(pool);
+  await transaction.begin(sql.ISOLATION_LEVEL.SERIALIZABLE);
 
-  if (existing) {
-    await pool.request()
-      .input("id", sql.UniqueIdentifier, existing.id)
-      .input("passwordHash", sql.NVarChar(255), passwordHash)
-      .query(`
-        UPDATE dbo.users
-        SET
-          password_hash = @passwordHash,
-          role = 'admin',
-          is_active = 1,
-          updated_at = SYSUTCDATETIME()
-        WHERE id = @id
+  try {
+    const existing = await new sql.Request(transaction)
+      .input("username", sql.NVarChar(120), input.username)
+      .query<{ id: string }>(`
+        SELECT id
+        FROM dbo.users WITH (UPDLOCK, HOLDLOCK)
+        WHERE username = @username
       `);
+    const existingId = existing.recordset[0]?.id;
 
-    return {
-      created: false,
-      userId: existing.id
-    };
+    if (existingId) {
+      await transaction.commit();
+      return { created: false, userId: existingId };
+    }
+
+    const passwordHash = await hashPassword(input.password);
+    const inserted = await new sql.Request(transaction)
+      .input("username", sql.NVarChar(120), input.username)
+      .input("passwordHash", sql.NVarChar(255), passwordHash)
+      .query<{ id: string }>(`
+        INSERT INTO dbo.users (
+          username,
+          password_hash,
+          display_name,
+          role,
+          is_active
+        )
+        OUTPUT inserted.id
+        VALUES (
+          @username,
+          @passwordHash,
+          @username,
+          'admin',
+          1
+        )
+      `);
+    const userId = inserted.recordset[0]?.id;
+    if (!userId) throw new Error("startup_admin_insert_failed");
+
+    await replaceUserRoles(userId, ["admin"], transaction);
+    await transaction.commit();
+    return { created: true, userId };
+  } catch (error) {
+    await transaction.rollback().catch(() => undefined);
+    throw error;
   }
-
-  const inserted = await pool.request()
-    .input("username", sql.NVarChar(120), input.username)
-    .input("passwordHash", sql.NVarChar(255), passwordHash)
-    .query<{ id: string }>(`
-      INSERT INTO dbo.users (
-        username,
-        password_hash,
-        display_name,
-        role,
-        is_active
-      )
-      OUTPUT inserted.id
-      VALUES (
-        @username,
-        @passwordHash,
-        @username,
-        'admin',
-        1
-      )
-    `);
-
-  return {
-    created: true,
-    userId: inserted.recordset[0].id
-  };
 }
 
 export async function createOrUpdateUser(input: {
@@ -353,6 +414,7 @@ export async function createOrUpdateUser(input: {
           updated_at = SYSUTCDATETIME()
         WHERE id = @id
       `);
+    await replaceSingleUserRole(existing.id, input.role);
 
     return {
       created: false,
@@ -384,6 +446,7 @@ export async function createOrUpdateUser(input: {
         1
       )
     `);
+  await replaceSingleUserRole(inserted.recordset[0].id, input.role);
 
   return {
     created: true,

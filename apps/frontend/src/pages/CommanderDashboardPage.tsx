@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { AppLayout, type ApiError, fetchJson, formatDateTime, formatStatus, statusClassName, type SibeSummary, type SibeVisitRow } from "../app/core";
+import { AppLayout, type ApiError, fetchJson, formatDateTime, formatStatus, hasPermission, hasRole, statusClassName, type SibeSummary, type SibeVisitRow, useAuth } from "../app/core";
 import { Alert, Card, DataTable } from "../components/ui";
 
 export function CommanderDashboardPage() {
+  const { user } = useAuth();
+  const canReadVisits = hasPermission(user, "visits.read");
   const [summary, setSummary] = useState<SibeSummary | null>(null);
   const [recentVisits, setRecentVisits] = useState<SibeVisitRow[]>([]);
+  const [openApplications, setOpenApplications] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -13,19 +16,31 @@ export function CommanderDashboardPage() {
       try {
         const [summaryPayload, recentPayload] = await Promise.all([
           fetchJson<SibeSummary>("/api/sibe/summary", { method: "GET", headers: {} }),
-          fetchJson<{ visits: SibeVisitRow[] }>("/api/sibe/visits?status=all", { method: "GET", headers: {} })
+          canReadVisits
+            ? fetchJson<{ visits: SibeVisitRow[] }>("/api/sibe/visits?status=all", { method: "GET", headers: {} })
+            : Promise.resolve({ visits: [] })
         ]);
 
         setSummary(summaryPayload);
         setRecentVisits(recentPayload.visits.slice(0, 120));
       } catch (apiError) {
         const errorPayload = apiError as ApiError;
-        setError(errorPayload.message || "Die KasKdt-Übersicht konnte nicht geladen werden.");
+        setError(errorPayload.message || "Die KSKdt-Übersicht konnte nicht geladen werden.");
       }
     }
 
     void loadDashboard();
-  }, []);
+  }, [canReadVisits]);
+
+  useEffect(() => {
+    if (!user || (!hasRole(user, "admin") && !hasRole(user, "kaskdt"))) {
+      return;
+    }
+
+    void fetchJson<{ total: number }>("/api/kaskdt/applications?status=open&page=1&pageSize=1", { headers: {} })
+      .then((payload) => setOpenApplications(payload.total))
+      .catch(() => setOpenApplications(null));
+  }, [user]);
 
   const currentVisits = useMemo(
     () => recentVisits
@@ -52,7 +67,7 @@ export function CommanderDashboardPage() {
         <section className="page-hero">
           <div className="page-hero-grid dashboard-hero-grid">
             <div className="page-hero-content">
-              <h2>KasKdt-Übersicht</h2>
+              <h2>KSKdt-Übersicht</h2>
             </div>
             <div className="hero-stat-grid">
               <div className="hero-stat-card">
@@ -81,13 +96,17 @@ export function CommanderDashboardPage() {
 
         {error ? <Alert type="error">{error}</Alert> : null}
 
+        {user && (hasRole(user, "admin") || hasRole(user, "kaskdt")) ? (
+          <Card><div className="section-header"><div><h3>Genehmigungen – Vereinfachte Besucheranmeldung</h3><p><strong>{openApplications ?? "–"} offen</strong> · Eingereichte Anträge prüfen, Personen genehmigen oder ablehnen und die Entscheidung versenden.</p></div><Link className="button-link" to="/kaskdt/antraege">Genehmigungen öffnen</Link></div></Card>
+        ) : null}
+
         <div className="split-card-grid">
           <Card>
             <div className="section-header">
               <div>
                 <h3>Aktuelle Besuche</h3>
               </div>
-              <Link className="button-link" to="/kaskdt/besucher">Besucherübersicht</Link>
+              {canReadVisits ? <Link className="button-link" to="/kaskdt/besucher">Besucherübersicht</Link> : null}
             </div>
             <DataTable>
               <thead>
@@ -109,7 +128,7 @@ export function CommanderDashboardPage() {
                     <td>{visit.gateName}</td>
                     <td>{formatDateTime(visit.checkInAt || visit.validFrom)}</td>
                     <td>
-                      <Link className="button-link" to={`/kaskdt/besucher/${visit.id}`}>Details</Link>
+                      {canReadVisits ? <Link className="button-link" to={`/kaskdt/besucher/${visit.id}`}>Details</Link> : null}
                     </td>
                   </tr>
                 )) : (
@@ -128,7 +147,7 @@ export function CommanderDashboardPage() {
               <div>
                 <h3>Vergangene Besuche</h3>
               </div>
-              <Link className="button-link" to="/kaskdt/besucher">Besucherübersicht</Link>
+              {canReadVisits ? <Link className="button-link" to="/kaskdt/besucher">Besucherübersicht</Link> : null}
             </div>
             <DataTable>
               <thead>
@@ -148,7 +167,7 @@ export function CommanderDashboardPage() {
                     <td><span className={statusClassName(visit.status)}>{formatStatus(visit.status)}</span></td>
                     <td>{formatDateTime(visit.validUntil)}</td>
                     <td>
-                      <Link className="button-link" to={`/kaskdt/besucher/${visit.id}`}>Details</Link>
+                      {canReadVisits ? <Link className="button-link" to={`/kaskdt/besucher/${visit.id}`}>Details</Link> : null}
                     </td>
                   </tr>
                 )) : (
@@ -167,7 +186,7 @@ export function CommanderDashboardPage() {
               <div>
                 <h3>Kommende Besuche</h3>
               </div>
-              <Link className="button-link" to="/kaskdt/besucher">Besucherübersicht</Link>
+              {canReadVisits ? <Link className="button-link" to="/kaskdt/besucher">Besucherübersicht</Link> : null}
             </div>
             <DataTable>
               <thead>
@@ -189,7 +208,7 @@ export function CommanderDashboardPage() {
                     <td>{visit.gateName}</td>
                     <td>{formatDateTime(visit.validFrom)}</td>
                     <td>
-                      <Link className="button-link" to={`/kaskdt/besucher/${visit.id}`}>Details</Link>
+                      {canReadVisits ? <Link className="button-link" to={`/kaskdt/besucher/${visit.id}`}>Details</Link> : null}
                     </td>
                   </tr>
                 )) : (

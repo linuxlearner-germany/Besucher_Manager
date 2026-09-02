@@ -6,7 +6,7 @@ import { clearSessionCookie, getSessionCookieName, readSessionToken } from "../l
 import { writeErrorLog } from "../lib/errorLogs";
 import { findActiveGateById } from "../lib/publicPreRegistrations";
 import { findUserById } from "../lib/users";
-import { hasPermission, type AppPermission, type AuthenticatedUser } from "../lib/visitWorkflow";
+import { hasPermission, hasRole, type AppPermission, type AuthenticatedUser } from "../lib/visitWorkflow";
 
 export const csrfCookieName = "visitor_manager_csrf";
 
@@ -27,6 +27,15 @@ export function issueCsrfToken(response: Response, currentToken?: string): strin
   return token;
 }
 
+export function hasValidCsrfToken(request: Request): boolean {
+  const cookieToken = request.signedCookies?.[csrfCookieName];
+  const headerToken = request.get("x-csrf-token");
+  if (typeof cookieToken !== "string" || typeof headerToken !== "string") return false;
+  const left = Buffer.from(cookieToken);
+  const right = Buffer.from(headerToken);
+  return left.length === right.length && crypto.timingSafeEqual(left, right);
+}
+
 export function getRequestIp(request: Request): string {
   return request.ip || request.socket.remoteAddress || "unknown";
 }
@@ -42,15 +51,18 @@ export function sendError(
   message: string,
   details?: unknown
 ) {
+  response.locals.errorCode = error;
   return response.status(status).json({
+    status,
     error,
     message,
+    requestId: response.req?.requestId,
     ...(details !== undefined ? { details } : {})
   });
 }
 
 export function sendValidationError(response: Response, details?: unknown) {
-  return sendError(response, 400, "VALIDATION_ERROR", "Bitte pruefen Sie die eingegebenen Daten.", details);
+  return sendError(response, 400, "VALIDATION_ERROR", "Bitte prüfen Sie die eingegebenen Daten.", details);
 }
 
 export function sendForbidden(response: Response) {
@@ -88,7 +100,8 @@ export function handleUnexpectedError(
     userAgent: request ? getRequestUserAgent(request) : null,
     userName,
     stackTrace,
-    metadataJson
+    metadataJson,
+    requestId: request?.requestId ?? null
   }).catch((loggingError) => {
     console.error("error log write failed", loggingError);
   });
@@ -132,7 +145,7 @@ export async function resolveAuthenticatedUser(request: Request): Promise<Authen
     return null;
   }
 
-  const activeGateId = currentUser.role === "guard" ? sessionUser.gateId : currentUser.gateId;
+  const activeGateId = sessionUser.gateId;
   const activeGate = activeGateId ? await findActiveGateById(activeGateId) : null;
   const resolvedUser: AuthenticatedUser = {
     ...currentUser,
@@ -166,7 +179,7 @@ export async function requireRole(
     return null;
   }
 
-  if (!allowedRoles.includes(user.role)) {
+  if (!allowedRoles.some((role) => hasRole(user, role))) {
     sendForbidden(response);
     return null;
   }
@@ -219,14 +232,15 @@ export async function countUserReferences(pool: sql.ConnectionPool, userId: stri
     { label: "Besuche ausgecheckt", query: "SELECT COUNT(*) AS count FROM dbo.visits WHERE check_out_by = @id" },
     { label: "Besuche storniert", query: "SELECT COUNT(*) AS count FROM dbo.visits WHERE cancelled_by = @id" },
     { label: "Unterschriften bestaetigt", query: "SELECT COUNT(*) AS count FROM dbo.visits WHERE host_signature_confirmed_by = @id" },
-    { label: "Besuchsnummern geprueft", query: "SELECT COUNT(*) AS count FROM dbo.visits WHERE returned_badge_number_checked_by = @id" },
+    { label: "Besuchsnummern geprüft", query: "SELECT COUNT(*) AS count FROM dbo.visits WHERE returned_badge_number_checked_by = @id" },
     { label: "Geraete rueckgegeben", query: "SELECT COUNT(*) AS count FROM dbo.visits WHERE device_returned_by = @id" },
     { label: "Besucher archiviert", query: "SELECT COUNT(*) AS count FROM dbo.visitors WHERE deleted_by = @id" },
     { label: "Wachen deaktiviert", query: "SELECT COUNT(*) AS count FROM dbo.gates WHERE deactivated_by = @id" },
     { label: "Benutzer deaktiviert", query: "SELECT COUNT(*) AS count FROM dbo.users WHERE deactivated_by = @id" },
     { label: "Hinweistexte bearbeitet", query: "SELECT COUNT(*) AS count FROM dbo.badge_text_templates WHERE updated_by = @id OR deactivated_by = @id" },
     { label: "Gelaendeplaene hochgeladen", query: "SELECT COUNT(*) AS count FROM dbo.site_maps WHERE uploaded_by = @id OR deactivated_by = @id" },
-    { label: "Auditlog-Aktionen", query: "SELECT COUNT(*) AS count FROM dbo.audit_logs WHERE user_id = @id" }
+    { label: "Auditlog-Aktionen", query: "SELECT COUNT(*) AS count FROM dbo.audit_logs WHERE user_id = @id" },
+    { label: "Nationalitaetsbenachrichtigungen", query: "SELECT COUNT(*) AS count FROM dbo.nationality_notification_deliveries WHERE user_id = @id" }
   ];
 
   const references: Array<{ label: string; count: number }> = [];

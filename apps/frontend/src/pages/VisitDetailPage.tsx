@@ -17,6 +17,7 @@ import {
   formatStatus,
   type Gate,
   getNextStepHint,
+  hasPermission,
   type GuardVisitEditState,
   type CheckoutFormState,
   statusClassName,
@@ -145,6 +146,10 @@ export function VisitDetailPage() {
   }
 
   const missingRequired = new Set(visit?.completeness?.missingRequiredFields ?? []);
+  const canUpdateVisit = hasPermission(currentUser, "visits.update");
+  const canCheckInVisit = hasPermission(currentUser, "visits.checkIn");
+  const canCheckOutVisit = hasPermission(currentUser, "visits.checkOut");
+  const canPrintVisit = hasPermission(currentUser, "visits.printBadge");
 
   return (
     <AppLayout>
@@ -181,7 +186,7 @@ export function VisitDetailPage() {
               </div>
               <div className="detail-next-step">{getNextStepHint(visit)}</div>
               <div className="row-actions action-bar">
-                {visit.status === "pre_registered" || visit.status === "checked_in" ? (
+                {canUpdateVisit && (visit.status === "pre_registered" || visit.status === "checked_in") ? (
                   isEditing ? (
                     <>
                       <button type="button" onClick={() => void handleSaveVisit()}>Speichern</button>
@@ -195,13 +200,13 @@ export function VisitDetailPage() {
                     </button>
                   )
                 ) : null}
-                {visit.status === "pre_registered" ? (
+                {visit.status === "pre_registered" && canCheckInVisit ? (
                   <button type="button" disabled={!visit.completeness.canCheckIn} onClick={() => void handleCheckIn()}>Einchecken</button>
                 ) : null}
-                {visit.status === "checked_in" ? (
+                {visit.status === "checked_in" && canCheckOutVisit ? (
                   <button type="button" onClick={() => setIsCheckoutModalOpen(true)}>Auschecken</button>
                 ) : null}
-                {visit.completeness.canPrintBadge ? (
+                {canPrintVisit && visit.completeness.canPrintBadge ? (
                   <Link className="button-link" to={`/wache/besuche/${visit.id}/druck${visit.status === "checked_out" ? "?reprint=1" : ""}`}>
                     {visit.status === "checked_out" ? "Besucherschein erneut drucken" : "Besucherschein drucken"}
                   </Link>
@@ -220,7 +225,7 @@ export function VisitDetailPage() {
                     {visit.completeness.errors.map((issue, index) => <li key={`${issue.field}-${index}`}>{issue.message}</li>)}
                   </ul>
                   <div className="row-actions">
-                    <button type="button" onClick={() => setIsEditing(true)}>Fehlende Daten ergaenzen</button>
+                    {canUpdateVisit ? <button type="button" onClick={() => setIsEditing(true)}>Fehlende Daten ergaenzen</button> : null}
                   </div>
                 </div>
               )}

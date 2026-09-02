@@ -8,7 +8,9 @@ import {
   loadUserGroupsAndMenuAccess,
   normalizeMenuAccess,
   normalizePermissions,
-  replaceUserGroupsAndMenuAccess
+  replaceUserGroupsAndMenuAccess,
+  loadUserRoles,
+  replaceUserRoles
 } from "../lib/users";
 import { loadSystemSettings, loadWorkflowSettings, upsertSystemSettings, WORKFLOW_SETTING_KEYS, SITE_MAP_SETTING_KEY } from "../lib/systemSettings";
 import { writeAuditLog } from "../lib/auditLog";
@@ -21,11 +23,13 @@ import {
   APP_MENU_KEYS,
   getAllowedMenuAccessForRole,
   getDefaultMenuAccessForRole,
+  getDefaultMenuAccessForRoles,
+  getCustomMenusMissingEntryPermission,
+  normalizeRoles,
   HOST_SIGNATURE_STATUS,
   VISIT_STATUS,
   parsePermissionsJson,
   type AppMenuKey,
-  type AppPermission,
   type AuthenticatedUser
 } from "../lib/visitWorkflow";
 import {
@@ -37,6 +41,7 @@ import {
 import { getUiBackgroundById, listUiBackgrounds } from "../lib/uiBackgrounds";
 import { listSiteMapCatalog, selectSiteMapCatalogEntry } from "../lib/siteMapCatalog";
 import { APP_VERSION } from "../lib/appVersion";
+import { parseRedactedLogJson, readLogMetadataString, redactSensitiveText } from "../lib/logRedaction";
 import {
   countUserReferences,
   getRequestIp,
@@ -102,13 +107,18 @@ const userCreateSchema = z.object({
   email: z.string().trim().email("Ungueltige E-Mail-Adresse.").optional().or(z.literal("")),
   password: z.string().min(8).max(128),
   role: z.enum(["admin", "guard", "sibe", "kaskdt", "custom"]),
+  roles: z.array(z.enum(["admin", "guard", "sibe", "kaskdt", "custom"])).min(1).max(2).optional(),
   gateId: z.string().uuid().nullable().optional(),
   isActive: z.boolean().optional(),
   groups: z.array(z.string().trim().min(1).max(120)).optional(),
   menuAccess: z.array(z.enum(APP_MENU_KEYS)).optional(),
   permissions: permissionFlagsSchema
 }).superRefine((value, context) => {
-  const allowed = new Set(getAllowedMenuAccessForRole(value.role));
+  const roles = normalizeRoles(value.roles, value.role);
+  if (value.roles && roles.length !== new Set(value.roles).size) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["roles"], message: "Nur die Kombination SiBe + KSKdt ist zulässig." });
+  }
+  const allowed = new Set(roles.flatMap(getAllowedMenuAccessForRole));
   const invalid = (value.menuAccess ?? []).filter((entry) => !allowed.has(entry));
 
   if (invalid.length > 0) {
@@ -119,19 +129,11 @@ const userCreateSchema = z.object({
     });
   }
 
-  if (value.role === "sibe" && !value.email?.trim()) {
+  if (roles.includes("sibe") && !value.email?.trim()) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["email"],
       message: "Fuer SiBe ist eine E-Mail-Adresse erforderlich."
-    });
-  }
-
-  if (value.role === "guard" && !value.gateId) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["gateId"],
-      message: "Fuer ein Wache-Konto muss eine aktive Wache ausgewaehlt werden."
     });
   }
 
@@ -149,6 +151,7 @@ const userUpdateSchema = z.object({
   email: z.string().trim().email("Ungueltige E-Mail-Adresse.").optional().or(z.literal("")),
   password: z.string().min(8).max(128).optional(),
   role: z.enum(["admin", "guard", "sibe", "kaskdt", "custom"]).optional(),
+  roles: z.array(z.enum(["admin", "guard", "sibe", "kaskdt", "custom"])).min(1).max(2).optional(),
   gateId: z.string().uuid().nullable().optional(),
   isActive: z.boolean().optional(),
   groups: z.array(z.string().trim().min(1).max(120)).optional(),
@@ -634,18 +637,21 @@ adminRouter.get("/api/admin/users", async (request, response) => {
         CONVERT(NVARCHAR(30), last_login_at, 127) AS lastLoginAt,
         permissions_json AS permissionsJson
       FROM dbo.users
+      WHERE ISNULL(is_tombstoned, 0) = 0
       ORDER BY username ASC
     `);
-    const { groupsByUserId, menuAccessByUserId } = await loadUserGroupsAndMenuAccess(result.recordset.map((entry) => entry.id));
+    const [{ groupsByUserId, menuAccessByUserId }, rolesByUserId] = await Promise.all([
+      loadUserGroupsAndMenuAccess(result.recordset.map((entry) => entry.id)),
+      loadUserRoles(result.recordset.map((entry) => entry.id))
+    ]);
     response.json({
       users: result.recordset.map((entry) => {
-        const effectiveMenuAccess = normalizeMenuAccess(
-          entry.role,
-          menuAccessByUserId[entry.id]?.length ? menuAccessByUserId[entry.id] : getDefaultMenuAccessForRole(entry.role)
-        );
+        const roles = normalizeRoles(rolesByUserId[entry.id], entry.role);
+        const effectiveMenuAccess = Array.from(new Set([...(menuAccessByUserId[entry.id] ?? []), ...getDefaultMenuAccessForRoles(roles)]));
 
         return {
           ...entry,
+          roles,
           groups: groupsByUserId[entry.id] ?? [],
           menuAccess: effectiveMenuAccess,
           permissions: serializePermissions(entry.role, entry.permissionsJson, effectiveMenuAccess)
@@ -690,13 +696,16 @@ adminRouter.get("/api/admin/users/export.csv", async (request, response) => {
         CONVERT(NVARCHAR(30), u.last_login_at, 127) AS lastLoginAt
       FROM dbo.users u
       LEFT JOIN dbo.gates g ON g.id = u.gate_id
+      WHERE ISNULL(u.is_tombstoned, 0) = 0
       ORDER BY u.username ASC
     `);
-    const { groupsByUserId, menuAccessByUserId } = await loadUserGroupsAndMenuAccess(
-      result.recordset.map((entry) => entry.id)
-    );
+    const [{ groupsByUserId, menuAccessByUserId }, rolesByUserId] = await Promise.all([
+      loadUserGroupsAndMenuAccess(result.recordset.map((entry) => entry.id)),
+      loadUserRoles(result.recordset.map((entry) => entry.id))
+    ]);
     const csv = buildUserExportCsv(result.recordset.map((entry) => ({
       ...entry,
+      roles: normalizeRoles(rolesByUserId[entry.id], entry.role as AuthenticatedUser["role"]),
       groups: groupsByUserId[entry.id] ?? [],
       menuAccess: normalizeMenuAccess(
         entry.role as AuthenticatedUser["role"],
@@ -804,7 +813,8 @@ adminRouter.post("/api/admin/users/import-csv", async (request, response) => {
 
       for (const row of rows) {
         const username = row.username.trim();
-        const role = row.role.trim().toLowerCase() as AuthenticatedUser["role"];
+        const roles = splitMultiValueField(row.role.toLowerCase()) as AuthenticatedUser["role"][];
+        const role = (roles.includes("sibe") ? "sibe" : roles[0]) as AuthenticatedUser["role"];
         const normalizedUserName = username.toLowerCase();
         const existingUser = existingUsersByUsername.get(normalizedUserName);
 
@@ -819,7 +829,8 @@ adminRouter.post("/api/admin/users/import-csv", async (request, response) => {
         }
         seenUsernames.add(normalizedUserName);
 
-        if (!["admin", "guard", "sibe", "kaskdt", "custom"].includes(role)) {
+        const validRoleCombination = roles.length === 1 || (roles.length === 2 && roles.includes("sibe") && roles.includes("kaskdt"));
+        if (!validRoleCombination || roles.some((entry) => !["admin", "guard", "sibe", "kaskdt", "custom"].includes(entry))) {
           issues.push({ lineNumber: row.lineNumber, username, message: "Rolle ist ungültig." });
           continue;
         }
@@ -831,14 +842,14 @@ adminRouter.post("/api/admin/users/import-csv", async (request, response) => {
 
         const nextIsActive = parseBooleanText(row.isActive, existingUser?.isActive ?? true);
 
-        if (existingUser?.id === admin.id && (!nextIsActive || role !== "admin")) {
+        if (existingUser?.id === admin.id && (!nextIsActive || !roles.includes("admin"))) {
           issues.push({ lineNumber: row.lineNumber, username, message: "Der aktuell angemeldete Admin darf nicht per Import seine eigene Admin-Berechtigung verlieren." });
           continue;
         }
 
         const nextEmail = row.email.trim().toLowerCase() || existingUser?.email?.trim().toLowerCase() || null;
 
-        if (role === "sibe" && !nextEmail) {
+        if (roles.includes("sibe") && !nextEmail) {
           issues.push({ lineNumber: row.lineNumber, username, message: "Für SiBe ist eine E-Mail-Adresse erforderlich." });
           continue;
         }
@@ -864,7 +875,7 @@ adminRouter.post("/api/admin/users/import-csv", async (request, response) => {
           : existingUser
             ? normalizeMenuAccess(existingUser.role, menuAccessByUserId[existingUser.id] ?? getDefaultMenuAccessForRole(existingUser.role))
             : getDefaultMenuAccessForRole(role);
-        const allowedMenuAccess = new Set(getAllowedMenuAccessForRole(role));
+        const allowedMenuAccess = new Set(roles.flatMap(getAllowedMenuAccessForRole));
         const invalidMenuAccess = requestedMenuAccess.filter((entry) => !allowedMenuAccess.has(entry));
 
         if (invalidMenuAccess.length > 0) {
@@ -877,7 +888,7 @@ adminRouter.post("/api/admin/users/import-csv", async (request, response) => {
         }
 
         resultingActiveAdminUsernames.delete(normalizedUserName);
-        if (role === "admin" && nextIsActive) {
+        if (roles.includes("admin") && nextIsActive) {
           resultingActiveAdminUsernames.add(normalizedUserName);
         }
       }
@@ -901,14 +912,15 @@ adminRouter.post("/api/admin/users/import-csv", async (request, response) => {
       for (const row of rows) {
         const username = row.username.trim();
         const normalizedUserName = username.toLowerCase();
-        const role = row.role.trim().toLowerCase() as AuthenticatedUser["role"];
+        const roles = splitMultiValueField(row.role.toLowerCase()) as AuthenticatedUser["role"][];
+        const role = (roles.includes("sibe") ? "sibe" : roles[0]) as AuthenticatedUser["role"];
         const existingUser = existingUsersByUsername.get(normalizedUserName);
         const requestedMenuAccess = row.menuAccess.trim()
           ? splitMultiValueField(row.menuAccess).map((entry) => entry as AppMenuKey)
           : existingUser
             ? normalizeMenuAccess(existingUser.role, menuAccessByUserId[existingUser.id] ?? getDefaultMenuAccessForRole(existingUser.role))
-            : getDefaultMenuAccessForRole(role);
-        const normalizedMenuAccess = normalizeMenuAccess(role, requestedMenuAccess);
+            : getDefaultMenuAccessForRoles(roles);
+        const normalizedMenuAccess = requestedMenuAccess;
         const permissionsJson = normalizePermissionsPayload(
           role,
           existingUser ? parsePermissionsJson(existingUser.permissionsJson) ?? undefined : undefined,
@@ -956,6 +968,7 @@ adminRouter.post("/api/admin/users/import-csv", async (request, response) => {
             `);
 
           await replaceUserGroupsAndMenuAccess(existingUser.id, role, groups, normalizedMenuAccess, transaction);
+          await replaceUserRoles(existingUser.id, roles, transaction);
           updated += 1;
           continue;
         }
@@ -975,6 +988,7 @@ adminRouter.post("/api/admin/users/import-csv", async (request, response) => {
           `);
 
         await replaceUserGroupsAndMenuAccess(createdResult.recordset[0].id, role, groups, normalizedMenuAccess, transaction);
+        await replaceUserRoles(createdResult.recordset[0].id, roles, transaction);
         created += 1;
       }
 
@@ -1016,6 +1030,8 @@ adminRouter.post("/api/admin/users", async (request, response) => {
   if (!parsed.success) return sendValidationError(response, parsed.error.flatten());
   const data = parsed.data;
   try {
+    const roles = normalizeRoles(data.roles, data.role);
+    const primaryRole = roles.includes("sibe") ? "sibe" : roles[0] ?? data.role;
     const passwordHash = await hashPassword(data.password);
     const pool = await getPool();
     const duplicate = await pool.request()
@@ -1026,29 +1042,24 @@ adminRouter.post("/api/admin/users", async (request, response) => {
       return sendError(response, 409, "CONFLICT", "Ein Benutzer mit diesem Namen existiert bereits.");
     }
 
-    let gateId: string | null = null;
-    if (data.role === "guard") {
-      const activeGate = await pool.request()
-        .input("gateId", sql.UniqueIdentifier, data.gateId)
-        .query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.gates WHERE id = @gateId AND is_active = 1");
-      if ((activeGate.recordset[0]?.count ?? 0) === 0) {
-        return sendError(response, 400, "VALIDATION_ERROR", "Die ausgewaehlte Wache existiert nicht oder ist inaktiv.");
-      }
-      gateId = data.gateId ?? null;
+    const gateId: string | null = null;
+
+    const normalizedMenuAccess = data.menuAccess?.length ? data.menuAccess : getDefaultMenuAccessForRoles(roles);
+    const missingMenuPermissions = getCustomMenusMissingEntryPermission(primaryRole, data.permissions, normalizedMenuAccess);
+    if (missingMenuPermissions.length) {
+      return sendValidationError(response, { fieldErrors: { permissions: [`Für diese Menüzugriffe fehlt mindestens ein erforderliches Recht: ${missingMenuPermissions.join(", ")}.`] } });
     }
+    const permissionsJson = normalizePermissionsPayload(primaryRole, data.permissions, normalizedMenuAccess);
 
     const transaction = new sql.Transaction(pool);
     await transaction.begin();
-
-    const normalizedMenuAccess = normalizeMenuAccess(data.role, data.menuAccess);
-    const permissionsJson = normalizePermissionsPayload(data.role, data.permissions, normalizedMenuAccess);
 
     const created = await new sql.Request(transaction)
       .input("username", sql.NVarChar(120), data.username)
       .input("displayName", sql.NVarChar(255), data.displayName?.trim() || data.username)
       .input("email", sql.NVarChar(255), data.email?.trim().toLowerCase() || null)
       .input("passwordHash", passwordHash)
-      .input("role", data.role)
+      .input("role", primaryRole)
       .input("gateId", sql.UniqueIdentifier, gateId)
       .input("isActive", data.isActive ?? true)
       .input("permissionsJson", sql.NVarChar(sql.MAX), permissionsJson)
@@ -1060,11 +1071,12 @@ adminRouter.post("/api/admin/users", async (request, response) => {
 
     await replaceUserGroupsAndMenuAccess(
       created.recordset[0].id,
-      data.role,
+      primaryRole,
       data.groups,
       normalizedMenuAccess,
       transaction
     );
+    await replaceUserRoles(created.recordset[0].id, roles, transaction);
 
     await transaction.commit();
 
@@ -1085,29 +1097,22 @@ adminRouter.put("/api/admin/users/:id", async (request, response) => {
     const pool = await getPool();
     const existing = await pool.request()
       .input("id", sql.UniqueIdentifier, request.params.id)
-      .query<{ username: string; email: string | null; role: "admin" | "guard" | "sibe" | "kaskdt" | "custom"; isActive: boolean; gateId: string | null; permissionsJson: string | null }>("SELECT username, user_email AS email, role, is_active AS isActive, gate_id AS gateId, permissions_json AS permissionsJson FROM dbo.users WHERE id = @id");
+      .query<{ username: string; email: string | null; role: "admin" | "guard" | "sibe" | "kaskdt" | "custom"; isActive: boolean; gateId: string | null; permissionsJson: string | null }>("SELECT username, user_email AS email, role, is_active AS isActive, gate_id AS gateId, permissions_json AS permissionsJson FROM dbo.users WHERE id = @id AND ISNULL(is_tombstoned, 0) = 0");
 
     const currentUser = existing.recordset[0];
     if (!currentUser) {
       return sendError(response, 404, "NOT_FOUND", "Benutzer wurde nicht gefunden.");
     }
 
-    const nextRole = data.role ?? currentUser.role;
-    const nextActive = data.isActive ?? currentUser.isActive;
-    const requestedGateId = data.gateId !== undefined ? data.gateId : currentUser.gateId;
-    let nextGateId: string | null = null;
-    if (nextRole === "guard") {
-      if (!requestedGateId) {
-        return sendError(response, 400, "VALIDATION_ERROR", "Fuer ein Wache-Konto muss eine aktive Wache ausgewaehlt werden.");
-      }
-      const activeGate = await pool.request()
-        .input("gateId", sql.UniqueIdentifier, requestedGateId)
-        .query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.gates WHERE id = @gateId AND is_active = 1");
-      if ((activeGate.recordset[0]?.count ?? 0) === 0) {
-        return sendError(response, 400, "VALIDATION_ERROR", "Die ausgewaehlte Wache existiert nicht oder ist inaktiv.");
-      }
-      nextGateId = requestedGateId;
+    const currentRolesById = await loadUserRoles([request.params.id]);
+    const requestedRoles = data.roles ?? (data.role ? [data.role] : currentRolesById[request.params.id] ?? [currentUser.role]);
+    const nextRoles = normalizeRoles(requestedRoles, data.role ?? currentUser.role);
+    if (nextRoles.length !== new Set(requestedRoles).size) {
+      return sendError(response, 400, "INVALID_ROLE_COMBINATION", "Nur die Kombination SiBe + KSKdt ist zulässig.");
     }
+    const nextRole = nextRoles.includes("sibe") ? "sibe" : nextRoles[0] ?? currentUser.role;
+    const nextActive = data.isActive ?? currentUser.isActive;
+    const nextGateId: string | null = null;
     const nextUsername = data.username ?? currentUser.username;
     const { menuAccessByUserId } = await loadUserGroupsAndMenuAccess([request.params.id]);
     const currentMenuAccess = normalizeMenuAccess(
@@ -1118,16 +1123,21 @@ adminRouter.put("/api/admin/users/:id", async (request, response) => {
     );
     const nextDisplayName = data.displayName?.trim() || nextUsername;
     const nextEmail = data.email?.trim().toLowerCase() || currentUser.email?.trim().toLowerCase() || null;
-    const allowedMenuAccess = new Set(getAllowedMenuAccessForRole(nextRole));
+    const allowedMenuAccess = new Set(nextRoles.flatMap(getAllowedMenuAccessForRole));
     const requestedMenuAccess = (data.menuAccess ?? []).filter((entry) => allowedMenuAccess.has(entry));
     const nextMenuAccess = data.menuAccess
       ? requestedMenuAccess
       : currentUser.role === nextRole
         ? currentMenuAccess
-        : getDefaultMenuAccessForRole(nextRole);
+        : getDefaultMenuAccessForRoles(nextRoles);
+    const permissionSource = data.permissions ?? parsePermissionsJson(currentUser.permissionsJson) ?? undefined;
+    const missingMenuPermissions = getCustomMenusMissingEntryPermission(nextRole, permissionSource, nextMenuAccess);
+    if (missingMenuPermissions.length) {
+      return sendValidationError(response, { fieldErrors: { permissions: [`Für diese Menüzugriffe fehlt mindestens ein erforderliches Recht: ${missingMenuPermissions.join(", ")}.`] } });
+    }
     const permissionsJson = normalizePermissionsPayload(
       nextRole,
-      data.permissions ?? parsePermissionsJson(currentUser.permissionsJson) ?? undefined,
+      permissionSource,
       nextMenuAccess
     );
 
@@ -1135,8 +1145,8 @@ adminRouter.put("/api/admin/users/:id", async (request, response) => {
       return sendError(response, 400, "VALIDATION_ERROR", "Mindestens ein Menuepunkt passt nicht zur ausgewaehlten Rolle.");
     }
 
-    if (nextRole === "sibe" && !nextEmail) {
-      return sendError(response, 400, "VALIDATION_ERROR", "Fuer SiBe ist eine E-Mail-Adresse erforderlich.");
+    if (nextRoles.includes("sibe") && !nextEmail) {
+      return sendValidationError(response, { fieldErrors: { email: ["Für SiBe ist eine E-Mail-Adresse erforderlich."] } });
     }
 
     if (admin.id === request.params.id && (!nextActive || nextRole !== "admin")) {
@@ -1212,6 +1222,7 @@ adminRouter.put("/api/admin/users/:id", async (request, response) => {
       data.menuAccess ? requestedMenuAccess : nextMenuAccess,
       transaction
     );
+    await replaceUserRoles(request.params.id, nextRoles, transaction);
 
     await transaction.commit();
 
@@ -1261,6 +1272,7 @@ adminRouter.put("/api/admin/users/:id", async (request, response) => {
       success: true,
       user: {
         ...savedUser,
+        roles: nextRoles,
         groups: savedGroupsByUserId[savedUser.id] ?? [],
         menuAccess: effectiveMenuAccess,
         permissions: serializePermissions(savedUser.role, savedUser.permissionsJson, effectiveMenuAccess)
@@ -1323,7 +1335,7 @@ adminRouter.post("/api/admin/users/:id/reactivate", async (request, response) =>
 
   try {
     const pool = await getPool();
-    await pool.request()
+    const result = await pool.request()
       .input("id", sql.UniqueIdentifier, request.params.id)
       .query(`
         UPDATE dbo.users
@@ -1332,8 +1344,12 @@ adminRouter.post("/api/admin/users/:id/reactivate", async (request, response) =>
           deactivated_at = NULL,
           deactivated_by = NULL,
           updated_at = SYSUTCDATETIME()
-        WHERE id = @id
+        WHERE id = @id AND ISNULL(is_tombstoned, 0) = 0
       `);
+
+    if ((result.rowsAffected[0] ?? 0) === 0) {
+      return sendError(response, 409, "USER_DELETED", "Ein gelöschter Benutzer kann nicht reaktiviert werden.");
+    }
 
     await writeAuditLog({ user: admin.username, userId: admin.id, action: "USER_REACTIVATED", objectType: "user", objectId: request.params.id, ipAddress: getRequestIp(request) });
     response.json({ success: true });
@@ -1369,39 +1385,65 @@ adminRouter.delete("/api/admin/users/:id", async (request, response) => {
     }
 
     const references = await countUserReferences(pool, request.params.id);
-    await pool.request()
-      .input("id", sql.UniqueIdentifier, request.params.id)
-      .input("deactivatedBy", sql.UniqueIdentifier, admin.id)
-      .query(`
-        UPDATE dbo.users
-        SET
-          is_active = 0,
-          deactivated_at = COALESCE(deactivated_at, SYSUTCDATETIME()),
-          deactivated_by = COALESCE(deactivated_by, @deactivatedBy),
-          updated_at = SYSUTCDATETIME()
-        WHERE id = @id
-      `);
+    const transaction = new sql.Transaction(pool);
+    await transaction.begin();
+    let deletionMode: "hard_deleted" | "tombstoned";
+    try {
+      if (references.length === 0) {
+        await new sql.Request(transaction).input("id", sql.UniqueIdentifier, request.params.id).query(`
+          DELETE FROM dbo.user_groups WHERE user_id = @id;
+          DELETE FROM dbo.user_menu_access WHERE user_id = @id;
+          DELETE FROM dbo.user_roles WHERE user_id = @id;
+          DELETE FROM dbo.users WHERE id = @id;
+        `);
+        deletionMode = "hard_deleted";
+      } else {
+        await new sql.Request(transaction)
+          .input("id", sql.UniqueIdentifier, request.params.id)
+          .input("deletedBy", sql.UniqueIdentifier, admin.id)
+          .input("username", sql.NVarChar(120), `deleted-${request.params.id}`)
+          .query(`
+            UPDATE dbo.users SET username = @username, display_name = N'Gelöschter Benutzer', user_email = NULL,
+              gate_id = NULL, default_gate_id = NULL, permissions_json = NULL, is_active = 0, is_tombstoned = 1,
+              deleted_at = SYSUTCDATETIME(), deleted_by = @deletedBy,
+              deactivated_at = COALESCE(deactivated_at, SYSUTCDATETIME()), deactivated_by = COALESCE(deactivated_by, @deletedBy),
+              updated_at = SYSUTCDATETIME() WHERE id = @id;
+            DELETE FROM dbo.user_groups WHERE user_id = @id;
+            DELETE FROM dbo.user_menu_access WHERE user_id = @id;
+            DELETE FROM dbo.user_roles WHERE user_id = @id;
+          `);
+        deletionMode = "tombstoned";
+      }
+      await transaction.commit();
+    } catch (deleteError) {
+      await transaction.rollback();
+      if (deleteError instanceof Error && /REFERENCE|FOREIGN KEY|547/i.test(deleteError.message)) {
+        return sendError(response, 409, "USER_DELETE_CONFLICT", "Der Benutzer wird noch von nicht unterstützten Datensätzen referenziert.");
+      }
+      throw deleteError;
+    }
 
     await writeAuditLog({
       user: admin.username,
       userId: admin.id,
-      action: "USER_DEACTIVATED",
+      action: "USER_DELETED",
       objectType: "user",
       objectId: request.params.id,
       ipAddress: getRequestIp(request),
       metadata: {
         username: target.username,
         role: target.role,
-        references
+        references,
+        deletionMode
       }
     });
 
     return response.json({
       success: true,
-      deleted: false,
-      softDeleted: true,
+      deleted: true,
+      deletionMode,
       references,
-      message: "Benutzer wurde deaktiviert. Daten bleiben erhalten."
+      message: deletionMode === "hard_deleted" ? "Benutzer wurde gelöscht." : "Benutzer wurde pseudonymisiert gelöscht."
     });
   } catch (error) {
     return handleUnexpectedError(response, error, "DATABASE_ERROR", "Der Benutzer konnte nicht deaktiviert werden.");
@@ -1848,7 +1890,6 @@ adminRouter.get("/api/admin/audit-logs", async (request, response) => {
       objectId: string;
       ipAddress: string | null;
       userAgent: string | null;
-      metadataJson: string | null;
       timestamp: string;
     }>(`
       SELECT TOP 200
@@ -1859,7 +1900,6 @@ adminRouter.get("/api/admin/audit-logs", async (request, response) => {
         object_id AS objectId,
         ip_address AS ipAddress,
         user_agent AS userAgent,
-        metadata_json AS metadataJson,
         CONVERT(NVARCHAR(30), [timestamp], 127) AS [timestamp]
       FROM dbo.audit_logs
       WHERE ${conditions.join(" AND ")}
@@ -1868,6 +1908,58 @@ adminRouter.get("/api/admin/audit-logs", async (request, response) => {
     response.json({ logs: result.recordset });
   } catch (error) {
     return handleUnexpectedError(response, error, "DATABASE_ERROR", "Das Auditlog konnte nicht geladen werden.");
+  }
+});
+
+adminRouter.get("/api/admin/audit-logs/:id", async (request, response) => {
+  const user = await requirePermission(request, response, "logs.audit");
+  if (!user) return;
+  if (!z.string().uuid().safeParse(request.params.id).success) {
+    return sendError(response, 404, "AUDIT_LOG_NOT_FOUND", "Log-Eintrag wurde nicht gefunden.");
+  }
+  try {
+    const pool = await getPool();
+    const result = await pool.request()
+      .input("id", sql.UniqueIdentifier, request.params.id)
+      .query<{
+        id: string; user: string; userId: string | null; legacyRole: AuthenticatedUser["role"] | null;
+        action: string; objectType: string; objectId: string; ipAddress: string | null;
+        userAgent: string | null; metadataJson: string | null; timestamp: string;
+      }>(`
+        SELECT a.id, a.[user], a.user_id AS userId, u.role AS legacyRole, a.action,
+          a.object_type AS objectType, a.object_id AS objectId, a.ip_address AS ipAddress,
+          a.user_agent AS userAgent, a.metadata_json AS metadataJson,
+          CONVERT(NVARCHAR(30), a.[timestamp], 127) AS [timestamp]
+        FROM dbo.audit_logs a
+        LEFT JOIN dbo.users u ON u.id = a.user_id
+        WHERE a.id = @id
+      `);
+    const entry = result.recordset[0];
+    if (!entry) return sendError(response, 404, "AUDIT_LOG_NOT_FOUND", "Log-Eintrag wurde nicht gefunden.");
+    const rolesByUserId = entry.userId ? await loadUserRoles([entry.userId]) : {};
+    const roles = entry.userId && rolesByUserId[entry.userId]?.length
+      ? rolesByUserId[entry.userId]
+      : entry.legacyRole ? [entry.legacyRole] : [];
+    const metadata = parseRedactedLogJson(entry.metadataJson);
+    const statusValue = readLogMetadataString(metadata, "httpStatus", "statusCode", "status");
+    return response.json({
+      log: {
+        kind: "audit", id: entry.id, timestamp: entry.timestamp, username: entry.user,
+        userId: entry.userId, roles, action: entry.action, category: entry.objectType,
+        result: readLogMetadataString(metadata, "result") ?? "success",
+        requestId: readLogMetadataString(metadata, "requestId", "request_id"),
+        httpMethod: readLogMetadataString(metadata, "httpMethod", "method"),
+        endpoint: readLogMetadataString(metadata, "endpoint", "path", "requestPath"),
+        httpStatus: statusValue && Number.isFinite(Number(statusValue)) ? Number(statusValue) : null,
+        errorCode: readLogMetadataString(metadata, "errorCode", "error_code"),
+        errorMessage: readLogMetadataString(metadata, "errorMessage", "message"),
+        source: readLogMetadataString(metadata, "source"), entityType: entry.objectType,
+        entityId: entry.objectId, ipAddress: entry.ipAddress, userAgent: entry.userAgent,
+        metadata, technicalContext: null
+      }
+    });
+  } catch (error) {
+    return handleUnexpectedError(response, error, "AUDIT_LOG_DETAIL_ERROR", "Log-Details konnten nicht geladen werden.");
   }
 });
 
@@ -1919,8 +2011,6 @@ adminRouter.get("/api/admin/error-logs", async (request, response) => {
       ipAddress: string | null;
       userAgent: string | null;
       userName: string | null;
-      stackTrace: string | null;
-      metadataJson: string | null;
       timestamp: string;
     }>(`
       SELECT TOP 200
@@ -1933,17 +2023,70 @@ adminRouter.get("/api/admin/error-logs", async (request, response) => {
         ip_address AS ipAddress,
         user_agent AS userAgent,
         user_name AS userName,
-        stack_trace AS stackTrace,
-        metadata_json AS metadataJson,
         CONVERT(NVARCHAR(30), [timestamp], 127) AS [timestamp]
       FROM dbo.error_logs
       WHERE ${conditions.join(" AND ")}
       ORDER BY [timestamp] DESC
     `);
 
-    response.json({ logs: result.recordset });
+    response.json({ logs: result.recordset.map((entry) => ({ ...entry, message: redactSensitiveText(entry.message) })) });
   } catch (error) {
     return handleUnexpectedError(response, error, "DATABASE_ERROR", "Das Fehlerlog konnte nicht geladen werden.");
+  }
+});
+
+adminRouter.get("/api/admin/error-logs/:id", async (request, response) => {
+  const user = await requirePermission(request, response, "logs.errors");
+  if (!user) return;
+  if (!z.string().uuid().safeParse(request.params.id).success) {
+    return sendError(response, 404, "ERROR_LOG_NOT_FOUND", "Log-Eintrag wurde nicht gefunden.");
+  }
+  try {
+    const pool = await getPool();
+    const result = await pool.request()
+      .input("id", sql.UniqueIdentifier, request.params.id)
+      .query<{
+        id: string; level: string; errorCode: string; message: string; requestPath: string | null;
+        requestMethod: string | null; requestId: string | null; ipAddress: string | null;
+        userAgent: string | null; userName: string | null; userId: string | null;
+        legacyRole: AuthenticatedUser["role"] | null; stackTrace: string | null;
+        metadataJson: string | null; timestamp: string;
+      }>(`
+        SELECT e.id, e.[level], e.error_code AS errorCode, e.[message],
+          e.request_path AS requestPath, e.request_method AS requestMethod,
+          e.request_id AS requestId, e.ip_address AS ipAddress, e.user_agent AS userAgent,
+          e.user_name AS userName, u.id AS userId, u.role AS legacyRole,
+          e.stack_trace AS stackTrace, e.metadata_json AS metadataJson,
+          CONVERT(NVARCHAR(30), e.[timestamp], 127) AS [timestamp]
+        FROM dbo.error_logs e
+        LEFT JOIN dbo.users u ON u.username = e.user_name
+        WHERE e.id = @id
+      `);
+    const entry = result.recordset[0];
+    if (!entry) return sendError(response, 404, "ERROR_LOG_NOT_FOUND", "Log-Eintrag wurde nicht gefunden.");
+    const rolesByUserId = entry.userId ? await loadUserRoles([entry.userId]) : {};
+    const roles = entry.userId && rolesByUserId[entry.userId]?.length
+      ? rolesByUserId[entry.userId]
+      : entry.legacyRole ? [entry.legacyRole] : [];
+    const metadata = parseRedactedLogJson(entry.metadataJson);
+    const statusValue = readLogMetadataString(metadata, "httpStatus", "statusCode", "status");
+    return response.json({
+      log: {
+        kind: "error", id: entry.id, timestamp: entry.timestamp, username: entry.userName,
+        userId: entry.userId, roles, action: entry.errorCode, category: entry.level,
+        result: "failure", requestId: entry.requestId, httpMethod: entry.requestMethod,
+        endpoint: entry.requestPath,
+        httpStatus: statusValue && Number.isFinite(Number(statusValue)) ? Number(statusValue) : null,
+        errorCode: entry.errorCode,
+        errorMessage: redactSensitiveText(entry.message), source: readLogMetadataString(metadata, "source"),
+        entityType: readLogMetadataString(metadata, "entityType", "objectType"),
+        entityId: readLogMetadataString(metadata, "entityId", "objectId"),
+        ipAddress: entry.ipAddress, userAgent: entry.userAgent,
+        metadata, technicalContext: entry.stackTrace ? redactSensitiveText(entry.stackTrace) : null
+      }
+    });
+  } catch (error) {
+    return handleUnexpectedError(response, error, "ERROR_LOG_DETAIL_ERROR", "Log-Details konnten nicht geladen werden.");
   }
 });
 
@@ -1953,7 +2096,7 @@ adminRouter.get("/api/admin/system-status", async (request, response) => {
   try {
     const pool = await getPool();
     const [activeVisits, configuredGates, openPreRegistrationsToday, signaturesPending, signaturesFollowUp, signaturesExceptions, schemaVersion] = await Promise.all([
-      pool.request().query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.visits WHERE status = 'checked_in'"),
+      pool.request().query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.visits WHERE status = 'checked_in' AND check_out_at IS NULL"),
       pool.request().query<{ count: number }>("SELECT COUNT(*) AS count FROM dbo.gates WHERE is_active = 1"),
       pool.request().query<{ count: number }>(`
         SELECT COUNT(*) AS count
@@ -2095,6 +2238,23 @@ adminRouter.put("/api/admin/system-settings/security-number", async (request, re
   }
 });
 
+adminRouter.get("/api/admin/system-settings/maintenance", async (request, response) => {
+  const admin = await requirePermission(request, response, "admin.system");
+  if (!admin) return;
+  const settings = await loadSystemSettings([WORKFLOW_SETTING_KEYS.maintenanceMode]);
+  return response.json({ maintenanceMode: settings.get(WORKFLOW_SETTING_KEYS.maintenanceMode) === "true" });
+});
+
+adminRouter.put("/api/admin/system-settings/maintenance", async (request, response) => {
+  const admin = await requirePermission(request, response, "admin.system");
+  if (!admin) return;
+  const parsed = z.object({ maintenanceMode: z.boolean() }).safeParse(request.body);
+  if (!parsed.success) return sendValidationError(response, parsed.error.flatten());
+  await upsertSystemSettings({ [WORKFLOW_SETTING_KEYS.maintenanceMode]: String(parsed.data.maintenanceMode) });
+  await writeAuditLog({ user: admin.username, userId: admin.id, action: "MAINTENANCE_MODE_UPDATED", objectType: "system_setting", objectId: "maintenance_mode", ipAddress: getRequestIp(request), metadata: parsed.data });
+  return response.json({ success: true, ...parsed.data });
+});
+
 adminRouter.post("/api/admin/system-settings/workflow-email/test", async (request, response) => {
   const user = await requirePermission(request, response, "admin.system");
   if (!user) return;
@@ -2137,7 +2297,7 @@ adminRouter.post("/api/admin/system-settings/workflow-email/test", async (reques
       return sendError(response, 400, "VALIDATION_ERROR", "Bitte Host und Absenderadresse fuer das Relay hinterlegen.");
     }
     if (error instanceof Error && error.message === "mail_relay_missing_test_recipient") {
-      return sendError(response, 400, "VALIDATION_ERROR", "Bitte mindestens einen Empfaenger oder eine Testadresse hinterlegen.");
+      return sendError(response, 400, "VALIDATION_ERROR", "Bitte mindestens einen Empfänger oder eine Testadresse hinterlegen.");
     }
     return handleUnexpectedError(response, error, "MAIL_RELAY_TEST_FAILED", "Die Testmail konnte nicht versendet werden.");
   }

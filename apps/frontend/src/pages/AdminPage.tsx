@@ -5,6 +5,7 @@ import {
   useState,
   type FormEvent
 } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   AdminAuditSection,
   AdminBackgroundSection,
@@ -28,6 +29,7 @@ import {
   type AdminAuditLog,
   type AdminBadgeText,
   type AdminErrorLog,
+  type AdminLogDetail,
   type AdminFieldDefinition,
   type AdminGate,
   type AdminSiteMap,
@@ -36,11 +38,13 @@ import {
   type AdminUser,
   type ApiError,
   type EditableAdminUser,
+  extractFieldErrors,
   type FieldConfigExportPayload,
   fetchJson,
   getDefaultPermissionsForRole,
   getAllowedMenuAccessForRole,
   hasPermission,
+  hasRole,
   type UserPermissions,
   useAuth,
   useThemeMode
@@ -56,7 +60,7 @@ export function AdminPage() {
     { key: "admin", label: "Admin" },
     { key: "sibe", label: "SiBe" },
     { key: "laenderbenachrichtigungen", label: "Länderbenachrichtigungen" },
-    { key: "kaskdt", label: "KasKdt" },
+    { key: "kaskdt", label: "KSKdt" },
     { key: "texte", label: "Texte" }
   ];
   const permissionGroups: Array<{ title: string; items: Array<{ key: AppPermission; label: string }> }> = [
@@ -77,7 +81,7 @@ export function AdminPage() {
       items: [
         { key: "imports.execute", label: "Import ausführen" },
         { key: "dashboards.sibe", label: "SiBe-Übersicht" },
-        { key: "dashboards.commander", label: "KasKdt-Lagebild" },
+        { key: "dashboards.commander", label: "KSKdt-Lagebild" },
         { key: "admin.users", label: "Benutzer verwalten" },
         { key: "admin.guards", label: "Wachen verwalten" },
         { key: "texts.manage", label: "Texte verwalten" },
@@ -94,7 +98,8 @@ export function AdminPage() {
       ]
     }
   ];
-  const [activeSection, setActiveSection] = useState<AdminSectionKey>("dashboard");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [activeSection, setActiveSection] = useState<AdminSectionKey>(() => (searchParams.get("section") as AdminSectionKey) || "dashboard");
   const [gates, setGates] = useState<AdminGate[]>([]);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [texts, setTexts] = useState<AdminBadgeText[]>([]);
@@ -114,6 +119,7 @@ export function AdminPage() {
     dbName?: string;
   } | null>(null);
   const [workflowSettings, setWorkflowSettings] = useState<AdminWorkflowSettings | null>(null);
+  const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [uiBackgrounds, setUiBackgrounds] = useState<AdminUiBackground[]>([]);
   const [uiBackgroundSaving, setUiBackgroundSaving] = useState(false);
   const [workflowPassword, setWorkflowPassword] = useState("");
@@ -129,8 +135,15 @@ export function AdminPage() {
   const [retentionSettings, setRetentionSettings] = useState<AdminRetentionSettings | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [selectedAuditLogId, setSelectedAuditLogId] = useState<string | null>(null);
-  const [selectedErrorLogId, setSelectedErrorLogId] = useState<string | null>(null);
+  const [adminDataLoading, setAdminDataLoading] = useState(true);
+  const [selectedAuditLogId, setSelectedAuditLogId] = useState<string | null>(() => searchParams.get("auditId"));
+  const [selectedErrorLogId, setSelectedErrorLogId] = useState<string | null>(() => searchParams.get("errorId"));
+  const [selectedAuditLog, setSelectedAuditLog] = useState<AdminLogDetail | null>(null);
+  const [selectedErrorLog, setSelectedErrorLog] = useState<AdminLogDetail | null>(null);
+  const [auditDetailLoading, setAuditDetailLoading] = useState(false);
+  const [errorDetailLoading, setErrorDetailLoading] = useState(false);
+  const [auditDetailError, setAuditDetailError] = useState<string | null>(null);
+  const [errorDetailError, setErrorDetailError] = useState<string | null>(null);
   const [auditFilters, setAuditFilters] = useState({
     search: "",
     action: "",
@@ -154,6 +167,7 @@ export function AdminPage() {
     email: string;
     password: string;
     role: AdminUser["role"];
+    roles: AdminUser["roles"];
     gateId: string;
     groupsText: string;
     menuAccess: AppMenuKey[];
@@ -164,6 +178,7 @@ export function AdminPage() {
     email: "",
     password: "",
     role: "guard",
+    roles: ["guard"],
     gateId: "",
     groupsText: "",
     menuAccess: getAllowedMenuAccessForRole("guard"),
@@ -198,7 +213,6 @@ export function AdminPage() {
 
     const payload = await fetchJson<{ logs: AdminAuditLog[] }>(`/api/admin/audit-logs?${params.toString()}`, { method: "GET", headers: {} });
     setLogs(payload.logs);
-    setSelectedAuditLogId((current) => payload.logs.some((log) => log.id === current) ? current : null);
   }, [auditFilters]);
 
   const loadErrorLogs = useCallback(async (filters = errorLogFilters) => {
@@ -211,23 +225,135 @@ export function AdminPage() {
 
     const payload = await fetchJson<{ logs: AdminErrorLog[] }>(`/api/admin/error-logs?${params.toString()}`, { method: "GET", headers: {} });
     setErrorLogs(payload.logs);
-    setSelectedErrorLogId((current) => payload.logs.some((log) => log.id === current) ? current : null);
   }, [errorLogFilters]);
+
+  const describeLogDetailError = useCallback((apiError: unknown): string => {
+    const payload = apiError as ApiError;
+    if (payload?.error === "AUDIT_LOG_NOT_FOUND" || payload?.error === "ERROR_LOG_NOT_FOUND") {
+      return "Log-Eintrag wurde nicht gefunden.";
+    }
+    if (payload?.error === "FORBIDDEN") {
+      return "Sie besitzen keine Berechtigung, diesen Log-Eintrag anzuzeigen.";
+    }
+    const message = payload?.message || "Log-Details konnten nicht geladen werden.";
+    return payload?.requestId ? `${message} Referenz: ${payload.requestId}` : message;
+  }, []);
+
+  useEffect(() => {
+    const section = searchParams.get("section") as AdminSectionKey | null;
+    if (section) setActiveSection(section);
+    setSelectedAuditLogId(searchParams.get("auditId"));
+    setSelectedErrorLogId(searchParams.get("errorId"));
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (!selectedAuditLogId || !hasPermission(currentUser, "logs.audit")) {
+      setSelectedAuditLog(null);
+      setAuditDetailError(null);
+      setAuditDetailLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    setSelectedAuditLog(null);
+    setAuditDetailError(null);
+    setAuditDetailLoading(true);
+    void fetchJson<{ log: AdminLogDetail }>(`/api/admin/audit-logs/${selectedAuditLogId}`, {
+      method: "GET", headers: {}, signal: controller.signal
+    }).then((payload) => {
+      setSelectedAuditLog(payload.log);
+    }).catch((apiError) => {
+      if (!controller.signal.aborted) setAuditDetailError(describeLogDetailError(apiError));
+    }).finally(() => {
+      if (!controller.signal.aborted) setAuditDetailLoading(false);
+    });
+    return () => controller.abort();
+  }, [currentUser, describeLogDetailError, selectedAuditLogId]);
+
+  useEffect(() => {
+    if (!selectedErrorLogId || !hasPermission(currentUser, "logs.errors")) {
+      setSelectedErrorLog(null);
+      setErrorDetailError(null);
+      setErrorDetailLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    setSelectedErrorLog(null);
+    setErrorDetailError(null);
+    setErrorDetailLoading(true);
+    void fetchJson<{ log: AdminLogDetail }>(`/api/admin/error-logs/${selectedErrorLogId}`, {
+      method: "GET", headers: {}, signal: controller.signal
+    }).then((payload) => {
+      setSelectedErrorLog(payload.log);
+    }).catch((apiError) => {
+      if (!controller.signal.aborted) setErrorDetailError(describeLogDetailError(apiError));
+    }).finally(() => {
+      if (!controller.signal.aborted) setErrorDetailLoading(false);
+    });
+    return () => controller.abort();
+  }, [currentUser, describeLogDetailError, selectedErrorLogId]);
+
+  const selectAdminSection = useCallback((section: AdminSectionKey) => {
+    setActiveSection(section);
+    const next = new URLSearchParams(searchParams);
+    next.set("section", section);
+    if (section !== "audit") next.delete("auditId");
+    if (section !== "fehler") next.delete("errorId");
+    setSearchParams(next);
+  }, [searchParams, setSearchParams]);
+
+  const openAuditLog = useCallback((id: string) => {
+    setSelectedAuditLogId(id);
+    setSelectedErrorLogId(null);
+    setActiveSection("audit");
+    const next = new URLSearchParams(searchParams);
+    next.set("section", "audit");
+    next.set("auditId", id);
+    next.delete("errorId");
+    setSearchParams(next);
+  }, [searchParams, setSearchParams]);
+
+  const closeAuditLog = useCallback(() => {
+    setSelectedAuditLogId(null);
+    const next = new URLSearchParams(searchParams);
+    next.delete("auditId");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
+
+  const openErrorLog = useCallback((id: string) => {
+    setSelectedErrorLogId(id);
+    setSelectedAuditLogId(null);
+    setActiveSection("fehler");
+    const next = new URLSearchParams(searchParams);
+    next.set("section", "fehler");
+    next.set("errorId", id);
+    next.delete("auditId");
+    setSearchParams(next);
+  }, [searchParams, setSearchParams]);
+
+  const closeErrorLog = useCallback(() => {
+    setSelectedErrorLogId(null);
+    const next = new URLSearchParams(searchParams);
+    next.delete("errorId");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   const loadAll = useCallback(async () => {
     setError(null);
+    setAdminDataLoading(true);
     try {
-      const [gatePayload, userPayload, textPayload, statusPayload, workflowPayload, backgroundPayload, siteMapPayload, siteMapsPayload, fieldDefinitionsPayload, retentionPayload] = await Promise.all([
-        fetchJson<{ gates: AdminGate[] }>("/api/admin/gates", { method: "GET", headers: {} }),
-        fetchJson<{ users: AdminUser[] }>("/api/admin/users", { method: "GET", headers: {} }),
-        fetchJson<{ texts: AdminBadgeText[] }>("/api/texts", { method: "GET", headers: {} }),
-        fetchJson<{ app: string; appVersion: string; schemaVersion: number; activeVisits: number; activeGates: number; openPreRegistrationsToday: number; signaturesPending: number; signaturesFollowUp: number; signaturesExceptions: number; dbHost?: string; dbName?: string }>("/api/admin/system-status", { method: "GET", headers: {} }),
-        fetchJson<AdminWorkflowSettings>("/api/admin/system-settings/workflow-email", { method: "GET", headers: {} }),
-        fetchJson<{ backgrounds: AdminUiBackground[] }>("/api/admin/ui-backgrounds", { method: "GET", headers: {} }),
-        fetchJson<{ siteMap: AdminSiteMap | null }>("/api/admin/site-map", { method: "GET", headers: {} }),
-        fetchJson<{ siteMaps: AdminSiteMap[] }>("/api/admin/site-maps", { method: "GET", headers: {} }),
-        fetchJson<{ definitions: AdminFieldDefinition[] }>("/api/admin/field-definitions", { method: "GET", headers: {} }),
-        fetchJson<AdminRetentionSettings>("/api/admin/data-retention", { method: "GET", headers: {} })
+      const can = (permission: AppPermission) => hasPermission(currentUser, permission);
+      const [gatePayload, userPayload, textPayload, statusPayload, workflowPayload, backgroundPayload, siteMapPayload, siteMapsPayload, fieldDefinitionsPayload, retentionPayload, maintenancePayload] = await Promise.all([
+        can("admin.guards") ? fetchJson<{ gates: AdminGate[] }>("/api/admin/gates", { method: "GET", headers: {} }) : Promise.resolve({ gates: [] }),
+        can("admin.users") ? fetchJson<{ users: AdminUser[] }>("/api/admin/users", { method: "GET", headers: {} }) : Promise.resolve({ users: [] }),
+        can("texts.manage") ? fetchJson<{ texts: AdminBadgeText[] }>("/api/texts", { method: "GET", headers: {} }) : Promise.resolve({ texts: [] }),
+        can("admin.system") ? fetchJson<{ app: string; appVersion: string; schemaVersion: number; activeVisits: number; activeGates: number; openPreRegistrationsToday: number; signaturesPending: number; signaturesFollowUp: number; signaturesExceptions: number; dbHost?: string; dbName?: string }>("/api/admin/system-status", { method: "GET", headers: {} }) : Promise.resolve(null),
+        can("admin.system") ? fetchJson<AdminWorkflowSettings>("/api/admin/system-settings/workflow-email", { method: "GET", headers: {} }) : Promise.resolve(null),
+        can("admin.system") ? fetchJson<{ backgrounds: AdminUiBackground[] }>("/api/admin/ui-backgrounds", { method: "GET", headers: {} }) : Promise.resolve({ backgrounds: [] }),
+        can("admin.map") ? fetchJson<{ siteMap: AdminSiteMap | null }>("/api/admin/site-map", { method: "GET", headers: {} }) : Promise.resolve({ siteMap: null }),
+        can("admin.map") ? fetchJson<{ siteMaps: AdminSiteMap[] }>("/api/admin/site-maps", { method: "GET", headers: {} }) : Promise.resolve({ siteMaps: [] }),
+        can("admin.fields") ? fetchJson<{ definitions: AdminFieldDefinition[] }>("/api/admin/field-definitions", { method: "GET", headers: {} }) : Promise.resolve({ definitions: [] }),
+        can("admin.system") ? fetchJson<AdminRetentionSettings>("/api/admin/data-retention", { method: "GET", headers: {} }) : Promise.resolve(null),
+        can("admin.system") ? fetchJson<{ maintenanceMode: boolean }>("/api/admin/system-settings/maintenance", { method: "GET", headers: {} }) : Promise.resolve({ maintenanceMode: false })
       ]);
 
       setGates(gatePayload.gates);
@@ -236,13 +362,16 @@ export function AdminPage() {
       setSystemStatus(statusPayload);
       setWorkflowSettings(workflowPayload);
       setUiBackgrounds(backgroundPayload.backgrounds);
-      setBackgroundMode(workflowPayload.backgroundMode);
-      setBackgroundImageUrl(workflowPayload.backgroundImageUrl);
+      if (workflowPayload) {
+        setBackgroundMode(workflowPayload.backgroundMode);
+        setBackgroundImageUrl(workflowPayload.backgroundImageUrl);
+      }
       setWorkflowPassword("");
       setActiveSiteMap(siteMapPayload.siteMap);
       setSiteMaps(siteMapsPayload.siteMaps);
       setFieldDefinitions(fieldDefinitionsPayload.definitions);
       setRetentionSettings(retentionPayload);
+      setMaintenanceMode(maintenancePayload.maintenanceMode);
       setEditableGates(Object.fromEntries(gatePayload.gates.map((gate) => [gate.id, { ...gate }])));
       setEditableUsers(Object.fromEntries(userPayload.users.map((entry) => [entry.id, {
         ...entry,
@@ -254,14 +383,16 @@ export function AdminPage() {
       }])));
       setEditableFieldDefinitions(Object.fromEntries(fieldDefinitionsPayload.definitions.map((field) => [field.id, { ...field }])));
       await Promise.all([
-        loadAuditLogs(auditFilters),
-        loadErrorLogs(errorLogFilters)
+        can("logs.audit") ? loadAuditLogs(auditFilters) : Promise.resolve(),
+        can("logs.errors") ? loadErrorLogs(errorLogFilters) : Promise.resolve()
       ]);
     } catch (apiError) {
       const payload = apiError as ApiError;
       setError(payload.message || "Admin-Daten konnten nicht geladen werden.");
+    } finally {
+      setAdminDataLoading(false);
     }
-  }, [auditFilters, errorLogFilters, loadAuditLogs, loadErrorLogs, setBackgroundImageUrl, setBackgroundMode]);
+  }, [auditFilters, currentUser, errorLogFilters, loadAuditLogs, loadErrorLogs, setBackgroundImageUrl, setBackgroundMode]);
 
   async function saveRetentionSettings() {
     if (!retentionSettings) return;
@@ -276,6 +407,12 @@ export function AdminPage() {
     setMessage(payload.message);
     const refreshed = await fetchJson<AdminRetentionSettings>("/api/admin/data-retention", { method: "GET", headers: {} });
     setRetentionSettings(refreshed);
+  }
+
+  async function saveMaintenanceMode(value: boolean) {
+    await fetchJson("/api/admin/system-settings/maintenance", { method: "PUT", body: JSON.stringify({ maintenanceMode: value }) });
+    setMaintenanceMode(value);
+    setMessage(value ? "Wartungsmodus aktiviert." : "Wartungsmodus deaktiviert.");
   }
 
   useEffect(() => {
@@ -318,6 +455,10 @@ export function AdminPage() {
 
   async function createUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (newUser.roles.includes("sibe") && !newUser.email.trim()) {
+      setError("Für SiBe ist eine E-Mail-Adresse erforderlich.");
+      return;
+    }
     try {
       await fetchJson("/api/admin/users", {
         method: "POST",
@@ -327,7 +468,8 @@ export function AdminPage() {
           email: newUser.email,
           password: newUser.password,
           role: newUser.role,
-          gateId: newUser.role === "guard" ? newUser.gateId || null : null,
+          roles: newUser.roles,
+          gateId: null,
           groups: parseGroupText(newUser.groupsText),
           menuAccess: newUser.menuAccess,
           ...(newUser.role === "custom" ? { permissions: newUser.permissions } : {})
@@ -339,6 +481,7 @@ export function AdminPage() {
         email: "",
         password: "",
         role: "guard",
+        roles: ["guard"],
         gateId: "",
         groupsText: "",
         menuAccess: getAllowedMenuAccessForRole("guard"),
@@ -349,7 +492,8 @@ export function AdminPage() {
       await loadAll();
     } catch (apiError) {
       const payload = apiError as ApiError;
-      setError(payload.message || "Benutzer konnte nicht angelegt werden.");
+      const fieldErrors = extractFieldErrors(payload);
+      setError(fieldErrors.email || fieldErrors.permissions || payload.message || "Benutzer konnte nicht angelegt werden.");
     }
   }
 
@@ -481,6 +625,7 @@ export function AdminPage() {
         [userId]: {
           ...currentEntry,
           role,
+          roles: [role],
           gateId: null,
           menuAccess: nextMenuAccess.length ? nextMenuAccess : allowedAccess,
           permissions: getDefaultPermissionsForRole(role)
@@ -584,11 +729,7 @@ export function AdminPage() {
   async function saveUser(userId: string) {
     const adminUser = editableUsers[userId];
     if (!adminUser) return;
-    if (adminUser.role === "guard" && !adminUser.gateId) {
-      setUserSaveState({ userId, kind: "error", message: "Für ein Wache-Konto muss eine Wache ausgewählt werden." });
-      return;
-    }
-    if (adminUser.role === "sibe" && !adminUser.email?.trim()) {
+    if (adminUser.roles.includes("sibe") && !adminUser.email?.trim()) {
       setUserSaveState({ userId, kind: "error", message: "Für SiBe ist eine E-Mail-Adresse erforderlich." });
       return;
     }
@@ -601,7 +742,8 @@ export function AdminPage() {
           displayName: adminUser.displayName,
           email: adminUser.email || "",
           role: adminUser.role,
-          gateId: adminUser.role === "guard" ? adminUser.gateId || null : null,
+          roles: adminUser.roles,
+          gateId: null,
           isActive: adminUser.isActive,
           groups: parseGroupText(adminUser.groupsText),
           menuAccess: adminUser.menuAccess,
@@ -624,7 +766,8 @@ export function AdminPage() {
       setUserSaveState({ userId, kind: "success", message: "Benutzer wurde erfolgreich aktualisiert." });
     } catch (apiError) {
       const payload = apiError as ApiError;
-      const saveError = payload.message || "Benutzer konnte nicht aktualisiert werden.";
+      const fieldErrors = extractFieldErrors(payload);
+      const saveError = fieldErrors.email || fieldErrors.permissions || payload.message || "Benutzer konnte nicht aktualisiert werden.";
       setError(saveError);
       setUserSaveState({ userId, kind: "error", message: saveError });
     }
@@ -807,6 +950,17 @@ export function AdminPage() {
     }
   }
 
+  async function deleteUser(userId: string) {
+    try {
+      const payload = await fetchJson<{ message: string }>(`/api/admin/users/${userId}`, { method: "DELETE" });
+      setMessage(payload.message);
+      setSelectedUserId(null);
+      await loadAll();
+    } catch (apiError) {
+      setError((apiError as ApiError).message || "Benutzer konnte nicht gelöscht werden.");
+    }
+  }
+
   async function applyAuditFilters() {
     try {
       setError(null);
@@ -828,9 +982,6 @@ export function AdminPage() {
       setError(payload.message || "Auditlog konnte nicht geladen werden.");
     }
   }
-
-  const selectedAuditLog = logs.find((entry) => entry.id === selectedAuditLogId) || null;
-  const selectedErrorLog = errorLogs.find((entry) => entry.id === selectedErrorLogId) || null;
 
   async function applyErrorLogFilters() {
     await loadErrorLogs(errorLogFilters);
@@ -967,7 +1118,7 @@ export function AdminPage() {
   }
 
   const sectionTabs = [
-    { key: "dashboard" as const, label: "Dashboard", visible: true },
+    { key: "dashboard" as const, label: "Dashboard", visible: hasRole(currentUser, "admin") },
     { key: "wachen" as const, label: "Wachen", visible: Boolean(currentUser && hasPermission(currentUser, "admin.guards")) },
     { key: "benutzer" as const, label: "Benutzer", visible: Boolean(currentUser && hasPermission(currentUser, "admin.users")) },
     { key: "texte" as const, label: "Texte", visible: Boolean(currentUser && hasPermission(currentUser, "texts.manage")) },
@@ -994,7 +1145,7 @@ export function AdminPage() {
 
         <div className="section-tabs">
           {sectionTabs.filter((tab) => tab.visible).map((tab) => (
-            <button key={tab.key} type="button" className={resolvedActiveSection === tab.key ? "tab-button tab-active" : "tab-button"} onClick={() => setActiveSection(tab.key)}>
+            <button key={tab.key} type="button" className={resolvedActiveSection === tab.key ? "tab-button tab-active" : "tab-button"} onClick={() => selectAdminSection(tab.key)}>
               {tab.label}
             </button>
           ))}
@@ -1013,7 +1164,8 @@ export function AdminPage() {
             logs={logs}
             errorLogs={errorLogs}
             systemStatus={systemStatus}
-            onOpenSection={setActiveSection}
+            loading={adminDataLoading}
+            onOpenSection={selectAdminSection}
           />
         ) : null}
 
@@ -1062,6 +1214,7 @@ export function AdminPage() {
             saveUser={saveUser}
             userSaveState={userSaveState}
             toggleUserActive={toggleUserActive}
+            deleteUser={deleteUser}
             currentUserId={currentUser?.id}
           />
         ) : null}
@@ -1123,6 +1276,8 @@ export function AdminPage() {
             saveWorkflowSettings={saveWorkflowSettings}
             saveSecurityNumber={saveSecurityNumber}
             sendWorkflowTestMail={sendWorkflowTestMail}
+            maintenanceMode={maintenanceMode}
+            saveMaintenanceMode={saveMaintenanceMode}
           />
         ) : null}
 
@@ -1135,8 +1290,12 @@ export function AdminPage() {
             applyAuditFilters={applyAuditFilters}
             resetAuditFilters={resetAuditFilters}
             logs={logs}
+            selectedAuditLogId={selectedAuditLogId}
             selectedAuditLog={selectedAuditLog}
-            setSelectedAuditLogId={setSelectedAuditLogId}
+            detailLoading={auditDetailLoading}
+            detailError={auditDetailError}
+            openAuditLog={openAuditLog}
+            closeAuditLog={closeAuditLog}
           />
         ) : null}
 
@@ -1147,8 +1306,12 @@ export function AdminPage() {
             applyErrorLogFilters={applyErrorLogFilters}
             resetErrorLogFilters={resetErrorLogFilters}
             errorLogs={errorLogs}
+            selectedErrorLogId={selectedErrorLogId}
             selectedErrorLog={selectedErrorLog}
-            setSelectedErrorLogId={setSelectedErrorLogId}
+            detailLoading={errorDetailLoading}
+            detailError={errorDetailError}
+            openErrorLog={openErrorLog}
+            closeErrorLog={closeErrorLog}
           />
         ) : null}
       </main>

@@ -3,6 +3,7 @@ import { writeAuditLog } from "./auditLog";
 import { generateUniqueBadgeNumber } from "./badgeAllocation";
 import { dateOnlyEnd, dateOnlyStart } from "./dateOnly";
 import { getPool } from "./db";
+import { notifyNationalitySubscribers } from "./mailRelay";
 import { findActiveGateById } from "./publicPreRegistrations";
 import { canCreateSimplifiedSibeEntry } from "./simplifiedSibeEntryAuthorization";
 import type { SimplifiedSibeEntryInput } from "./simplifiedSibeEntrySchema";
@@ -26,9 +27,9 @@ export async function createSimplifiedSibeEntry(
 
   try {
     const visitorInsert = await new sql.Request(transaction)
-      .input("firstName", sql.NVarChar(120), input.firstName)
-      .input("lastName", sql.NVarChar(120), input.lastName)
-      .input("company", sql.NVarChar(255), input.company)
+      .input("firstName", sql.NVarChar(120), cleanOptional(input.firstName))
+      .input("lastName", sql.NVarChar(120), cleanOptional(input.lastName))
+      .input("company", sql.NVarChar(255), cleanOptional(input.company))
       .input("nationalityCode", sql.NChar(2), input.nationalityCode)
       .input("birthDate", sql.Date, cleanOptional(input.birthDate))
       .input("phone", sql.NVarChar(80), cleanOptional(input.phone))
@@ -66,11 +67,11 @@ export async function createSimplifiedSibeEntry(
     const visitInsert = await new sql.Request(transaction)
       .input("visitorId", sql.UniqueIdentifier, visitorId)
       .input("gateId", sql.UniqueIdentifier, gate.id)
-      .input("hostName", sql.NVarChar(255), input.hostName)
+      .input("hostName", sql.NVarChar(255), cleanOptional(input.hostName))
       .input("hostEmail", sql.NVarChar(255), cleanOptional(input.hostEmail)?.toLowerCase() ?? null)
       .input("hostPhone", sql.NVarChar(80), cleanOptional(input.hostPhone))
       .input("hostDepartment", sql.NVarChar(255), cleanOptional(input.hostDepartment))
-      .input("purpose", sql.NVarChar(500), input.purpose)
+      .input("purpose", sql.NVarChar(500), cleanOptional(input.purpose))
       .input("validFrom", sql.DateTime2, dateOnlyStart(input.validFrom))
       .input("validUntil", sql.DateTime2, dateOnlyEnd(input.validUntil))
       .input("expectedArrivalTime", sql.Time, expectedArrivalTime)
@@ -82,13 +83,13 @@ export async function createSimplifiedSibeEntry(
         INSERT INTO dbo.visits (
           visitor_id, gate_id, host_name, host_email, host_phone, host_department,
           purpose, valid_from, valid_until, expected_arrival_time, license_plate,
-          badge_number, status, created_by, created_via_public_form, notes
+          badge_number, status, created_by, created_via_public_form, notes, source
         )
         OUTPUT inserted.id, inserted.status
         VALUES (
           @visitorId, @gateId, @hostName, @hostEmail, @hostPhone, @hostDepartment,
           @purpose, @validFrom, @validUntil, @expectedArrivalTime, @licensePlate,
-          @badgeNumber, '${VISIT_STATUS.PRE_REGISTERED}', @createdBy, 0, @notes
+          @badgeNumber, '${VISIT_STATUS.PRE_REGISTERED}', @createdBy, 0, @notes, N'simplified_web'
         )
       `);
 
@@ -115,6 +116,17 @@ export async function createSimplifiedSibeEntry(
     }, transaction);
 
     await transaction.commit();
+    if (input.nationalityCode) {
+      void notifyNationalitySubscribers({
+        visitId: visit.id,
+        nationalityCode: input.nationalityCode,
+        visitorName: [cleanOptional(input.firstName), cleanOptional(input.lastName)].filter(Boolean).join(" ") || "Keine Angabe",
+        company: cleanOptional(input.company) ?? "Keine Angabe",
+        validFrom: input.validFrom,
+        validUntil: input.validUntil,
+        gateName: gate.name
+      });
+    }
     return { visitId: visit.id, visitorId, badgeNumber, status: visit.status };
   } catch (error) {
     await transaction.rollback();

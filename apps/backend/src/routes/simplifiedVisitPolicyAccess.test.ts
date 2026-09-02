@@ -25,6 +25,7 @@ function makeUser(role: AppRole): AuthenticatedUser {
 function makeResponse() {
   const result: { statusCode: number | null; body: unknown } = { statusCode: null, body: null };
   const response = {
+    locals: {},
     status(statusCode: number) { result.statusCode = statusCode; return response; },
     json(body: unknown) { result.body = body; return response; }
   } as unknown as Response;

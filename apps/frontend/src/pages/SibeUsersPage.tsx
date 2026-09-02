@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Alert, DataTable } from "../components/ui";
+import { Alert, DataTable, FormField } from "../components/ui";
 import { AppLayout, type ApiError, fetchJson, formatDateTime, formatRoleLabel, type SibeUserRow } from "../app/core";
 
 export function SibeUsersPage() {
@@ -45,22 +45,22 @@ export function SibeUsersPage() {
         </div>
 
         <div className="toolbar filter-bar">
-          <input placeholder="Benutzername suchen" value={search} onChange={(event) => setSearch(event.target.value)} />
-          <select value={role} onChange={(event) => setRole(event.target.value)}>
-            <option value="all">Alle Rollen</option>
-            <option value="admin">Admin</option>
-            <option value="guard">Wache</option>
-            <option value="sibe">SiBe</option>
-            <option value="kaskdt">KasKdt</option>
-          </select>
-          <select value={active} onChange={(event) => setActive(event.target.value)}>
-            <option value="all">Alle Stati</option>
-            <option value="true">Aktiv</option>
-            <option value="false">Inaktiv</option>
-          </select>
-          <input placeholder="Wache" value={gate} onChange={(event) => setGate(event.target.value)} />
-          <input type="date" value={lastLoginFrom} onChange={(event) => setLastLoginFrom(event.target.value)} />
-          <input type="date" value={lastLoginTo} onChange={(event) => setLastLoginTo(event.target.value)} />
+          <FormField label="Benutzername suchen"><input placeholder="Benutzername suchen" value={search} onChange={(event) => setSearch(event.target.value)} /></FormField>
+          <FormField label="Rolle"><select value={role} onChange={(event) => setRole(event.target.value)}>
+              <option value="all">Alle Rollen</option>
+              <option value="admin">Admin</option>
+              <option value="guard">Wache</option>
+              <option value="sibe">SiBe</option>
+              <option value="kaskdt">KSKdt</option>
+            </select></FormField>
+          <FormField label="Status"><select value={active} onChange={(event) => setActive(event.target.value)}>
+              <option value="all">Alle Stati</option>
+              <option value="true">Aktiv</option>
+              <option value="false">Inaktiv</option>
+            </select></FormField>
+          <FormField label="Wache"><input placeholder="Wache" value={gate} onChange={(event) => setGate(event.target.value)} /></FormField>
+          <FormField label="Letzter Login von"><input type="date" value={lastLoginFrom} onChange={(event) => setLastLoginFrom(event.target.value)} /></FormField>
+          <FormField label="Letzter Login bis"><input type="date" value={lastLoginTo} onChange={(event) => setLastLoginTo(event.target.value)} /></FormField>
         </div>
 
         {error ? <Alert type="error">{error}</Alert> : null}

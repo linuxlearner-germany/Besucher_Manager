@@ -18,6 +18,7 @@ export type VisitStatus = (typeof VISIT_STATUS)[keyof typeof VISIT_STATUS] | "vo
 export type HostSignatureStatus = (typeof HOST_SIGNATURE_STATUS)[keyof typeof HOST_SIGNATURE_STATUS];
 
 export type AppRole = "admin" | "guard" | "sibe" | "kaskdt" | "custom";
+export const APP_ROLES: AppRole[] = ["admin", "guard", "sibe", "kaskdt", "custom"];
 export const APP_MENU_KEYS = ["voranmeldung", "wache", "import", "admin", "sibe", "laenderbenachrichtigungen", "kaskdt", "texte"] as const;
 export type AppMenuKey = (typeof APP_MENU_KEYS)[number];
 
@@ -219,6 +220,23 @@ export function getAllowedMenuAccessForRole(role: AppRole): AppMenuKey[] {
   return [...allowedMenuAccessByRole[role]];
 }
 
+export function normalizeRoles(roles: AppRole[] | null | undefined, legacyRole?: AppRole): AppRole[] {
+  const normalized = Array.from(new Set([...(roles ?? []), ...(legacyRole ? [legacyRole] : [])]))
+    .filter((role): role is AppRole => APP_ROLES.includes(role));
+  if (normalized.length === 2 && normalized.includes("sibe") && normalized.includes("kaskdt")) {
+    return ["sibe", "kaskdt"];
+  }
+  return normalized.length === 1 ? normalized : legacyRole ? [legacyRole] : [];
+}
+
+export function hasRole(user: Pick<AuthenticatedUser, "role" | "roles">, role: AppRole): boolean {
+  return normalizeRoles(user.roles, user.role).includes(role);
+}
+
+export function getDefaultMenuAccessForRoles(roles: AppRole[]): AppMenuKey[] {
+  return Array.from(new Set(roles.flatMap(getDefaultMenuAccessForRole)));
+}
+
 export function getDefaultPermissionsForRole(role: AppRole): UserPermissions {
   switch (role) {
     case "admin":
@@ -346,24 +364,54 @@ function readPermissionValue(permissions: UserPermissions, permission: AppPermis
   return Boolean(sectionValue[key]);
 }
 
-export function hasPermission(user: Pick<AuthenticatedUser, "role" | "permissions">, permission: AppPermission): boolean {
-  if (user.role === "admin") {
+export function hasPermission(user: Pick<AuthenticatedUser, "role" | "roles" | "permissions">, permission: AppPermission): boolean {
+  if (hasRole(user, "admin")) {
     return true;
   }
 
   return readPermissionValue(user.permissions, permission);
 }
 
+const customMenuPermissionRequirements: Partial<Record<AppMenuKey, AppPermission[]>> = {
+  wache: ["visits.read"],
+  import: ["imports.execute"],
+  admin: ["admin.users", "admin.guards", "admin.fields", "admin.map", "admin.system", "logs.audit", "logs.errors"],
+  sibe: ["dashboards.sibe"],
+  laenderbenachrichtigungen: ["dashboards.sibe"],
+  kaskdt: ["dashboards.commander"],
+  texte: ["texts.manage"]
+};
+
+export function getCustomMenusMissingEntryPermission(
+  role: AppRole,
+  permissions: UserPermissionsInput | null | undefined,
+  menuAccess: AppMenuKey[]
+): AppMenuKey[] {
+  if (role !== "custom") return [];
+  const normalized = normalizeUserPermissions(role, permissions, menuAccess);
+  const enabled = (permission: AppPermission) => readPermissionValue(normalized, permission);
+  return menuAccess.filter((menuKey) => {
+    const requirements = customMenuPermissionRequirements[menuKey];
+    return Boolean(requirements?.length && !requirements.some(enabled));
+  });
+}
+
 export type AuthenticatedUser = {
   id: string;
   username: string;
   role: AppRole;
+  roles?: AppRole[];
   gateId: string | null;
   gateName?: string | null;
   groups: string[];
   menuAccess: AppMenuKey[];
   permissions: UserPermissions;
 };
+
+export function requiresGuardGateSelection(user: AuthenticatedUser): boolean {
+  return user.role === "guard"
+    || (user.role === "custom" && user.menuAccess.includes("wache") && hasPermission(user, "visits.read"));
+}
 
 export type GuardScopedVisitTarget = {
   gateId: string | null;

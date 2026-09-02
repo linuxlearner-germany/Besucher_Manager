@@ -4,18 +4,16 @@ import { describe, expect, it } from "vitest";
 
 const srcRoot = resolve(process.cwd(), "src");
 
-describe("admin guard gate assignment", () => {
-  it("sends the selected gate when a guard is created or updated", () => {
+describe("admin guard session gate", () => {
+  it("does not send a persistent gate when a guard is created or updated", () => {
     const source = readFileSync(`${srcRoot}/pages/AdminPage.tsx`, "utf8");
-    expect(source).toContain('gateId: newUser.role === "guard" ? newUser.gateId || null : null');
-    expect(source).toContain('gateId: adminUser.role === "guard" ? adminUser.gateId || null : null');
-    expect(source).toContain('adminUser.role === "guard" && !adminUser.gateId');
+    expect(source.match(/gateId: null/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(source).not.toContain('adminUser.role === "guard" && !adminUser.gateId');
   });
 
-  it("offers active gates in both admin user forms", () => {
+  it("removes gate assignment controls from admin user forms", () => {
     const source = readFileSync(`${srcRoot}/components/admin/AdminSections.tsx`, "utf8");
-    expect(source.match(/label="Zugeordnete Wache"/g)).toHaveLength(2);
-    expect(source).toContain('gates.filter((gate) => gate.isActive)');
-    expect(source).toContain('gate.isActive || gate.id === selectedUser.gateId');
+    expect(source).not.toContain('label="Zugeordnete Wache"');
+    expect(source).toContain("Wird bei Anmeldung gewählt");
   });
 });

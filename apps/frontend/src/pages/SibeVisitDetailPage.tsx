@@ -131,6 +131,7 @@ export function SibeVisitDetailPage() {
                 </section> : null}
               </>
             ) : null}
+            {visit.publicRecipientUpdatedAt ? <Alert type="info">Vom Empfänger aktualisiert am {formatDateTime(visit.publicRecipientUpdatedAt)}.</Alert> : null}
             <dl className="details-list">
               <div><dt>Besuchsnummer</dt><dd>{visit.badgeNumber || visit.id.slice(0, 8).toUpperCase()}</dd></div>
               <div><dt>Status</dt><dd>{formatStatus(visit.status)}</dd></div>

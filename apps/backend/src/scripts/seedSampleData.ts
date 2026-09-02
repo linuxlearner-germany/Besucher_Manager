@@ -12,7 +12,7 @@ type SeedGate = {
 type SeedUser = {
   username: string;
   password: string;
-  role: "guard" | "sibe";
+  role: "guard" | "sibe" | "kaskdt";
   gateName?: string;
   email?: string;
 };
@@ -54,7 +54,8 @@ const sampleGates: SeedGate[] = [
 const sampleUsers: SeedUser[] = [
   { username: "guard.demo", password: "Test1234!", role: "guard", gateName: "Hauptwache" },
   { username: "guard.nord", password: "Test1234!", role: "guard", gateName: "Nordtor" },
-  { username: "sibe.demo", password: "Test1234!", role: "sibe", email: "sibe.demo@wiweb.test" }
+  { username: "sibe.demo", password: "Test1234!", role: "sibe", email: "sibe.demo@wiweb.test" },
+  { username: "kaskdt.demo", password: "Test1234!", role: "kaskdt", email: "kaskdt.demo@wiweb.test" }
 ];
 
 const sampleVisitors: SeedVisitor[] = [
@@ -304,46 +305,53 @@ async function ensureGates() {
   return map;
 }
 
-async function ensureUsers(gateIds: Map<string, string>) {
+async function ensureUsers() {
   const pool = await getPool();
 
   for (const user of sampleUsers) {
     const passwordHash = await hashPassword(user.password);
-    const gateId = user.role === "guard" ? gateIds.get(user.gateName ?? "") ?? null : null;
     const existing = await pool.request()
       .input("username", user.username)
       .query<{ id: string }>("SELECT id FROM dbo.users WHERE username = @username");
 
-    if (existing.recordset[0]?.id) {
+    let userId = existing.recordset[0]?.id;
+    if (userId) {
       await pool.request()
-        .input("id", existing.recordset[0].id)
+        .input("id", userId)
         .input("passwordHash", passwordHash)
         .input("role", user.role)
-        .input("gateId", gateId)
         .input("email", user.role === "guard" ? null : user.email ?? null)
         .query(`
           UPDATE dbo.users
           SET
             password_hash = @passwordHash,
             role = @role,
-            gate_id = @gateId,
+            gate_id = NULL,
             user_email = @email,
             is_active = 1,
             updated_at = SYSUTCDATETIME()
           WHERE id = @id
         `);
-      continue;
+    } else {
+      const inserted = await pool.request()
+        .input("username", user.username)
+        .input("passwordHash", passwordHash)
+        .input("role", user.role)
+        .input("email", user.role === "guard" ? null : user.email ?? null)
+        .query<{ id: string }>(`
+          INSERT INTO dbo.users (username, password_hash, display_name, user_email, role, gate_id, is_active)
+          OUTPUT inserted.id
+          VALUES (@username, @passwordHash, @username, @email, @role, NULL, 1)
+        `);
+      userId = inserted.recordset[0].id;
     }
 
     await pool.request()
-      .input("username", user.username)
-      .input("passwordHash", passwordHash)
+      .input("userId", userId)
       .input("role", user.role)
-      .input("gateId", gateId)
-      .input("email", user.role === "guard" ? null : user.email ?? null)
       .query(`
-        INSERT INTO dbo.users (username, password_hash, display_name, user_email, role, gate_id, is_active)
-        VALUES (@username, @passwordHash, @username, @email, @role, @gateId, 1)
+        DELETE FROM dbo.user_roles WHERE user_id = @userId;
+        INSERT INTO dbo.user_roles(user_id, role) VALUES(@userId, @role);
       `);
   }
 }
@@ -540,7 +548,7 @@ async function ensureVisits(gateIds: Map<string, string>, visitorIds: Map<string
 async function main() {
   console.log("Seeding sample data...");
   const gateIds = await ensureGates();
-  await ensureUsers(gateIds);
+  await ensureUsers();
   const visitorIds = await ensureVisitors();
   await ensureVisits(gateIds, visitorIds);
   console.log("Sample data ready.");

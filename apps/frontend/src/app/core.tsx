@@ -8,7 +8,7 @@ import {
   useRef,
   useState
 } from "react";
-import { Navigate, NavLink, useLocation, useNavigate } from "react-router-dom";
+import { Link, Navigate, NavLink, useLocation, useNavigate } from "react-router-dom";
 
 export type AppRole = "admin" | "guard" | "sibe" | "kaskdt" | "custom";
 export type AppMenuKey = "voranmeldung" | "wache" | "import" | "admin" | "sibe" | "laenderbenachrichtigungen" | "kaskdt" | "texte";
@@ -86,6 +86,7 @@ export type User = {
   id: string;
   username: string;
   role: AppRole;
+  roles: AppRole[];
   gateId: string | null;
   gateName?: string | null;
   groups: string[];
@@ -107,6 +108,7 @@ export type AdminUser = {
   displayName: string;
   email: string | null;
   role: AppRole;
+  roles: AppRole[];
   gateId: string | null;
   isActive: boolean;
   lastLoginAt?: string | null;
@@ -140,7 +142,6 @@ export type AdminAuditLog = {
   objectId: string;
   ipAddress: string | null;
   userAgent: string | null;
-  metadataJson: string | null;
   timestamp: string;
 };
 
@@ -154,9 +155,32 @@ export type AdminErrorLog = {
   ipAddress: string | null;
   userAgent: string | null;
   userName: string | null;
-  stackTrace: string | null;
-  metadataJson: string | null;
   timestamp: string;
+};
+
+export type AdminLogDetail = {
+  kind: "audit" | "error";
+  id: string;
+  timestamp: string | null;
+  username: string | null;
+  userId: string | null;
+  roles: User["roles"];
+  action: string | null;
+  category: string | null;
+  result: string | null;
+  requestId: string | null;
+  httpMethod: string | null;
+  endpoint: string | null;
+  httpStatus: number | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  source: string | null;
+  entityType: string | null;
+  entityId: string | null;
+  ipAddress: string | null;
+  userAgent: string | null;
+  metadata: unknown | null;
+  technicalContext: unknown | null;
 };
 
 export type AdminFieldDefinition = {
@@ -243,6 +267,7 @@ export type VisitRow = {
   rejectionNote?: string | null;
   rejectedAt?: string | null;
   rejectedBy?: string | null;
+  publicRecipientUpdatedAt?: string | null;
   visitorAddress: string | null;
   idDocumentType: string | null;
   idDocumentValidUntil: string | null;
@@ -317,9 +342,11 @@ export type FormState = {
 };
 
 export type ApiError = {
+  status?: number;
   error: string;
   message?: string;
   details?: unknown;
+  requestId?: string;
   retryAfterSeconds?: number;
 };
 
@@ -750,7 +777,7 @@ export function formatRoleLabel(role: User["role"] | AdminUser["role"]): string 
     case "sibe":
       return "SiBe";
     case "kaskdt":
-      return "KasKdt";
+      return "KSKdt";
     case "custom":
       return "Benutzerdefiniert";
     default:
@@ -866,7 +893,11 @@ export function getEffectiveMenuAccess(user: User | AdminUser | null | undefined
     return user.menuAccess;
   }
 
-  return getAllowedMenuAccessForRole(user.role);
+  return Array.from(new Set((user.roles?.length ? user.roles : [user.role]).flatMap(getAllowedMenuAccessForRole)));
+}
+
+export function hasRole(user: User | AdminUser | null | undefined, role: AppRole): boolean {
+  return Boolean(user && (user.roles?.length ? user.roles : [user.role]).includes(role));
 }
 
 export function getEffectivePermissions(user: User | AdminUser | null | undefined): UserPermissions {
@@ -882,7 +913,7 @@ export function hasPermission(user: User | AdminUser | null | undefined, permiss
     return false;
   }
 
-  if (user.role === "admin") {
+  if (hasRole(user, "admin")) {
     return true;
   }
 
@@ -892,7 +923,11 @@ export function hasPermission(user: User | AdminUser | null | undefined, permiss
 }
 
 export function canUseSimplifiedVisitPolicy(user: User | AdminUser | null | undefined): boolean {
-  return user?.role === "sibe";
+  return hasRole(user, "sibe");
+}
+
+export function canUseNormalVisitorImport(user: User | AdminUser | null | undefined): boolean {
+  return Boolean(user && hasMenuAccess(user, "import") && hasPermission(user, "imports.execute"));
 }
 
 export function hasMenuAccess(user: User | AdminUser | null | undefined, menuKey: AppMenuKey): boolean {
@@ -912,6 +947,9 @@ export function getDefaultRouteForUser(user: User): string {
   if (hasMenuAccess(user, "kaskdt") && hasPermission(user, "dashboards.commander")) {
     return "/kaskdt";
   }
+  if (hasMenuAccess(user, "import") && hasPermission(user, "imports.execute")) {
+    return "/import";
+  }
   if (hasMenuAccess(user, "texte") && hasPermission(user, "texts.manage")) {
     return "/texte";
   }
@@ -919,6 +957,15 @@ export function getDefaultRouteForUser(user: User): string {
     return "/";
   }
   return "/";
+}
+
+export function getRootRedirectForUser(user: User | null | undefined): string | null {
+  if (!user || !hasRole(user, "guard")) {
+    return null;
+  }
+
+  const defaultRoute = getDefaultRouteForUser(user);
+  return defaultRoute === "/wache" ? defaultRoute : null;
 }
 
 export function extractFieldErrors(error: ApiError): Record<string, string> {
@@ -998,19 +1045,19 @@ export function buildCheckoutStateFromVisit(visit: VisitDetail): CheckoutFormSta
 
 export function buildGuardVisitEditState(visit: VisitDetail): GuardVisitEditState {
   return {
-    firstName: visit.firstName,
-    lastName: visit.lastName,
+    firstName: visit.firstName || "",
+    lastName: visit.lastName || "",
     birthDate: visit.birthDate || "",
-    company: visit.company,
+    company: visit.company || "",
     nationalityCode: visit.nationalityCode || "DE",
     phone: visit.visitorPhone || "",
     email: visit.visitorEmail || "",
     licensePlate: visit.licensePlate || "",
-    hostName: visit.hostName,
+    hostName: visit.hostName || "",
     hostEmail: visit.hostEmail || "",
     hostPhone: visit.hostPhone || "",
-    hostDepartment: visit.hostDepartment,
-    purpose: visit.purpose,
+    hostDepartment: visit.hostDepartment || "",
+    purpose: visit.purpose || "",
     gateId: visit.gateId || "",
     validFrom: toDateInputValue(new Date(visit.validFrom)),
     validUntil: toDateInputValue(new Date(visit.validUntil)),
@@ -1231,6 +1278,31 @@ export function LoadingScreen() {
   );
 }
 
+export function RoleAwareRootRoute({ children }: PropsWithChildren) {
+  const { loading, user } = useAuth();
+
+  if (loading) {
+    return <LoadingScreen />;
+  }
+
+  const redirectTo = getRootRedirectForUser(user);
+  return redirectTo ? <Navigate to={redirectTo} replace /> : <>{children}</>;
+}
+
+export function AccessDeniedPage({ redirectTo = "/" }: { redirectTo?: string }) {
+  return (
+    <AppLayout>
+      <main className="public-page">
+        <section className="public-card panel access-denied-page" aria-labelledby="access-denied-title">
+          <h1 id="access-denied-title">Keine Berechtigung</h1>
+          <p>Sie haben keine Berechtigung, diesen Bereich aufzurufen.</p>
+          <Link className="button-link" to={redirectTo}>Zur Startseite</Link>
+        </section>
+      </main>
+    </AppLayout>
+  );
+}
+
 export function AppLayout({ children }: PropsWithChildren) {
   const { user, logout } = useAuth();
   const { mode, toggle, securityNumber } = useThemeMode();
@@ -1238,24 +1310,30 @@ export function AppLayout({ children }: PropsWithChildren) {
   const location = useLocation();
   const navigationRef = useRef<HTMLDivElement>(null);
   const [openRoleMenu, setOpenRoleMenu] = useState<"wache" | "sibe" | "kaskdt" | null>(null);
-  const menuItems: Array<{ to: string; label: string; visible: boolean }> = [
-    { to: "/", label: "Voranmeldung", visible: !user || Boolean(user && hasMenuAccess(user, "voranmeldung")) },
+  const preRegistrationPath = user ? "/voranmeldung" : "/";
+  const menuItems: Array<{ to: string; label: string; visible: boolean; activePrefixes?: string[] }> = [
+    {
+      to: preRegistrationPath,
+      label: "Voranmeldung",
+      visible: !user || Boolean(user && (hasMenuAccess(user, "voranmeldung") || canUseNormalVisitorImport(user)))
+    },
+    { to: "/visit/simplified/application", label: "Vereinfachte Besucherregelung", visible: !user, activePrefixes: ["/visit/simplified/"] },
     { to: "/wache", label: "Wache", visible: Boolean(user && hasMenuAccess(user, "wache") && hasPermission(user, "visits.read")) },
-    { to: "/import", label: "Import", visible: Boolean(!user || (user && hasMenuAccess(user, "import") && hasPermission(user, "imports.execute"))) },
     { to: "/admin", label: "Admin", visible: Boolean(user && hasMenuAccess(user, "admin") && (hasPermission(user, "admin.users") || hasPermission(user, "admin.guards") || hasPermission(user, "admin.fields") || hasPermission(user, "admin.map") || hasPermission(user, "admin.system") || hasPermission(user, "logs.audit") || hasPermission(user, "logs.errors"))) },
     { to: "/sibe", label: "SiBe", visible: Boolean(user && hasMenuAccess(user, "sibe") && hasPermission(user, "dashboards.sibe")) },
-    { to: "/sibe/besucher/vereinfacht", label: "Vereinfachte Besuchsregelung", visible: canUseSimplifiedVisitPolicy(user) },
+    { to: "/sibe/besucher/vereinfacht", label: "Vereinfachte Besucherregelung", visible: canUseSimplifiedVisitPolicy(user) },
     { to: "/sibe/ablehnungen", label: "Ablehnungen", visible: Boolean(user && hasMenuAccess(user, "sibe") && hasPermission(user, "visits.read")) },
     { to: "/sibe/benachrichtigungen", label: "Länderbenachrichtigungen", visible: Boolean(user && hasMenuAccess(user, "laenderbenachrichtigungen") && hasPermission(user, "dashboards.sibe")) },
-    { to: "/kaskdt", label: "KasKdt", visible: Boolean(user && hasMenuAccess(user, "kaskdt") && hasPermission(user, "dashboards.commander")) },
+    { to: "/kaskdt", label: "KSKdt", visible: Boolean(user && hasMenuAccess(user, "kaskdt") && hasPermission(user, "dashboards.commander")) },
+    { to: "/kaskdt/antraege", label: "Genehmigungen", visible: Boolean(user && hasMenuAccess(user, "kaskdt") && (hasRole(user, "admin") || hasRole(user, "kaskdt"))) },
     { to: "/texte", label: "Texte", visible: Boolean(user && hasMenuAccess(user, "texte") && hasPermission(user, "texts.manage")) },
     { to: "/login", label: "Login", visible: !user }
   ];
   const visibleMenuItems = menuItems.filter((item) => item.visible);
   const adminRoleMenus: Array<{ key: "wache" | "sibe" | "kaskdt"; label: string; paths: string[] }> = [
-    { key: "wache", label: "Wache", paths: ["/wache", "/import"] },
+    { key: "wache", label: "Wache", paths: ["/wache"] },
     { key: "sibe", label: "SiBe", paths: ["/sibe", "/sibe/besucher/vereinfacht", "/sibe/ablehnungen", "/sibe/benachrichtigungen"] },
-    { key: "kaskdt", label: "KasKdt", paths: ["/kaskdt", "/texte"] }
+    { key: "kaskdt", label: "KSKdt", paths: ["/kaskdt", "/kaskdt/antraege", "/texte"] }
   ];
   const isAdminNavigation = user?.role === "admin";
 
@@ -1311,7 +1389,7 @@ export function AppLayout({ children }: PropsWithChildren) {
             <nav ref={navigationRef} className="nav-links" aria-label="Hauptnavigation">
               {isAdminNavigation ? (
                 <>
-                  {visibleMenuItems.filter((item) => ["/", "/admin"].includes(item.to)).map((item) => (
+                  {visibleMenuItems.filter((item) => [preRegistrationPath, "/admin"].includes(item.to)).map((item) => (
                     <NavLink key={item.to} to={item.to} className={({ isActive }) => (isActive ? "active-link" : "")}>
                       {item.label}
                     </NavLink>
@@ -1338,7 +1416,7 @@ export function AppLayout({ children }: PropsWithChildren) {
                         {openRoleMenu === roleMenu.key ? (
                           <div id={`role-menu-${roleMenu.key}`} className="role-menu-popover">
                             {entries.map((item) => (
-                              <NavLink key={item.to} to={item.to} className={({ isActive: itemIsActive }) => (itemIsActive ? "active-link" : "")}>
+                              <NavLink key={item.to} to={item.to} className={({ isActive: itemIsActive }) => (itemIsActive || item.activePrefixes?.some((prefix) => location.pathname.startsWith(prefix)) ? "active-link" : "")}>
                                 {item.label}
                               </NavLink>
                             ))}
@@ -1349,7 +1427,7 @@ export function AppLayout({ children }: PropsWithChildren) {
                   })}
                 </>
               ) : visibleMenuItems.map((item) => (
-                <NavLink key={item.to} to={item.to} className={({ isActive }) => (isActive ? "active-link" : "")}>
+                <NavLink key={item.to} to={item.to} className={({ isActive }) => (isActive || item.activePrefixes?.some((prefix) => location.pathname.startsWith(prefix)) ? "active-link" : "")}>
                   {item.label}
                 </NavLink>
               ))}
@@ -1406,10 +1484,10 @@ export function RequireRoles({
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
 
-  const allowCustomByPermission = user.role === "custom" && Boolean(requiredPermissions?.length);
+  const allowCustomByPermission = hasRole(user, "custom") && Boolean(requiredPermissions?.length);
 
-  if (!allowedRoles.includes(user.role) && !allowCustomByPermission) {
-    return <Navigate to={redirectTo} replace />;
+  if (!allowedRoles.some((role) => hasRole(user, role)) && !allowCustomByPermission) {
+    return <AccessDeniedPage redirectTo={redirectTo} />;
   }
 
   const neededMenuKeys = requiredMenuKeys?.length
@@ -1419,11 +1497,11 @@ export function RequireRoles({
       : [];
 
   if (neededMenuKeys.length > 0 && !neededMenuKeys.some((menuKey) => hasMenuAccess(user, menuKey))) {
-    return <Navigate to={redirectTo} replace />;
+    return <AccessDeniedPage redirectTo={redirectTo} />;
   }
 
   if (requiredPermissions?.length && !requiredPermissions.some((permission) => hasPermission(user, permission))) {
-    return <Navigate to={redirectTo} replace />;
+    return <AccessDeniedPage redirectTo={redirectTo} />;
   }
 
   return <>{children}</>;

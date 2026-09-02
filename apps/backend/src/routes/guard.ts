@@ -16,6 +16,7 @@ import {
   updateVisitForGuard
 } from "../lib/guardVisits";
 import { writeAuditLog } from "../lib/auditLog";
+import { isIsoDateOnly } from "../lib/dateOnly";
 import { getPool } from "../lib/db";
 import { HOST_SIGNATURE_STATUS, VISIT_STATUS } from "../lib/visitWorkflow";
 import {
@@ -69,10 +70,10 @@ const guardVisitUpdateSchema = z.object({
   birthDate: z.string().trim().optional().or(z.literal("")),
   company: z.string().trim().min(1).max(255),
   phone: z.string().trim().optional().or(z.literal("")),
-  email: z.string().trim().email("Ungueltige E-Mail-Adresse.").optional().or(z.literal("")),
+  email: z.string().trim().email("Die E-Mail-Adresse hat kein gültiges Format.").optional().or(z.literal("")),
   licensePlate: z.string().trim().max(40).optional().or(z.literal("")),
   hostName: z.string().trim().min(1).max(255),
-  hostEmail: z.string().trim().email("Ungueltige Ansprechpartner-E-Mail.").optional().or(z.literal("")),
+  hostEmail: z.string().trim().email("Die E-Mail-Adresse des Ansprechpartners hat kein gültiges Format.").optional().or(z.literal("")),
   hostPhone: z.string().trim().max(80).optional().or(z.literal("")),
   hostDepartment: z.string().trim().max(255).optional().or(z.literal("")),
   purpose: z.string().trim().min(1).max(500),
@@ -130,7 +131,7 @@ const guardVisitUpdateSchema = z.object({
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["birthDate"],
-        message: "Ungueltiges Geburtsdatum."
+        message: "Ungültiges Geburtsdatum."
       });
     } else if (birthDate > new Date()) {
       context.addIssue({
@@ -147,7 +148,7 @@ const guardVisitUpdateSchema = z.object({
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["idDocumentValidUntil"],
-        message: "Ungueltiges Ausweisdatum."
+        message: "Ungültiges Ausweisdatum."
       });
     }
   }
@@ -158,7 +159,7 @@ const guardVisitUpdateSchema = z.object({
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["deviceReturnedAt"],
-        message: "Ungueltiges Rueckgabe-Datum."
+        message: "Ungültiges Rückgabe-Datum."
       });
     }
   }
@@ -183,7 +184,7 @@ const userCreateSchema = z.object({
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["gateId"],
-      message: "Fuer Guard-Benutzer ist eine Wache erforderlich."
+      message: "Für Wache-Benutzer ist eine Wache erforderlich."
     });
   }
 });
@@ -208,26 +209,33 @@ const guardCalendarQuerySchema = z.object({
   const from = new Date(`${value.from}T00:00:00.000Z`);
   const to = new Date(`${value.to}T00:00:00.000Z`);
   if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["from"], message: "Ungueltiger Datumsbereich." });
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["from"], message: "Ungültiger Datumsbereich." });
     return;
   }
   if (to < from) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["to"], message: "Bis-Datum muss nach Von-Datum liegen." });
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["to"], message: "Das Bis-Datum muss am oder nach dem Von-Datum liegen." });
   }
   const diffDays = Math.floor((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24));
   if (diffDays > 90) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["to"], message: "Datumsbereich darf maximal 90 Tage umfassen." });
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["to"], message: "Der Datumsbereich darf maximal 90 Tage umfassen." });
   }
 });
-const guardWalkInCreateSchema = z.object({
+function isValidDateOnly(value: string): boolean {
+  if (!isIsoDateOnly(value)) return false;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+export const guardWalkInCreateSchema = z.object({
   clientRequestId: z.string().trim().min(8).max(64).optional().or(z.literal("")),
-  existingVisitorId: z.string().uuid().optional().or(z.literal("")),
-  gateId: z.string().uuid().optional().or(z.literal("")),
+  existingVisitorId: z.string().uuid().nullable().optional().or(z.literal("")),
+  gateId: z.string().uuid().nullable().optional().or(z.literal("")),
   action: z.enum(["save", "check_in", "check_in_and_print"]).optional(),
-  firstName: z.string().trim().min(1).max(120),
-  lastName: z.string().trim().min(1).max(120),
-  company: z.string().trim().min(1).max(255),
-  nationalityCode: z.string().trim().transform((value, context) => {
+  firstName: z.string().trim().max(120).optional().default(""),
+  lastName: z.string().trim().max(120).optional().default(""),
+  company: z.string().trim().max(255).optional().default(""),
+  nationalityCode: z.string().trim().optional().default("").transform((value, context) => {
+    if (!value) return null;
     const code = normalizeCountryCode(value);
     if (!code) {
       context.addIssue({ code: z.ZodIssueCode.custom, message: "Bitte eine gültige Nationalität auswählen." });
@@ -237,23 +245,23 @@ const guardWalkInCreateSchema = z.object({
   }),
   birthDate: z.string().trim().optional().or(z.literal("")),
   phone: z.string().trim().optional().or(z.literal("")),
-  email: z.string().trim().email("Ungueltige E-Mail-Adresse.").optional().or(z.literal("")),
+  email: z.string().trim().email("Die E-Mail-Adresse hat kein gültiges Format.").optional().or(z.literal("")),
   licensePlate: z.string().trim().max(40).optional().or(z.literal("")),
-  hostName: z.string().trim().min(1).max(255),
-  hostEmail: z.string().trim().email("Ungueltige Ansprechpartner-E-Mail.").optional().or(z.literal("")),
-  hostPhone: z.string().trim().min(1).max(80),
+  hostName: z.string().trim().max(255).optional().default(""),
+  hostEmail: z.string().trim().email("Die E-Mail-Adresse des Ansprechpartners hat kein gültiges Format.").optional().or(z.literal("")),
+  hostPhone: z.string().trim().max(80).optional().default(""),
   hostDepartment: z.string().trim().max(255).optional().or(z.literal("")),
-  purpose: z.string().trim().min(1).max(500),
-  validFrom: z.string().trim().min(1),
-  validUntil: z.string().trim().min(1),
+  purpose: z.string().trim().max(500).optional().default(""),
+  validFrom: z.string().trim().optional().default(""),
+  validUntil: z.string().trim().optional().default(""),
   notes: z.string().trim().optional().or(z.literal("")),
-  visitorStreet: z.string().trim().max(255).default(""),
-  visitorHouseNumber: z.string().trim().max(40).default(""),
-  visitorPostalCode: z.string().trim().max(20).default(""),
-  visitorCity: z.string().trim().max(120).default(""),
-  idDocumentType: z.enum(["identity_card", "passport", "service_id", "other"]).or(z.literal("")).default(""),
-  idDocumentValidUntil: z.string().trim().default(""),
-  idDocumentNumber: z.string().trim().max(120).default(""),
+  visitorStreet: z.string().trim().max(255).optional().default(""),
+  visitorHouseNumber: z.string().trim().max(40).optional().default(""),
+  visitorPostalCode: z.string().trim().max(20).optional().default(""),
+  visitorCity: z.string().trim().max(120).optional().default(""),
+  idDocumentType: z.enum(["identity_card", "passport", "service_id", "other"]).or(z.literal("")).optional().default(""),
+  idDocumentValidUntil: z.string().trim().optional().default(""),
+  idDocumentNumber: z.string().trim().max(120).optional().default(""),
   devicePhotoApp: z.boolean().optional(),
   deviceFilmApp: z.boolean().optional(),
   deviceVideoCamera: z.boolean().optional(),
@@ -262,6 +270,20 @@ const guardWalkInCreateSchema = z.object({
   deviceAccessories: z.string().trim().max(500).optional().or(z.literal("")),
   deviceDepositNote: z.string().trim().max(500).optional().or(z.literal(""))
 }).superRefine((value, context) => {
+  if (value.validFrom && !isValidDateOnly(value.validFrom)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["validFrom"],
+      message: "Bitte überprüfen Sie das Besuchsdatum."
+    });
+  }
+  if (value.validUntil && !isValidDateOnly(value.validUntil)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["validUntil"],
+      message: "Bitte überprüfen Sie das Besuchsdatum."
+    });
+  }
   const validFrom = new Date(value.validFrom);
   const validUntil = new Date(value.validUntil);
   if (!Number.isNaN(validFrom.getTime()) && !Number.isNaN(validUntil.getTime()) && validUntil < validFrom) {
@@ -347,10 +369,6 @@ guardRouter.post("/api/guard/visits/walk-in", async (request, response) => {
     return;
   }
 
-  if (user.role !== "guard" && user.role !== "admin") {
-    return sendForbidden(response);
-  }
-
   const parsed = guardWalkInCreateSchema.safeParse(request.body);
   if (!parsed.success) {
     return sendValidationError(response, parsed.error.flatten());
@@ -377,12 +395,11 @@ guardRouter.post("/api/guard/visits/walk-in", async (request, response) => {
     });
   } catch (error) {
     if (error instanceof Error && error.message === "visit_gate_required_for_checkin") {
-      return sendError(
-        response,
-        400,
-        "VALIDATION_ERROR",
-        "Für diese Anmeldung ist zuerst eine aktive Wache erforderlich."
-      );
+      return sendValidationError(response, {
+        fieldErrors: {
+          gateId: ["Bitte wählen Sie eine aktive Wache aus."]
+        }
+      });
     }
     if (error instanceof Error && error.message === "existing_visitor_not_found") {
       return sendError(response, 404, "NOT_FOUND", "Der ausgewählte Besucher wurde nicht gefunden.");
@@ -408,7 +425,7 @@ guardRouter.get("/api/guard/visits/today", async (request, response) => {
 
     return response.json({ visits });
   } catch (error) {
-    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Tagesuebersicht konnte nicht geladen werden.");
+    return handleUnexpectedError(response, error, "DATABASE_ERROR", "Die Tagesübersicht konnte nicht geladen werden.");
   }
 });
 
@@ -737,7 +754,7 @@ guardRouter.post("/api/guard/visits/:id/cancel", async (request, response) => {
       return sendError(response, 404, "NOT_FOUND", "Der Besuch wurde nicht gefunden.");
     }
 
-    if (user.role === "guard" && user.gateId !== visit.gateId) {
+    if (user.role !== "admin" && user.gateId !== visit.gateId) {
       return sendForbidden(response);
     }
 

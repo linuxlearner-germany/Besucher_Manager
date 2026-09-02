@@ -23,6 +23,7 @@ import datetime as dt
 import http.cookiejar
 import io
 import json
+import time
 import uuid
 import sys
 import urllib.error
@@ -93,6 +94,7 @@ class HttpClient:
         filename: str,
         content: bytes,
         content_type: str,
+        fields: dict[str, str] | None = None,
         headers: dict[str, str] | None = None,
     ) -> Any:
         boundary = f"----UploadBoundary{uuid.uuid4().hex}"
@@ -101,7 +103,15 @@ class HttpClient:
             "Content-Type": f"multipart/form-data; boundary={boundary}",
             **(headers or {}),
         }
-        body = b"".join([
+        field_parts: list[bytes] = []
+        for name, value in (fields or {}).items():
+            field_parts.extend([
+                f"--{boundary}\r\n".encode("utf-8"),
+                f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode("utf-8"),
+                value.encode("utf-8"),
+                b"\r\n",
+            ])
+        body = b"".join([*field_parts,
             f"--{boundary}\r\n".encode("utf-8"),
             f'Content-Disposition: form-data; name="{field_name}"; filename="{filename}"\r\n'.encode("utf-8"),
             f"Content-Type: {content_type}\r\n\r\n".encode("utf-8"),
@@ -363,7 +373,7 @@ def main() -> int:
     sibe_client = HttpClient(args.base_url)
     admin_client = HttpClient(args.base_url)
 
-    print("1/12 Lade aktive Wachen und CSRF-Token...")
+    print("1/16 Lade aktive Wachen und CSRF-Token...")
     gates_payload = public_client.request("GET", "/api/public/gates")
     gates = gates_payload.get("gates", [])
     csrf_token = gates_payload.get("csrfToken")
@@ -375,13 +385,37 @@ def main() -> int:
     if gate is None:
         gate = gates[0]
 
-    print("2/12 Pruefe vollstaendigen oeffentlichen Excel-Import...")
+    print("2/16 Pruefe vollstaendigen oeffentlichen Excel-Import...")
+    public_import_workbook = build_import_workbook(gate["name"], suffix)
+    try:
+        public_client.upload_file(
+            "/api/public/visits/import/preview",
+            field_name="file",
+            filename="besucher-import-test.xlsx",
+            content=public_import_workbook,
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        raise RuntimeError("Oeffentliche Standardimport-Vorschau war ohne CSRF-Token erreichbar.")
+    except ApiError as error:
+        if error.status != 403 or error.payload.get("error") != "CSRF_INVALID":
+            raise
+    import_preview = public_client.upload_file(
+        "/api/public/visits/import/preview",
+        field_name="file",
+        filename="besucher-import-test.xlsx",
+        content=public_import_workbook,
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"X-CSRF-Token": csrf_token},
+    )
+    if int(import_preview.get("valid", 0)) != 1 or int(import_preview.get("invalid", 0)) != 0:
+        raise RuntimeError("Oeffentliche Standardimport-Vorschau war unerwartet ungueltig.")
     import_result = public_client.upload_file(
         "/api/public/visits/import",
         field_name="file",
         filename="besucher-import-test.xlsx",
-        content=build_import_workbook(gate["name"], suffix),
+        content=public_import_workbook,
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"X-CSRF-Token": csrf_token},
     )
     if int(import_result.get("imported", 0)) != 1:
         raise RuntimeError("Oeffentlicher Import hat nicht genau einen vollstaendigen Eintrag verarbeitet.")
@@ -392,7 +426,7 @@ def main() -> int:
         raise RuntimeError("Import-Ergebnis enthaelt keinen Besuch.")
     imported_visit_id = imported_rows[0]["visitId"]
 
-    print("3/12 Lege oeffentliche Voranmeldung an...")
+    print("3/16 Lege oeffentliche Voranmeldung an...")
     pre_registration = public_client.request(
         "POST",
         "/api/public/pre-registrations",
@@ -402,25 +436,56 @@ def main() -> int:
     visit_id = pre_registration["visitId"]
     visitor_id = pre_registration["visitorId"]
 
-    print("4/12 Guard meldet sich an und findet den Besuch...")
+    print("4/16 Guard meldet sich an und findet den Besuch...")
     guard_login = login(guard_client, args.guard_user, args.guard_password, gate["name"])
+    walk_in_save_payload = make_public_payload(f"walkin-save-{suffix}", gate["id"])
+    walk_in_save_payload.update({
+        "action": "save",
+        "clientRequestId": f"walkin-save-{uuid.uuid4()}",
+        "existingVisitorId": None,
+        "validFrom": dt.date.today().isoformat(),
+        "validUntil": dt.date.today().isoformat(),
+    })
+    walk_in_saved = guard_client.request("POST", "/api/guard/visits/walk-in", payload=walk_in_save_payload)
+    if walk_in_saved.get("status") != "pre_registered":
+        raise RuntimeError(f"Spontanbesucher wurde nicht gespeichert: {walk_in_saved}")
+    walk_in_save_retry = guard_client.request("POST", "/api/guard/visits/walk-in", payload=walk_in_save_payload)
+    if walk_in_save_retry.get("visitId") != walk_in_saved.get("visitId"):
+        raise RuntimeError("Spontanbesucher-Speichern ist bei einem Retry nicht idempotent.")
+
+    walk_in_payload = make_public_payload(f"walkin-checkin-{suffix}", gate["id"])
+    walk_in_payload.update({
+        "action": "check_in",
+        "clientRequestId": f"walkin-checkin-{uuid.uuid4()}",
+        "existingVisitorId": None,
+        "validFrom": dt.date.today().isoformat(),
+        "validUntil": dt.date.today().isoformat(),
+    })
+    walk_in = guard_client.request("POST", "/api/guard/visits/walk-in", payload=walk_in_payload)
+    if walk_in.get("status") != "checked_in":
+        raise RuntimeError(f"Spontanbesucher wurde nicht eingecheckt: {walk_in}")
+    walk_in_retry = guard_client.request("POST", "/api/guard/visits/walk-in", payload=walk_in_payload)
+    if walk_in_retry.get("visitId") != walk_in.get("visitId"):
+        raise RuntimeError("Spontanbesucher-Check-in ist bei einem Retry nicht idempotent.")
     visits_payload = guard_client.request("GET", "/api/guard/visits/today?status=all")
     visits = visits_payload.get("visits", [])
     require_visit(visits, visit_id, "Wache-Tagesuebersicht")
+    require_visit(visits, walk_in_saved["visitId"], "Wache-Tagesübersicht gespeicherter Spontanbesucher")
+    require_visit(visits, walk_in["visitId"], "Wache-Tagesübersicht Spontanbesucher")
     pending_visits = guard_client.request("GET", "/api/guard/visits/today?status=all&signatureStatus=pending")["visits"]
     pending_visit = require_visit(pending_visits, visit_id, "Wache-Unterschriftsfilter vor Check-out")
     if pending_visit.get("hostSignatureStatus") != "pending":
         raise RuntimeError("Wache zeigt vor Check-out keinen offenen Unterschriftsstatus.")
 
-    print("5/12 Guard aktualisiert Voranmeldedaten...")
+    print("5/16 Guard aktualisiert Voranmeldedaten...")
     detail_before = guard_client.request("GET", f"/api/guard/visits/{visit_id}")["visit"]
     guard_client.request("PUT", f"/api/guard/visits/{visit_id}", payload=make_guard_update_payload(detail_before))
 
-    print("6/12 SiBe prueft den Besuch...")
+    print("6/16 SiBe prueft den Besuch...")
     login(sibe_client, args.sibe_user, args.sibe_password)
     sibe_client.request("GET", f"/api/sibe/visits/{visit_id}")
 
-    print("7/12 SiBe sieht den vollstaendig importierten Datensatz...")
+    print("7/16 SiBe sieht den vollstaendig importierten Datensatz...")
     imported_sibe_visit = require_visit(
         sibe_client.request("GET", "/api/sibe/visits?status=all")["visits"],
         imported_visit_id,
@@ -429,12 +494,21 @@ def main() -> int:
     if imported_sibe_visit.get("status") != "pre_registered":
         raise RuntimeError("Importierter Besuch ist in SiBe nicht vorangemeldet.")
 
-    print("8/12 SiBe legt einen Besuch ohne Personendaten an...")
+    print("8/16 SiBe legt einen vereinfachten Besuch mit Pflichtdaten an...")
     today = dt.date.today().isoformat()
     simplified_visit = sibe_client.request(
         "POST",
         "/api/sibe/visits/simplified",
-        payload={"gateId": gate["id"], "validFrom": today, "validUntil": today},
+        payload={
+            "gateId": gate["id"],
+            "validFrom": today,
+            "validUntil": today,
+            "firstName": "Vereinfacht",
+            "lastName": f"Besucher-{suffix}",
+            "company": "Test Vereinfachte Regelung GmbH",
+            "hostName": "Test Ansprechpartner",
+            "purpose": "Automatischer MVP-Check",
+        },
     )
     simplified_visit_id = simplified_visit["visitId"]
     require_visit(
@@ -448,12 +522,34 @@ def main() -> int:
         "Vereinfachter Besuch in Wachenliste",
     )
 
-    print("9/12 Guard checkt den Besucher ein...")
+    print("9/16 SiBe prueft Vorschau und serverseitig neu geparsten XLSX-Import...")
+    simplified_workbook = build_import_workbook(gate["name"], f"S{suffix}")
+    preview = sibe_client.upload_file(
+        "/api/sibe/visits/simplified-rule/preview",
+        field_name="file",
+        filename="vereinfachte-erfassung.xlsx",
+        content=simplified_workbook,
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    if not preview.get("visitors") or preview.get("errors"):
+        raise RuntimeError(f"Vereinfachte XLSX-Vorschau unerwartet ungueltig: {preview.get('errors')}")
+    simplified_import = sibe_client.upload_file(
+        "/api/sibe/visits/simplified-rule/import",
+        field_name="file",
+        filename="vereinfachte-erfassung.xlsx",
+        content=simplified_workbook,
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        fields={"gateId": gate["id"]},
+    )
+    if int(simplified_import.get("imported", 0)) != 1:
+        raise RuntimeError("Vereinfachter XLSX-Import hat nicht genau einen Datensatz verarbeitet.")
+
+    print("10/16 Guard checkt den Besucher ein...")
     check_in = guard_client.request("POST", f"/api/guard/visits/{visit_id}/check-in", payload={})
     if check_in.get("status") != "checked_in":
         raise RuntimeError("Check-in hat nicht den erwarteten Status geliefert.")
 
-    print("10/12 Guard schreibt Druck-Audit...")
+    print("11/16 Guard schreibt Druck-Audit...")
     guard_client.request("POST", f"/api/guard/visits/{visit_id}/print-log", payload={"paperSize": "A5"})
 
     signature_payload: dict[str, Any] = {
@@ -468,7 +564,7 @@ def main() -> int:
     elif args.signature_status == "not_required":
         signature_payload["host_signature_note"] = "Fachlich nicht erforderlich"
 
-    print("11/12 Guard erfasst den Unterschriftsstatus waehrend des laufenden Besuchs...")
+    print("12/16 Guard erfasst den Unterschriftsstatus waehrend des laufenden Besuchs...")
     guard_client.request(
         "PUT",
         f"/api/guard/visits/{visit_id}/signature",
@@ -488,7 +584,7 @@ def main() -> int:
     if not signature_captured_at or not signature_captured_by:
         raise RuntimeError("Signaturerfassung hat keinen bestaetigenden Benutzer oder Zeitstempel hinterlegt.")
 
-    print("12/12 Guard checkt mit Unterschriftsstatus aus und SiBe/Admin pruefen Nachvollziehbarkeit...")
+    print("13/16 Guard checkt mit Unterschriftsstatus aus und SiBe/Admin pruefen Nachvollziehbarkeit...")
     check_out = guard_client.request(
         "POST",
         f"/api/guard/visits/{visit_id}/check-out",
@@ -555,12 +651,151 @@ def main() -> int:
     if summary_key and int(admin_system.get(summary_key, 0)) < 1:
         raise RuntimeError(f"Admin-Systemstatus meldet keinen Wert fuer {summary_key}.")
 
+    print("14/16 Pruefe Doppelrolle und Tombstone-Loeschung...")
+    dual_username = f"dual.e2e.{suffix}"
+    dual_password = "Test1234!"
+    dual_created = admin_client.request("POST", "/api/admin/users", payload={
+        "username": dual_username,
+        "displayName": "Doppelrolle E2E",
+        "email": f"{dual_username}@example.com",
+        "password": dual_password,
+        "role": "sibe",
+        "roles": ["sibe", "kaskdt"],
+    })
+    dual_client = HttpClient(args.base_url)
+    dual_login = login(dual_client, dual_username, dual_password)
+    if set(dual_login.get("user", {}).get("roles", [])) != {"sibe", "kaskdt"}:
+        raise RuntimeError("Login liefert die Doppelrolle nicht vollstaendig aus.")
+    dual_client.request("GET", "/api/sibe/summary")
+    dual_client.request("GET", "/api/kaskdt/simplified-visits?page=1&pageSize=5")
+    dual_visit = dual_client.request("POST", "/api/sibe/visits/simplified", payload={
+        "gateId": gate["id"],
+        "validFrom": today,
+        "validUntil": today,
+        "firstName": "Doppelrolle",
+        "lastName": f"Besucher-{suffix}",
+        "company": "Test Doppelrolle GmbH",
+        "hostName": "Test Ansprechpartner",
+        "purpose": "Automatischer Doppelrollen-Check",
+    })
+    if not dual_visit.get("visitId"):
+        raise RuntimeError("Doppelrollen-Benutzer konnte keinen vereinfachten Besuch anlegen.")
+    tombstone = admin_client.request("DELETE", f"/api/admin/users/{dual_created['id']}")
+    if tombstone.get("deletionMode") != "tombstoned":
+        raise RuntimeError("Historisch referenzierter Benutzer wurde nicht als Tombstone geloescht.")
+
+    print("15/16 Pruefe physische Loeschung eines referenzfreien Benutzers...")
+    disposable = admin_client.request("POST", "/api/admin/users", payload={
+        "username": f"delete.e2e.{suffix}",
+        "displayName": "Loeschtest E2E",
+        "password": "Test1234!",
+        "role": "guard",
+        "roles": ["guard"],
+    })
+    hard_delete = admin_client.request("DELETE", f"/api/admin/users/{disposable['id']}")
+    if hard_delete.get("deletionMode") != "hard_deleted":
+        raise RuntimeError("Referenzfreier Benutzer wurde nicht physisch geloescht.")
+
+    print("16/16 Pruefe Wartungsmodus, Admin-Bypass und erreichbaren Login...")
+    admin_client.request("PUT", "/api/admin/system-settings/maintenance", payload={"maintenanceMode": True})
+    try:
+        status = public_client.request("GET", "/api/maintenance/status")
+        if status.get("maintenanceMode") is not True:
+            raise RuntimeError("Oeffentliche Wartungsstatus-Abfrage meldet den Modus nicht.")
+        try:
+            public_client.request("GET", "/api/public/gates")
+            raise RuntimeError("Fachliche API blieb im Wartungsmodus erreichbar.")
+        except ApiError as error:
+            if error.status != 503 or error.payload.get("error") != "MAINTENANCE_MODE":
+                raise
+        for import_endpoint in ("/api/public/visits/import/preview", "/api/public/visits/import"):
+            try:
+                public_client.upload_file(
+                    import_endpoint,
+                    field_name="file",
+                    filename="besucher-import-test.xlsx",
+                    content=public_import_workbook,
+                    content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"X-CSRF-Token": csrf_token},
+                )
+                raise RuntimeError(f"Oeffentlicher Standardimport blieb im Wartungsmodus erreichbar: {import_endpoint}")
+            except ApiError as error:
+                if error.status != 503 or error.payload.get("error") != "MAINTENANCE_MODE":
+                    raise
+        for public_route in ("/", "/visit/simplified/application"):
+            try:
+                public_client.request("GET", public_route)
+                raise RuntimeError(f"Öffentliche Seite blieb im Wartungsmodus erreichbar: {public_route}")
+            except ApiError as error:
+                if error.status != 503 or "Wartungsarbeiten" not in str(error.payload.get("message", error.payload)):
+                    raise
+        admin_client.request("GET", "/api/admin/system-status")
+        login(HttpClient(args.base_url), args.sibe_user, args.sibe_password)
+    finally:
+        admin_client.request("PUT", "/api/admin/system-settings/maintenance", payload={"maintenanceMode": False})
+
+    print("Zusatzpruefung: Audit-/Fehlerlog-Detailansicht und Berechtigungen...")
+    detail_actions = [
+        "SIBE_SIMPLIFIED_VISIT_CREATED",
+        "USER_LOGIN_SUCCEEDED",
+        "ADMIN_USER_CREATED",
+        "MAINTENANCE_MODE_UPDATED",
+    ]
+    audit_detail_ids: list[str] = []
+    for action in detail_actions:
+        entries = admin_client.request("GET", f"/api/admin/audit-logs?action={urllib.parse.quote(action)}")["logs"]
+        if not entries:
+            raise RuntimeError(f"Kein Audit-Eintrag fuer Detailtest gefunden: {action}")
+        audit_detail = admin_client.request("GET", f"/api/admin/audit-logs/{entries[0]['id']}")["log"]
+        if audit_detail.get("id") != entries[0]["id"] or audit_detail.get("action") != action:
+            raise RuntimeError(f"Audit-Detail liefert nicht den ausgewaehlten Eintrag: {action}")
+        audit_detail_ids.append(entries[0]["id"])
+
+    try:
+        guard_client.request("GET", f"/api/admin/audit-logs/{audit_detail_ids[0]}")
+        raise RuntimeError("Guard konnte Audit-Details ohne Berechtigung lesen.")
+    except ApiError as error:
+        if error.status != 403 or error.payload.get("error") != "FORBIDDEN":
+            raise
+    try:
+        public_client.request("GET", f"/api/admin/audit-logs/{audit_detail_ids[0]}")
+        raise RuntimeError("Nicht angemeldeter Client konnte Audit-Details lesen.")
+    except ApiError as error:
+        if error.status != 401 or error.payload.get("error") != "UNAUTHORIZED":
+            raise
+    try:
+        admin_client.request("GET", f"/api/admin/audit-logs/{uuid.uuid4()}")
+        raise RuntimeError("Unbekannte Audit-ID lieferte keinen 404-Fehler.")
+    except ApiError as error:
+        if error.status != 404 or error.payload.get("error") != "AUDIT_LOG_NOT_FOUND" or not error.payload.get("requestId"):
+            raise
+
+    try:
+        admin_client.request("GET", "/api/admin/audit-logs?from=not-a-date")
+    except ApiError as error:
+        if error.status != 500:
+            raise
+    error_entries: list[dict[str, Any]] = []
+    for _attempt in range(10):
+        error_entries = admin_client.request("GET", "/api/admin/error-logs?errorCode=DATABASE_ERROR")["logs"]
+        if error_entries:
+            break
+        time.sleep(0.2)
+    if not error_entries:
+        raise RuntimeError("Kein Fehlerlog fuer Detailtest erzeugt.")
+    if any("v.status" in str(entry.get("message", "")) for entry in error_entries):
+        raise RuntimeError("Walk-in-Regression: SQL-Alias v.status ist weiterhin fehlerhaft.")
+    error_detail = admin_client.request("GET", f"/api/admin/error-logs/{error_entries[0]['id']}")["log"]
+    if error_detail.get("id") != error_entries[0]["id"] or error_detail.get("result") != "failure":
+        raise RuntimeError("Fehlerlog-Detail liefert nicht den ausgewaehlten Eintrag.")
+
     print(json.dumps({
         "success": True,
         "visitId": visit_id,
         "gate": gate["name"],
         "signatureStatus": args.signature_status,
         "auditEntriesFound": len(audit_logs),
+        "logDetailsChecked": len(audit_detail_ids) + 1,
         "sibeSummary": {summary_key: sibe_summary.get(summary_key)} if summary_key else {},
         "adminSummary": {summary_key: admin_system.get(summary_key)} if summary_key else {},
     }, indent=2))

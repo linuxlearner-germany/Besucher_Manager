@@ -18,6 +18,44 @@ test("excel import preserves German dates as day-month-year", () => {
   assert.equal(normalizeImportDateOnly("05.08.2026"), "2026-08-05");
   assert.equal(normalizeImportDateOnly("31.12.2030"), "2030-12-31");
   assert.equal(normalizeImportDateOnly("31.02.2026"), null);
+  assert.equal(normalizeImportDateOnly("46247"), "2026-08-13");
+});
+
+test("simplified XLSX requires identity, visit data, gate and dates with Excel row numbers", () => {
+  const { validateSimplifiedImportRows } = loadVisitImportModule();
+  const requiredMessages = validateSimplifiedImportRows([{ sourceExcelRowNumber: 4, firstName: "", email: "" }]);
+  assert.equal(requiredMessages.length, 8);
+  assert.equal(requiredMessages.every((message) => message.includes("Excel-Zeile 4")), true);
+  const messages = validateSimplifiedImportRows([{
+    sourceExcelRowNumber: 7,
+    gateName: "Hauptwache",
+    firstName: "Erika",
+    lastName: "Muster",
+    company: "Beispiel GmbH",
+    hostName: "Maria Muster",
+    purpose: "Besprechung",
+    email: "ungueltig",
+    validFrom: "31.02.2026",
+    validUntil: "01.09.2026"
+  }]);
+  assert.equal(messages.length, 2);
+  assert.equal(messages.every((message) => message.includes("Excel-Zeile 7")), true);
+});
+
+test("simplified XLSX rejects an inactive or deleted gate", () => {
+  const { validateSimplifiedImportRows } = loadVisitImportModule();
+  const messages = validateSimplifiedImportRows([{
+    sourceExcelRowNumber: 3,
+    gateName: "Alte Wache",
+    firstName: "Erika",
+    lastName: "Muster",
+    company: "Beispiel GmbH",
+    hostName: "Maria Muster",
+    purpose: "Besprechung",
+    validFrom: "01.09.2026",
+    validUntil: "01.09.2026"
+  }], new Set(["hauptwache"]));
+  assert.deepEqual(messages, ["Excel-Zeile 3: Wache ist nicht aktiv oder unbekannt."]);
 });
 
 test("visitor import template marks required and optional fields in headers", () => {

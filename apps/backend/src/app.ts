@@ -3,12 +3,36 @@ import path from "node:path";
 import cookieParser from "cookie-parser";
 import express from "express";
 import helmet from "helmet";
+import crypto from "node:crypto";
 import { env } from "./config/env";
 import { apiRouter } from "./routes/api";
 import { healthRouter } from "./routes/health";
+import { loadSystemSettings, WORKFLOW_SETTING_KEYS } from "./lib/systemSettings";
+import { resolveAuthenticatedUser, sendError } from "./routes/shared";
+import { hasRole } from "./lib/visitWorkflow";
 
 function resolveFrontendDist(): string {
   return path.resolve(__dirname, "../../frontend/dist");
+}
+
+function isFrontendAsset(requestPath: string): boolean {
+  return requestPath.startsWith("/assets/")
+    || requestPath.startsWith("/branding/")
+    || requestPath.startsWith("/uploads/")
+    || requestPath === "/favicon.ico";
+}
+
+function sendMaintenancePage(response: import("express").Response) {
+  response.setHeader("Cache-Control", "no-store, max-age=0");
+  response.setHeader("Retry-After", "120");
+  return response.status(503).type("html").send(`<!doctype html>
+<html lang="de">
+  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Wartungsarbeiten</title></head>
+  <body style="font-family:system-ui,sans-serif;max-width:42rem;margin:12vh auto;padding:2rem;line-height:1.5;color:#10233a">
+    <h1>Wartungsarbeiten</h1>
+    <p>Das Besuchermanagement ist derzeit wegen Wartungsarbeiten vorübergehend nicht verfügbar. Bitte versuchen Sie es später erneut.</p>
+  </body>
+</html>`);
 }
 
 export function createApp() {
@@ -28,9 +52,68 @@ export function createApp() {
   app.use(express.urlencoded({ extended: false }));
   app.use(cookieParser(env.APP_SECRET));
 
+  app.use((request, response, next) => {
+    request.requestId = crypto.randomUUID();
+    response.setHeader("X-Request-Id", request.requestId);
+    const startedAt = Date.now();
+    response.on("finish", () => {
+      if (!request.path.startsWith("/api")) return;
+      console.info(JSON.stringify({
+        level: response.statusCode >= 500 ? "error" : "info",
+        action: "HTTP_REQUEST",
+        requestId: request.requestId,
+        method: request.method,
+        path: request.path,
+        result: response.statusCode >= 400 ? "failure" : "success",
+        status: response.statusCode,
+        errorCode: response.locals.errorCode ?? null,
+        durationMs: Date.now() - startedAt
+      }));
+    });
+    next();
+  });
+
+  app.get("/api/maintenance/status", async (_request, response) => {
+    response.setHeader("Cache-Control", "no-store, max-age=0");
+    const settings = await loadSystemSettings([WORKFLOW_SETTING_KEYS.maintenanceMode]);
+    response.json({ maintenanceMode: settings.get(WORKFLOW_SETTING_KEYS.maintenanceMode) === "true" });
+  });
+
+  app.use(async (request, response, next) => {
+    const isFrontendPage = request.method === "GET"
+      && !request.path.startsWith("/api")
+      && request.path !== "/health"
+      && request.path !== "/login"
+      && !isFrontendAsset(request.path);
+    const exempt = request.path === "/health"
+      || request.path === "/api/maintenance/status"
+      || request.path.startsWith("/api/auth/")
+      || request.path === "/api/ui-settings"
+      || isFrontendAsset(request.path)
+      || request.path === "/login";
+    if (exempt && !isFrontendPage) return next();
+    try {
+      const settings = await loadSystemSettings([WORKFLOW_SETTING_KEYS.maintenanceMode]);
+      if (settings.get(WORKFLOW_SETTING_KEYS.maintenanceMode) !== "true") return next();
+      const user = await resolveAuthenticatedUser(request);
+      if (user && hasRole(user, "admin")) return next();
+      if (isFrontendPage) return sendMaintenancePage(response);
+      response.setHeader("Retry-After", "120");
+      return sendError(response, 503, "MAINTENANCE_MODE", "Die Anwendung befindet sich im Wartungsmodus.");
+    } catch {
+      return next();
+    }
+  });
+
   app.use(healthRouter);
   app.use(apiRouter);
   app.use("/uploads", express.static(env.uploadDir));
+
+  app.use(["/visit/confirmation", "/visit/simplified"], (_request, response, next) => {
+    response.setHeader("Cache-Control", "no-store, max-age=0");
+    response.setHeader("Referrer-Policy", "no-referrer");
+    next();
+  });
 
   if (fs.existsSync(frontendDist)) {
     app.use(express.static(frontendDist));

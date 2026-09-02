@@ -14,10 +14,12 @@ import { checkRateLimit } from "../lib/rateLimit";
 import { findUserById, findUserForLogin, hashPassword, verifyPassword } from "../lib/users";
 import { ImportValidationError, createImportedPreRegistrations } from "../lib/visitImport";
 import { loadWorkflowSettings } from "../lib/systemSettings";
+import { hasPermission } from "../lib/visitWorkflow";
 import { APP_VERSION } from "../lib/appVersion";
 import {
   getRequestIp,
   getRequestUserAgent,
+  hasValidCsrfToken,
   handleUnexpectedError,
   issueCsrfToken,
   requireAuthenticatedUser,
@@ -28,12 +30,22 @@ import {
 import { writeAuditLog } from "../lib/auditLog";
 import { getPool } from "../lib/db";
 import sql from "mssql";
-import { handleVisitorImportUpload, sendVisitorImportTemplateWorkbook } from "./visitorImport";
+import { handleVisitorImportPreview, handleVisitorImportUpload, sendVisitorImportTemplateWorkbook } from "./visitorImport";
 import { adminRouter } from "./admin";
 import { guardRouter } from "./guard";
 import { sibeRouter } from "./sibe";
+import { publicSimplifiedApplicationsRouter } from "./publicSimplifiedApplications";
 import { bundeswehrEmailSchema } from "../lib/emailPolicy";
 import { sendGroupPreRegistrationConfirmation } from "../lib/mailRelay";
+import { requiresGuardGateSelection } from "../lib/visitWorkflow";
+import {
+  getPublicPreRegistration,
+  hashPublicAccessToken,
+  isPlausiblePublicAccessToken,
+  PublicAccessError,
+  publicPreRegistrationUpdateSchema,
+  updatePublicPreRegistration
+} from "../lib/publicPreRegistrationAccess";
 
 const loginSchema = z.object({
   username: z.string().trim().min(1),
@@ -124,7 +136,64 @@ const publicGroupVisitorFieldMap = {
   id_document_number: "idDocumentNumber"
 } as const;
 
+function allowPublicVisitorImportRequest(
+  request: import("express").Request,
+  response: import("express").Response,
+  operation: "template" | "preview" | "submit",
+  limit: number
+): boolean {
+  const decision = checkRateLimit(`public-visitor-import:${operation}:${getRequestIp(request)}`, limit, 60);
+  if (decision.allowed) return true;
+  response.setHeader("Retry-After", String(decision.retryAfterSeconds));
+  sendError(response, 429, "RATE_LIMITED", "Zu viele Importversuche. Bitte versuchen Sie es später erneut.");
+  return false;
+}
+
+function requirePublicVisitorImportCsrf(request: import("express").Request, response: import("express").Response): boolean {
+  if (hasValidCsrfToken(request)) return true;
+  sendError(response, 403, "CSRF_INVALID", "Die Formularsitzung ist abgelaufen. Bitte laden Sie die Seite neu.");
+  return false;
+}
+
+function securePublicVisitorImportResponse(response: import("express").Response) {
+  response.setHeader("Cache-Control", "no-store, max-age=0");
+  response.setHeader("Pragma", "no-cache");
+  response.setHeader("Referrer-Policy", "no-referrer");
+}
+
 export const apiRouter = Router();
+
+function setPublicConfirmationSecurityHeaders(response: import("express").Response) {
+  response.setHeader("Cache-Control", "no-store, max-age=0");
+  response.setHeader("Pragma", "no-cache");
+  response.setHeader("Referrer-Policy", "no-referrer");
+}
+
+function getPublicConfirmationToken(request: import("express").Request): string {
+  const value = request.get("x-confirmation-token");
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function sendPublicAccessError(response: import("express").Response, error: PublicAccessError) {
+  if (error.reason === "not_found") {
+    return sendError(response, 404, "PUBLIC_CONFIRMATION_NOT_FOUND", "Dieser Bestätigungslink ist ungültig.");
+  }
+  if (error.reason === "expired") {
+    return sendError(response, 410, "PUBLIC_CONFIRMATION_EXPIRED", "Dieser Bestätigungslink ist nicht mehr gültig.");
+  }
+  if (error.reason === "revoked") {
+    return sendError(response, 410, "PUBLIC_CONFIRMATION_REVOKED", "Diese Voranmeldung wurde widerrufen oder ist nicht mehr verfügbar.");
+  }
+  if (error.reason === "conflict") {
+    return sendError(response, 409, "PUBLIC_CONFIRMATION_CONFLICT", "Die Voranmeldung wurde zwischenzeitlich geändert. Bitte laden Sie die Seite neu.");
+  }
+  return sendError(response, 409, "PUBLIC_CONFIRMATION_NOT_EDITABLE", "Diese Voranmeldung kann nicht mehr geändert werden.");
+}
+
+function publicConfirmationRateLimitKey(request: import("express").Request, token: string, operation: "read" | "update") {
+  const fingerprint = isPlausiblePublicAccessToken(token) ? hashPublicAccessToken(token).slice(0, 16) : "invalid";
+  return `public-confirmation:${operation}:${getRequestIp(request)}:${fingerprint}`;
+}
 
 apiRouter.get("/api/meta", (_request, response) => {
   response.json({
@@ -151,6 +220,45 @@ apiRouter.get("/api/ui-settings", async (_request, response) => {
   }
 });
 
+apiRouter.get("/api/public/pre-registration-confirmation", async (request, response) => {
+  setPublicConfirmationSecurityHeaders(response);
+  const token = getPublicConfirmationToken(request);
+  const decision = checkRateLimit(publicConfirmationRateLimitKey(request, token, "read"), 60, 60);
+  if (!decision.allowed) {
+    response.setHeader("Retry-After", String(decision.retryAfterSeconds));
+    return sendError(response, 429, "RATE_LIMITED", "Zu viele Zugriffsversuche. Bitte warten Sie einen Moment.");
+  }
+  try {
+    const preRegistration = await getPublicPreRegistration(token);
+    return response.json({ preRegistration });
+  } catch (error) {
+    if (error instanceof PublicAccessError) return sendPublicAccessError(response, error);
+    return handleUnexpectedError(response, error, "PUBLIC_CONFIRMATION_READ_FAILED", "Die Voranmeldung konnte nicht geladen werden.");
+  }
+});
+
+apiRouter.patch("/api/public/pre-registration-confirmation", async (request, response) => {
+  setPublicConfirmationSecurityHeaders(response);
+  const token = getPublicConfirmationToken(request);
+  const decision = checkRateLimit(publicConfirmationRateLimitKey(request, token, "update"), 15, 60);
+  if (!decision.allowed) {
+    response.setHeader("Retry-After", String(decision.retryAfterSeconds));
+    return sendError(response, 429, "RATE_LIMITED", "Zu viele Änderungsversuche. Bitte warten Sie einen Moment.");
+  }
+  const parsed = publicPreRegistrationUpdateSchema.safeParse(request.body ?? {});
+  if (!parsed.success) return sendValidationError(response, parsed.error.flatten());
+  try {
+    const preRegistration = await updatePublicPreRegistration(token, parsed.data, {
+      ipAddress: getRequestIp(request),
+      userAgent: getRequestUserAgent(request)
+    });
+    return response.json({ message: "Ihre Änderungen wurden erfolgreich gespeichert.", preRegistration });
+  } catch (error) {
+    if (error instanceof PublicAccessError) return sendPublicAccessError(response, error);
+    return handleUnexpectedError(response, error, "PUBLIC_CONFIRMATION_UPDATE_FAILED", "Ihre Änderungen konnten nicht gespeichert werden.");
+  }
+});
+
 apiRouter.get("/api/auth/me", async (request, response) => {
   const user = await resolveAuthenticatedUser(request);
 
@@ -174,24 +282,24 @@ apiRouter.post("/api/auth/login", async (request, response) => {
   try {
     const candidate = await findUserForLogin(parsed.data.username);
     if (!candidate || !candidate.isActive) {
-      return response.status(401).json({
-        error: "INVALID_CREDENTIALS",
-        message: "Benutzername oder Passwort ist ungueltig."
-      });
+      return sendError(response, 401, "INVALID_CREDENTIALS", "Benutzername oder Passwort ist ungueltig.");
     }
 
     const passwordMatches = await verifyPassword(parsed.data.password, candidate.passwordHash);
     if (!passwordMatches) {
-      return response.status(401).json({
-        error: "INVALID_CREDENTIALS",
-        message: "Benutzername oder Passwort ist ungueltig."
-      });
+      return sendError(response, 401, "INVALID_CREDENTIALS", "Benutzername oder Passwort ist ungueltig.");
+    }
+
+    const fullUser = await findUserById(candidate.id);
+    if (!fullUser) {
+      return sendError(response, 401, "INVALID_CREDENTIALS", "Benutzername oder Passwort ist ungueltig.");
     }
 
     let activeGateId = candidate.gateId;
     let activeGateName: string | null = null;
+    const needsGuardGate = requiresGuardGateSelection(fullUser);
 
-    if (candidate.role === "guard") {
+    if (needsGuardGate) {
       const requestedGateId = parsed.data.gateId?.trim() || "";
 
       if (!requestedGateId) {
@@ -205,10 +313,7 @@ apiRouter.post("/api/auth/login", async (request, response) => {
       const selectedGate = await findActiveGateById(requestedGateId);
 
       if (!selectedGate) {
-        return response.status(400).json({
-          error: "INVALID_GATE",
-          message: "Die ausgewaehlte Wache ist nicht verfuegbar."
-        });
+        return sendError(response, 400, "INVALID_GATE", "Die ausgewaehlte Wache ist nicht verfuegbar.");
       }
 
       activeGateId = selectedGate.id;
@@ -229,20 +334,52 @@ apiRouter.post("/api/auth/login", async (request, response) => {
       id: candidate.id,
       username: candidate.username,
       role: candidate.role,
+      roles: candidate.roles,
       gateId: activeGateId
     });
 
-    const fullUser = await findUserById(candidate.id);
-    const menuAccess = fullUser?.menuAccess ?? [];
-    const redirectTarget = menuAccess.includes("admin")
+    const menuAccess = fullUser.menuAccess;
+    const redirectTarget = menuAccess.includes("admin") && (
+      hasPermission(fullUser, "admin.users")
+      || hasPermission(fullUser, "admin.guards")
+      || hasPermission(fullUser, "admin.fields")
+      || hasPermission(fullUser, "admin.map")
+      || hasPermission(fullUser, "admin.system")
+      || hasPermission(fullUser, "logs.audit")
+      || hasPermission(fullUser, "logs.errors")
+    )
       ? "/admin"
-      : menuAccess.includes("wache")
+      : menuAccess.includes("wache") && hasPermission(fullUser, "visits.read")
         ? "/wache"
-        : menuAccess.includes("sibe")
+        : menuAccess.includes("sibe") && hasPermission(fullUser, "dashboards.sibe")
           ? "/sibe"
-          : menuAccess.includes("kaskdt")
+          : menuAccess.includes("kaskdt") && hasPermission(fullUser, "dashboards.commander")
             ? "/kaskdt"
-            : "/";
+            : menuAccess.includes("import") && hasPermission(fullUser, "imports.execute")
+              ? "/import"
+              : menuAccess.includes("texte") && hasPermission(fullUser, "texts.manage")
+                ? "/texte"
+                : "/";
+
+    await writeAuditLog({
+      user: candidate.username,
+      userId: candidate.id,
+      action: "USER_LOGIN_SUCCEEDED",
+      objectType: "user",
+      objectId: candidate.id,
+      ipAddress: getRequestIp(request),
+      userAgent: getRequestUserAgent(request),
+      metadata: {
+        requestId: request.requestId ?? null,
+        httpMethod: request.method,
+        endpoint: request.originalUrl,
+        httpStatus: 200,
+        result: "success",
+        source: "authentication",
+        roles: fullUser.roles ?? candidate.roles,
+        gateId: activeGateId
+      }
+    });
 
     return response.json({
       user: {
@@ -250,16 +387,29 @@ apiRouter.post("/api/auth/login", async (request, response) => {
         username: candidate.username,
         displayName: candidate.username,
         role: candidate.role,
+        roles: fullUser.roles ?? candidate.roles,
         gateId: activeGateId,
         gateName: activeGateName,
-        groups: fullUser?.groups ?? [],
-        menuAccess
+        groups: fullUser.groups,
+        menuAccess,
+        permissions: fullUser.permissions
       },
       redirectTo: redirectTarget || redirectTo
     });
   } catch (error) {
     return handleUnexpectedError(response, error, "DATABASE_ERROR", "Anmeldung fehlgeschlagen.");
   }
+});
+
+apiRouter.post("/api/auth/gate", async (request, response) => {
+  const user = await requireAuthenticatedUser(request, response);
+  if (!user) return;
+  const parsed = z.object({ gateId: z.string().uuid() }).safeParse(request.body);
+  if (!parsed.success) return sendValidationError(response, parsed.error.flatten());
+  const gate = await findActiveGateById(parsed.data.gateId);
+  if (!gate) return sendError(response, 400, "INVALID_GATE", "Die ausgewählte Wache ist nicht verfügbar.");
+  setSessionCookie(response, { id: user.id, username: user.username, role: user.role, roles: user.roles, gateId: gate.id });
+  return response.json({ success: true, gateId: gate.id, gateName: gate.name });
 });
 
 apiRouter.post("/api/public/pre-registrations/group", async (request, response) => {
@@ -363,23 +513,25 @@ apiRouter.post("/api/public/pre-registrations/group", async (request, response) 
 });
 
 apiRouter.post("/api/public/visits/import", async (request, response) => {
-  const rateLimitKey = `public-visitor-import:${request.ip || request.socket.remoteAddress || "unknown"}`;
-  const rateLimitDecision = checkRateLimit(rateLimitKey, 8, 60);
-  if (!rateLimitDecision.allowed) {
-    response.setHeader("Retry-After", String(rateLimitDecision.retryAfterSeconds));
-    return response.status(429).json({
-      error: "RATE_LIMITED",
-      message: "Zu viele Importversuche. Bitte spaeter erneut versuchen."
-    });
-  }
+  securePublicVisitorImportResponse(response);
+  if (!allowPublicVisitorImportRequest(request, response, "submit", 8) || !requirePublicVisitorImportCsrf(request, response)) return;
 
   return handleVisitorImportUpload(request, response, {
     createdBy: null,
-    fallbackGateId: null
+    fallbackGateId: null,
+    validatePublicXlsx: true
   });
 });
 
-apiRouter.get("/api/public/visits/import-template.xlsx", async (_request, response) => {
+apiRouter.post("/api/public/visits/import/preview", async (request, response) => {
+  securePublicVisitorImportResponse(response);
+  if (!allowPublicVisitorImportRequest(request, response, "preview", 12) || !requirePublicVisitorImportCsrf(request, response)) return;
+  return handleVisitorImportPreview(request, response, { validatePublicXlsx: true });
+});
+
+apiRouter.get("/api/public/visits/import-template.xlsx", async (request, response) => {
+  securePublicVisitorImportResponse(response);
+  if (!allowPublicVisitorImportRequest(request, response, "template", 60)) return;
   return sendVisitorImportTemplateWorkbook(response);
 });
 
@@ -508,6 +660,7 @@ apiRouter.post("/api/public/pre-registrations", async (request, response) => {
   }
 });
 
+apiRouter.use(publicSimplifiedApplicationsRouter);
 apiRouter.use(guardRouter);
 apiRouter.use(sibeRouter);
 apiRouter.use(adminRouter);

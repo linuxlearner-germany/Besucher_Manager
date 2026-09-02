@@ -8,7 +8,7 @@ services:
       MSSQL_PID: Express
       SA_PASSWORD: ${MSSQL_PASSWORD}
     ports:
-      - "1433:1433"
+      - "${SQLSERVER_HOST_PORT:-1433}:1433"
     volumes:
       - sqlserver_data:/var/opt/mssql
     healthcheck:
@@ -37,7 +37,14 @@ services:
       - |
         set -euo pipefail
         /opt/mssql-tools18/bin/sqlcmd -S sqlserver -U sa -P "$${MSSQL_PASSWORD}" -C -Q "IF DB_ID(N'$${MSSQL_DATABASE}') IS NULL CREATE DATABASE [$${MSSQL_DATABASE}]; IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = N'$${MSSQL_USER}') CREATE LOGIN [$${MSSQL_USER}] WITH PASSWORD = N'$${MSSQL_PASSWORD}', CHECK_POLICY = OFF;"
-        /opt/mssql-tools18/bin/sqlcmd -S sqlserver -U sa -P "$${MSSQL_PASSWORD}" -d "$${MSSQL_DATABASE}" -C -Q "IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'$${MSSQL_USER}') CREATE USER [$${MSSQL_USER}] FOR LOGIN [$${MSSQL_USER}]; IF IS_ROLEMEMBER('db_owner', '$${MSSQL_USER}') <> 1 ALTER ROLE db_owner ADD MEMBER [$${MSSQL_USER}];"
+        /opt/mssql-tools18/bin/sqlcmd -S sqlserver -U sa -P "$${MSSQL_PASSWORD}" -d "$${MSSQL_DATABASE}" -C -Q "IF EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'$${MSSQL_USER}') ALTER USER [$${MSSQL_USER}] WITH LOGIN = [$${MSSQL_USER}]; ELSE CREATE USER [$${MSSQL_USER}] FOR LOGIN [$${MSSQL_USER}]; IF IS_ROLEMEMBER('db_owner', '$${MSSQL_USER}') <> 1 ALTER ROLE db_owner ADD MEMBER [$${MSSQL_USER}];"
+
+  mailpit:
+    image: axllent/mailpit:v1.27
+    profiles: ["local-db"]
+    restart: "no"
+    ports:
+      - "${MAILPIT_HOST_PORT:-0}:8025"
 
   app:
     build:
@@ -49,6 +56,7 @@ services:
         http_proxy: ${http_proxy:-}
         https_proxy: ${https_proxy:-}
         no_proxy: ${no_proxy:-}
+        APP_COMMIT: ${APP_COMMIT:-unknown}
     restart: unless-stopped
     depends_on:
       sqlserver:
@@ -65,6 +73,8 @@ services:
       APP_TRUST_PROXY: ${APP_TRUST_PROXY:-}
       UPLOAD_DIR: /app/uploads
       MAIL_RELAY_CONFIG_PATH: ${MAIL_RELAY_CONFIG_PATH:-/app/config/mail-relay.yml}
+      MAIL_RELAY_TLS_SERVERNAME: ${MAIL_RELAY_TLS_SERVERNAME:-}
+      NODE_EXTRA_CA_CERTS: ${NODE_EXTRA_CA_CERTS:-}
       HTTP_PROXY: ${HTTP_PROXY:-}
       HTTPS_PROXY: ${HTTPS_PROXY:-}
       NO_PROXY: ${NO_PROXY:-}
@@ -72,7 +82,7 @@ services:
       https_proxy: ${https_proxy:-}
       no_proxy: ${no_proxy:-}
     ports:
-      - "${PORT:-3030}:3030"
+      - "${HOST_PORT:-3030}:3030"
     volumes:
       - ./uploads:/app/uploads
       - ./config:/app/config:ro

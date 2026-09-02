@@ -95,6 +95,7 @@ function escapeCsvCell(value: unknown): string {
 export function buildUserExportCsv(rows: Array<{
   username: string;
   role: string;
+  roles?: string[];
   displayName: string;
   email: string | null;
   gate: string | null;
@@ -105,7 +106,7 @@ export function buildUserExportCsv(rows: Array<{
 }>): string {
   const lines = rows.map((row) => [
     row.username,
-    row.role,
+    row.roles?.length ? row.roles.join("|") : row.role,
     row.displayName,
     row.email,
     row.gate,

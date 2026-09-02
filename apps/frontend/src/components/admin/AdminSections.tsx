@@ -1,8 +1,9 @@
-import { type ChangeEvent, type Dispatch, type DragEvent, type FormEvent, type SetStateAction } from "react";
+import { type ChangeEvent, type Dispatch, type DragEvent, type FormEvent, type SetStateAction, useState } from "react";
 import { Alert, Card, DataTable, FormField } from "../ui";
 import {
   type AdminAuditLog,
   type AdminErrorLog,
+  type AdminLogDetail,
   type AdminFieldDefinition,
   type AdminGate,
   type AdminSiteMap,
@@ -21,6 +22,7 @@ import {
   getAllowedMenuAccessForRole,
   type UserPermissions
 } from "../../app/core";
+import { LogDetailDialog } from "./LogDetailDialog";
 
 export type AdminSectionKey = "dashboard" | "wachen" | "benutzer" | "texte" | "karte" | "hintergrund" | "felder" | "audit" | "fehler" | "system" | "datenloeschung";
 
@@ -62,6 +64,7 @@ export function AdminDashboardSection({
   logs,
   errorLogs,
   systemStatus,
+  loading,
   onOpenSection
 }: {
   gates: AdminGate[];
@@ -72,20 +75,22 @@ export function AdminDashboardSection({
   logs: AdminAuditLog[];
   errorLogs: AdminErrorLog[];
   systemStatus: { activeVisits: number; signaturesFollowUp: number } | null;
+  loading: boolean;
   onOpenSection: (section: AdminSectionKey) => void;
 }) {
+  const loadingText = "Wird geladen …";
   return (
     <div className="card-grid stat-grid admin-dashboard-grid">
-      <article className="panel mini-card"><h3>Wachen</h3><p>{gates.filter((gate) => gate.isActive).length} aktive Wachen</p><button type="button" className="secondary-button" onClick={() => onOpenSection("wachen")}>Öffnen</button></article>
-      <article className="panel mini-card"><h3>Benutzer</h3><p>{users.filter((entry) => entry.isActive).length} aktive Benutzer</p><button type="button" className="secondary-button" onClick={() => onOpenSection("benutzer")}>Öffnen</button></article>
-      <article className="panel mini-card"><h3>Hinweistexte</h3><p>{texts.filter((text) => text.isActive).length} aktive Texte</p><button type="button" className="secondary-button" onClick={() => onOpenSection("texte")}>Öffnen</button></article>
-      <article className="panel mini-card"><h3>Geländeplan</h3><p title={activeSiteMap?.name || "Kein aktiver Plan"}>{activeSiteMap ? truncateLabel(activeSiteMap.name) : "Kein aktiver Plan"}</p><button type="button" className="secondary-button" onClick={() => onOpenSection("karte")}>Öffnen</button></article>
+      <article className="panel mini-card"><h3>Wachen</h3><p>{loading ? loadingText : `${gates.filter((gate) => gate.isActive).length} aktive Wachen`}</p><button type="button" className="secondary-button" onClick={() => onOpenSection("wachen")}>Öffnen</button></article>
+      <article className="panel mini-card"><h3>Benutzer</h3><p>{loading ? loadingText : `${users.filter((entry) => entry.isActive).length} aktive Benutzer`}</p><button type="button" className="secondary-button" onClick={() => onOpenSection("benutzer")}>Öffnen</button></article>
+      <article className="panel mini-card"><h3>Hinweistexte</h3><p>{loading ? loadingText : `${texts.filter((text) => text.isActive).length} aktive Texte`}</p><button type="button" className="secondary-button" onClick={() => onOpenSection("texte")}>Öffnen</button></article>
+      <article className="panel mini-card"><h3>Geländeplan</h3><p title={!loading && activeSiteMap?.name ? activeSiteMap.name : undefined}>{loading ? loadingText : activeSiteMap ? truncateLabel(activeSiteMap.name) : "Kein aktiver Plan"}</p><button type="button" className="secondary-button" onClick={() => onOpenSection("karte")}>Öffnen</button></article>
       <article className="panel mini-card"><h3>Hintergrund</h3><p>Startbild der Anwendung verwalten</p><button type="button" className="secondary-button" onClick={() => onOpenSection("hintergrund")}>Öffnen</button></article>
-      <article className="panel mini-card"><h3>Feldkonfiguration</h3><p>{fieldDefinitions.filter((field) => field.isActive).length} aktive Felder</p><button type="button" className="secondary-button" onClick={() => onOpenSection("felder")}>Öffnen</button></article>
+      <article className="panel mini-card"><h3>Feldkonfiguration</h3><p>{loading ? loadingText : `${fieldDefinitions.filter((field) => field.isActive).length} aktive Felder`}</p><button type="button" className="secondary-button" onClick={() => onOpenSection("felder")}>Öffnen</button></article>
       <article className="panel mini-card"><h3>Benutzerimport</h3><p>Konten gesammelt per CSV anlegen oder aktualisieren</p><button type="button" className="secondary-button" onClick={() => onOpenSection("benutzer")}>Öffnen</button></article>
-      <article className="panel mini-card"><h3>Auditlog</h3><p>{logs.length} letzte Einträge</p><button type="button" className="secondary-button" onClick={() => onOpenSection("audit")}>Öffnen</button></article>
-      <article className="panel mini-card"><h3>Fehlerlog</h3><p>{errorLogs.length} letzte Einträge</p><button type="button" className="secondary-button" onClick={() => onOpenSection("fehler")}>Öffnen</button></article>
-      <article className="panel mini-card"><h3>Systemstatus</h3><p>{systemStatus ? `${systemStatus.activeVisits} aktiv, ${systemStatus.signaturesFollowUp} Nachreichungen` : "Lade..."}</p><button type="button" className="secondary-button" onClick={() => onOpenSection("system")}>Öffnen</button></article>
+      <article className="panel mini-card"><h3>Auditlog</h3><p>{loading ? loadingText : `${logs.length} letzte Einträge`}</p><button type="button" className="secondary-button" onClick={() => onOpenSection("audit")}>Öffnen</button></article>
+      <article className="panel mini-card"><h3>Fehlerlog</h3><p>{loading ? loadingText : `${errorLogs.length} letzte Einträge`}</p><button type="button" className="secondary-button" onClick={() => onOpenSection("fehler")}>Öffnen</button></article>
+      <article className="panel mini-card"><h3>Systemstatus</h3><p>{loading ? loadingText : systemStatus ? `${systemStatus.activeVisits} aktiv, ${systemStatus.signaturesFollowUp} Nachreichungen` : "Keine Daten verfügbar"}</p><button type="button" className="secondary-button" onClick={() => onOpenSection("system")}>Öffnen</button></article>
     </div>
   );
 }
@@ -201,6 +206,7 @@ export function AdminUsersSection({
   saveUser,
   userSaveState,
   toggleUserActive,
+  deleteUser,
   currentUserId
 }: {
   newUser: {
@@ -209,6 +215,7 @@ export function AdminUsersSection({
     email: string;
     password: string;
     role: AdminUser["role"];
+    roles: AdminUser["roles"];
     gateId: string;
     groupsText: string;
     menuAccess: AppMenuKey[];
@@ -220,6 +227,7 @@ export function AdminUsersSection({
     email: string;
     password: string;
     role: AdminUser["role"];
+    roles: AdminUser["roles"];
     gateId: string;
     groupsText: string;
     menuAccess: AppMenuKey[];
@@ -257,9 +265,27 @@ export function AdminUsersSection({
     message: string;
   } | null;
   toggleUserActive: (userId: string, active: boolean) => Promise<void>;
+  deleteUser: (userId: string) => Promise<void>;
   currentUserId?: string;
 }) {
   const selectedUser = selectedUserId ? editableUsers[selectedUserId] : null;
+  const [pendingUserAction, setPendingUserAction] = useState<{ kind: "deactivate" | "delete"; user: AdminUser } | null>(null);
+  const [userActionBusy, setUserActionBusy] = useState(false);
+
+  async function confirmPendingUserAction() {
+    if (!pendingUserAction || userActionBusy) return;
+    setUserActionBusy(true);
+    try {
+      if (pendingUserAction.kind === "deactivate") {
+        await toggleUserActive(pendingUserAction.user.id, false);
+      } else {
+        await deleteUser(pendingUserAction.user.id);
+      }
+      setPendingUserAction(null);
+    } finally {
+      setUserActionBusy(false);
+    }
+  }
 
   function summarizeMenuAccess(menuAccess: AppMenuKey[]) {
     if (!menuAccess.length) {
@@ -279,6 +305,28 @@ export function AdminUsersSection({
       return "Keine Zusatzrechte";
     }
     return summary.slice(0, 3).join(", ") + (summary.length > 3 ? ` +${summary.length - 3}` : "");
+  }
+
+  const menuPermissionRequirements: Partial<Record<AppMenuKey, AppPermission[]>> = {
+    wache: ["visits.read"],
+    import: ["imports.execute"],
+    admin: ["admin.users", "admin.guards", "admin.fields", "admin.map", "admin.system", "logs.audit", "logs.errors"],
+    sibe: ["dashboards.sibe"],
+    laenderbenachrichtigungen: ["dashboards.sibe"],
+    kaskdt: ["dashboards.commander"],
+    texte: ["texts.manage"]
+  };
+
+  function missingMenuPermissions(menuAccess: AppMenuKey[], permissions: UserPermissions): string[] {
+    return menuAccess.flatMap((menuKey) => {
+      const requirements = menuPermissionRequirements[menuKey];
+      if (!requirements?.length || requirements.some((permission) => isPermissionEnabled(permissions, permission))) return [];
+      const menuLabel = menuOptions.find((option) => option.key === menuKey)?.label ?? menuKey;
+      const rightLabels = permissionGroups.flatMap((group) => group.items)
+        .filter((item) => requirements.includes(item.key))
+        .map((item) => item.label);
+      return [`${menuLabel}: ${rightLabels.join(" oder ")}`];
+    });
   }
 
   return (
@@ -302,8 +350,8 @@ export function AdminUsersSection({
           <FormField label="Anzeigename">
             <input placeholder="Anzeigename" value={newUser.displayName} onChange={(event) => setNewUser((current) => ({ ...current, displayName: event.target.value }))} />
           </FormField>
-          <FormField label={newUser.role === "sibe" ? "E-Mail" : "E-Mail (optional)"} required={newUser.role === "sibe"}>
-            <input required={newUser.role === "sibe"} type="email" placeholder="name@firma.de" value={newUser.email} onChange={(event) => setNewUser((current) => ({ ...current, email: event.target.value }))} />
+          <FormField label={newUser.roles.includes("sibe") ? "E-Mail" : "E-Mail (optional)"} required={newUser.roles.includes("sibe")}>
+            <input required={newUser.roles.includes("sibe")} type="email" placeholder="name@firma.de" value={newUser.email} onChange={(event) => setNewUser((current) => ({ ...current, email: event.target.value }))} />
           </FormField>
           <FormField label="Passwort" required>
             <input required type="password" placeholder="Mindestens 8 Zeichen" value={newUser.password} onChange={(event) => setNewUser((current) => ({ ...current, password: event.target.value }))} />
@@ -316,6 +364,7 @@ export function AdminUsersSection({
                 setNewUser((current) => ({
                   ...current,
                   role,
+                  roles: [role],
                   gateId: "",
                   menuAccess: getAllowedMenuAccessForRole(role),
                   permissions: role === "custom"
@@ -327,18 +376,11 @@ export function AdminUsersSection({
               <option value="guard">Wache</option>
               <option value="admin">Admin</option>
               <option value="sibe">SiBe</option>
-              <option value="kaskdt">KasKdt</option>
+              <option value="kaskdt">KSKdt</option>
               <option value="custom">Benutzerdefiniert</option>
             </select>
           </FormField>
-          {newUser.role === "guard" ? (
-            <FormField label="Zugeordnete Wache" required>
-              <select required value={newUser.gateId} onChange={(event) => setNewUser((current) => ({ ...current, gateId: event.target.value }))}>
-                <option value="">Wache auswählen</option>
-                {gates.filter((gate) => gate.isActive).map((gate) => <option key={gate.id} value={gate.id}>{gate.name}</option>)}
-              </select>
-            </FormField>
-          ) : null}
+          {newUser.role === "sibe" || newUser.role === "kaskdt" ? <label className="checkbox-row"><input type="checkbox" checked={newUser.roles.length === 2} onChange={(event) => setNewUser((current) => ({ ...current, roles: event.target.checked ? ["sibe", "kaskdt"] : [current.role], menuAccess: event.target.checked ? Array.from(new Set([...getAllowedMenuAccessForRole("sibe"), ...getAllowedMenuAccessForRole("kaskdt")])) : getAllowedMenuAccessForRole(current.role) }))} /> Doppelrolle SiBe + KSKdt</label> : null}
           <FormField label="Gruppen">
             <textarea rows={3} placeholder="z. B. Werkschutz, Schicht A" value={newUser.groupsText} onChange={(event) => setNewUser((current) => ({ ...current, groupsText: event.target.value }))} />
           </FormField>
@@ -365,6 +407,10 @@ export function AdminUsersSection({
             {newUser.role === "custom" ? (
               <div>
                 <div className="admin-subsection-title">Berechtigungen</div>
+                <p className="section-copy">Menüzugriffe und Funktionsrechte werden getrennt vergeben. Für jeden gewählten Bereich ist mindestens das angezeigte Einstiegsrecht erforderlich.</p>
+                {missingMenuPermissions(newUser.menuAccess, newUser.permissions).length ? (
+                  <Alert type="warning">Noch fehlende Rechte: {missingMenuPermissions(newUser.menuAccess, newUser.permissions).join("; ")}</Alert>
+                ) : null}
                 <div className="permission-group-grid">
                   {permissionGroups.map((group) => (
                     <div key={group.title} className="permission-group-card">
@@ -473,17 +519,18 @@ export function AdminUsersSection({
                 <td>{entry.username}</td>
                 <td>{entry.displayName}</td>
                 <td>{entry.email || "—"}</td>
-                <td>{formatRoleLabel(entry.role)}</td>
-                <td>{gates.find((gate) => gate.id === entry.gateId)?.name || "—"}</td>
+                <td>{(entry.roles?.length ? entry.roles : [entry.role]).map(formatRoleLabel).join(" + ")}</td>
+                <td>Wird bei Anmeldung gewählt</td>
                 <td><span className={entry.isActive ? "badge status-active" : "badge status-cancelled"}>{entry.isActive ? "Aktiv" : "Inaktiv"}</span></td>
                 <td className="truncate-cell" title={summarizeMenuAccess(entry.menuAccess)}>{summarizeMenuAccess(entry.menuAccess)}</td>
                 <td className="truncate-cell" title={summarizePermissions(editableUsers[entry.id] || entry as EditableAdminUser)}>{summarizePermissions(editableUsers[entry.id] || entry as EditableAdminUser)}</td>
                 <td className="actions-cell">
                   <div className="action-row admin-action-row compact-action-row">
-                    <button type="button" className="secondary-button" onClick={() => setSelectedUserId(entry.id)}>Bearbeiten</button>
-                    <button className={entry.isActive ? "danger-button" : "secondary-button"} type="button" onClick={() => void toggleUserActive(entry.id, entry.isActive)} disabled={currentUserId === entry.id}>
+                    <button type="button" className="secondary-button" aria-label={`Benutzer ${entry.username} bearbeiten`} onClick={() => setSelectedUserId(entry.id)}>Bearbeiten</button>
+                    <button className={entry.isActive ? "danger-button" : "secondary-button"} type="button" aria-label={`Benutzer ${entry.username} ${entry.isActive ? "sperren" : "freigeben"}`} onClick={() => entry.isActive ? setPendingUserAction({ kind: "deactivate", user: entry }) : void toggleUserActive(entry.id, true)} disabled={currentUserId === entry.id || userActionBusy}>
                       {entry.isActive ? "Zugang sperren" : "Zugang freigeben"}
                     </button>
+                    <button className="danger-button" type="button" aria-label={`Benutzer ${entry.username} löschen`} onClick={() => setPendingUserAction({ kind: "delete", user: entry })} disabled={currentUserId === entry.id || userActionBusy}>Löschen</button>
                   </div>
                 </td>
               </tr>
@@ -492,13 +539,32 @@ export function AdminUsersSection({
           </table>
         </div>
       </div>
+      {pendingUserAction ? (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="user-action-dialog-title">
+          <div className="modal-card panel">
+            <h3 id="user-action-dialog-title">{pendingUserAction.kind === "delete" ? "Benutzer wirklich löschen?" : "Benutzer sperren?"}</h3>
+            <p>
+              Benutzer <strong>{pendingUserAction.user.username}</strong>{" "}
+              {pendingUserAction.kind === "delete"
+                ? "wird dauerhaft gelöscht. Historisch referenzierte Konten werden pseudonymisiert; Auditdaten bleiben erhalten."
+                : "wird deaktiviert und kann sich danach nicht mehr anmelden."}
+            </p>
+            <div className="row-actions">
+              <button type="button" className="secondary-button" onClick={() => setPendingUserAction(null)} disabled={userActionBusy}>Abbrechen</button>
+              <button type="button" className="danger-button" onClick={() => void confirmPendingUserAction()} disabled={userActionBusy}>
+                {userActionBusy ? "Wird verarbeitet …" : pendingUserAction.kind === "delete" ? "Benutzer löschen" : "Benutzer sperren"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {selectedUser ? (
         <div className="panel admin-user-card">
         <div className="table-section-header">
           <div>
             <h4>Benutzer bearbeiten</h4>
           </div>
-            <button type="button" className="secondary-button" onClick={() => setSelectedUserId(null)}>Schließen</button>
+            <button type="button" className="secondary-button" aria-label={`Bearbeitung von Benutzer ${selectedUser.username} schließen`} onClick={() => setSelectedUserId(null)}>Schließen</button>
           </div>
           <div className="admin-user-create-grid">
             <FormField label="Benutzername" required>
@@ -507,8 +573,8 @@ export function AdminUsersSection({
             <FormField label="Anzeigename">
               <input value={selectedUser.displayName} onChange={(event) => setEditableUsers((current) => ({ ...current, [selectedUser.id]: { ...selectedUser, displayName: event.target.value } }))} />
             </FormField>
-            <FormField label={selectedUser.role === "sibe" ? "E-Mail" : "E-Mail (optional)"} required={selectedUser.role === "sibe"}>
-              <input required={selectedUser.role === "sibe"} type="email" value={selectedUser.email || ""} onChange={(event) => setEditableUsers((current) => ({ ...current, [selectedUser.id]: { ...selectedUser, email: event.target.value } }))} />
+            <FormField label={selectedUser.roles.includes("sibe") ? "E-Mail" : "E-Mail (optional)"} required={selectedUser.roles.includes("sibe")}>
+              <input required={selectedUser.roles.includes("sibe")} type="email" value={selectedUser.email || ""} onChange={(event) => setEditableUsers((current) => ({ ...current, [selectedUser.id]: { ...selectedUser, email: event.target.value } }))} />
             </FormField>
             <FormField label="Neues Passwort">
               <input type="password" placeholder="Leer lassen für unverändert" value={selectedUser.password || ""} onChange={(event) => setEditableUsers((current) => ({ ...current, [selectedUser.id]: { ...selectedUser, password: event.target.value } }))} />
@@ -518,18 +584,11 @@ export function AdminUsersSection({
                 <option value="guard">Wache</option>
                 <option value="admin">Admin</option>
                 <option value="sibe">SiBe</option>
-                <option value="kaskdt">KasKdt</option>
+                <option value="kaskdt">KSKdt</option>
                 <option value="custom">Benutzerdefiniert</option>
               </select>
             </FormField>
-            {selectedUser.role === "guard" ? (
-              <FormField label="Zugeordnete Wache" required>
-                <select required value={selectedUser.gateId || ""} onChange={(event) => setEditableUsers((current) => ({ ...current, [selectedUser.id]: { ...selectedUser, gateId: event.target.value || null } }))}>
-                  <option value="">Wache auswählen</option>
-                  {gates.filter((gate) => gate.isActive || gate.id === selectedUser.gateId).map((gate) => <option key={gate.id} value={gate.id}>{gate.name}{gate.isActive ? "" : " (inaktiv)"}</option>)}
-                </select>
-              </FormField>
-            ) : null}
+            {selectedUser.role === "sibe" || selectedUser.role === "kaskdt" ? <label className="checkbox-row"><input type="checkbox" checked={selectedUser.roles.length === 2} onChange={(event) => setEditableUsers((current) => ({ ...current, [selectedUser.id]: { ...selectedUser, roles: event.target.checked ? ["sibe", "kaskdt"] : [selectedUser.role] } }))} /> Doppelrolle SiBe + KSKdt</label> : null}
             <FormField label="Gruppen">
               <textarea rows={3} value={selectedUser.groupsText} onChange={(event) => updateEditableUserGroups(selectedUser.id, event.target.value)} />
             </FormField>
@@ -556,6 +615,10 @@ export function AdminUsersSection({
               {selectedUser.role === "custom" ? (
                 <div>
                   <div className="admin-subsection-title">Berechtigungen</div>
+                  <p className="section-copy">Menüzugriffe und Funktionsrechte werden getrennt vergeben. Für jeden gewählten Bereich ist mindestens das angezeigte Einstiegsrecht erforderlich.</p>
+                  {missingMenuPermissions(selectedUser.menuAccess, selectedUser.permissions).length ? (
+                    <Alert type="warning">Noch fehlende Rechte: {missingMenuPermissions(selectedUser.menuAccess, selectedUser.permissions).join("; ")}</Alert>
+                  ) : null}
                   <div className="permission-group-grid">
                     {permissionGroups.map((group) => (
                       <div key={group.title} className="permission-group-card">
@@ -583,7 +646,7 @@ export function AdminUsersSection({
                 <input type="checkbox" checked={selectedUser.isActive} onChange={(event) => setEditableUsers((current) => ({ ...current, [selectedUser.id]: { ...selectedUser, isActive: event.target.checked } }))} />
                 Aktiv
               </label>
-              <button type="button" onClick={() => void saveUser(selectedUser.id)} disabled={userSaveState?.userId === selectedUser.id && userSaveState.kind === "saving"}>
+              <button type="button" aria-label={`Benutzer ${selectedUser.username} speichern`} onClick={() => void saveUser(selectedUser.id)} disabled={userSaveState?.userId === selectedUser.id && userSaveState.kind === "saving"}>
                 {userSaveState?.userId === selectedUser.id && userSaveState.kind === "saving" ? "Speichert..." : "Speichern"}
               </button>
             </div>
@@ -611,10 +674,12 @@ export function AdminSiteMapSection({
   return (
     <Card>
       <h3>Geländeplan</h3>
-      <div className="empty-state-box">
-        <strong>Keine Uploads in der Oberfläche</strong>
-        <span>Dateien werden kontrolliert in <code>./uploads/site-maps</code> abgelegt. Nach dem Kopieren erscheinen sie hier zur Auswahl.</span>
-      </div>
+      {!activeSiteMap ? (
+        <div className="empty-state-box">
+          <strong>{siteMaps.length ? "Kein aktiver Geländeplan ausgewählt" : "Keine weiteren hochgeladenen Versionen vorhanden"}</strong>
+          <span>Dateien werden kontrolliert in <code>./uploads/site-maps</code> abgelegt. Nach dem Kopieren erscheinen sie hier zur Auswahl.</span>
+        </div>
+      ) : null}
 
       <div className="site-map-admin-grid">
         <div className="site-map-current">
@@ -819,7 +884,9 @@ export function AdminSystemSection({
   setWorkflowTestKind,
   saveWorkflowSettings,
   saveSecurityNumber,
-  sendWorkflowTestMail
+  sendWorkflowTestMail,
+  maintenanceMode,
+  saveMaintenanceMode
 }: {
   systemStatus: {
     app: string;
@@ -845,10 +912,13 @@ export function AdminSystemSection({
   saveWorkflowSettings: () => Promise<void>;
   saveSecurityNumber: () => Promise<void>;
   sendWorkflowTestMail: () => Promise<void>;
+  maintenanceMode: boolean;
+  saveMaintenanceMode: (value: boolean) => Promise<void>;
 }) {
   return (
     <Card>
       <h3>Systemstatus</h3>
+      <div className="panel"><h3>Wartungsmodus</h3><p>Normale und öffentliche Zugriffe werden mit einer Wartungsseite bzw. HTTP 503 gesperrt; Admins behalten Zugriff.</p><label className="checkbox-row"><input type="checkbox" checked={maintenanceMode} onChange={(event) => void saveMaintenanceMode(event.target.checked)} /> Wartungsmodus aktiv</label></div>
       <div className="card-grid stat-grid">
         <article className="panel mini-card"><h3>App</h3><p>{systemStatus?.app || "Lade..."}</p></article>
         <article className="panel mini-card"><h3>Aktive Wachen</h3><p>{systemStatus?.activeGates ?? "-"}</p></article>
@@ -907,7 +977,7 @@ export function AdminSystemSection({
               <div className="feedback info">
                 Das Mail-Relay wird aus einer YML-Datei geladen.
                 {workflowSettings.emailRelay.configPath ? ` Pfad: ${workflowSettings.emailRelay.configPath}` : ""}
-                {" "}Die SMTP-Felder sind hier nur lesbar, Tests bleiben moeglich.
+                {" "}Die SMTP-Felder sind hier nur lesbar, Tests bleiben möglich.
               </div>
             </div>
           ) : null}
@@ -1021,7 +1091,7 @@ export function AdminSystemSection({
               <option value="reminder">Besuchserinnerung</option>
             </select>
           </FormField>
-          <FormField label="Testadresse">
+          <FormField label="Empfänger der Testmail">
             <input
               type="email"
               value={workflowTestRecipient}
@@ -1045,16 +1115,24 @@ export function AdminAuditSection({
   applyAuditFilters,
   resetAuditFilters,
   logs,
+  selectedAuditLogId,
   selectedAuditLog,
-  setSelectedAuditLogId
+  detailLoading,
+  detailError,
+  openAuditLog,
+  closeAuditLog
 }: {
   auditFilters: { search: string; action: string; user: string; ip: string; from: string; to: string };
   setAuditFilters: Dispatch<SetStateAction<{ search: string; action: string; user: string; ip: string; from: string; to: string }>>;
   applyAuditFilters: () => Promise<void>;
   resetAuditFilters: () => Promise<void>;
   logs: AdminAuditLog[];
-  selectedAuditLog: AdminAuditLog | null;
-  setSelectedAuditLogId: Dispatch<SetStateAction<string | null>>;
+  selectedAuditLogId: string | null;
+  selectedAuditLog: AdminLogDetail | null;
+  detailLoading: boolean;
+  detailError: string | null;
+  openAuditLog: (id: string) => void;
+  closeAuditLog: () => void;
 }) {
   return (
     <Card className="admin-section-stack">
@@ -1101,14 +1179,19 @@ export function AdminAuditSection({
         </thead>
         <tbody>
           {logs.length ? logs.map((log) => (
-            <tr key={log.id}>
+            <tr key={log.id} className="clickable-row" tabIndex={0} onClick={() => openAuditLog(log.id)} onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                openAuditLog(log.id);
+              }
+            }}>
               <td>{formatDateTime(log.timestamp)}</td>
               <td>{log.user}</td>
               <td>{formatAuditAction(log.action)}</td>
               <td>{log.objectType}:{log.objectId}</td>
               <td>{log.ipAddress || "-"}</td>
               <td>{formatUserAgent(log.userAgent)}</td>
-              <td><button type="button" className="secondary-button" onClick={() => setSelectedAuditLogId(log.id)}>Details</button></td>
+              <td><button type="button" className="secondary-button" onClick={(event) => { event.stopPropagation(); openAuditLog(log.id); }}>Details</button></td>
             </tr>
           )) : (
             <tr>
@@ -1118,24 +1201,7 @@ export function AdminAuditSection({
         </tbody>
       </DataTable>
 
-      {selectedAuditLog ? (
-        <div className="audit-detail-panel">
-          <div className="section-header">
-            <div>
-              <h3>Audit-Details</h3>
-            </div>
-          </div>
-          <dl className="detail-grid">
-            <div><dt>Zeit</dt><dd>{formatDateTime(selectedAuditLog.timestamp)}</dd></div>
-            <div><dt>Benutzer</dt><dd>{selectedAuditLog.user}</dd></div>
-            <div><dt>IP</dt><dd>{selectedAuditLog.ipAddress || "-"}</dd></div>
-            <div><dt>User-Agent</dt><dd>{selectedAuditLog.userAgent || "-"}</dd></div>
-          </dl>
-          <FormField label="metadata_json">
-            <textarea readOnly rows={10} value={selectedAuditLog.metadataJson || "{}"} />
-          </FormField>
-        </div>
-      ) : null}
+      <LogDetailDialog selectedId={selectedAuditLogId} detail={selectedAuditLog} loading={detailLoading} error={detailError} onClose={closeAuditLog} />
     </Card>
   );
 }
@@ -1146,16 +1212,24 @@ export function AdminErrorLogSection({
   applyErrorLogFilters,
   resetErrorLogFilters,
   errorLogs,
+  selectedErrorLogId,
   selectedErrorLog,
-  setSelectedErrorLogId
+  detailLoading,
+  detailError,
+  openErrorLog,
+  closeErrorLog
 }: {
   errorLogFilters: { search: string; errorCode: string; path: string; from: string; to: string };
   setErrorLogFilters: Dispatch<SetStateAction<{ search: string; errorCode: string; path: string; from: string; to: string }>>;
   applyErrorLogFilters: () => Promise<void>;
   resetErrorLogFilters: () => Promise<void>;
   errorLogs: AdminErrorLog[];
-  selectedErrorLog: AdminErrorLog | null;
-  setSelectedErrorLogId: Dispatch<SetStateAction<string | null>>;
+  selectedErrorLogId: string | null;
+  selectedErrorLog: AdminLogDetail | null;
+  detailLoading: boolean;
+  detailError: string | null;
+  openErrorLog: (id: string) => void;
+  closeErrorLog: () => void;
 }) {
   return (
     <Card className="admin-section-stack">
@@ -1198,14 +1272,19 @@ export function AdminErrorLogSection({
         </thead>
         <tbody>
           {errorLogs.length ? errorLogs.map((entry) => (
-            <tr key={entry.id}>
+            <tr key={entry.id} className="clickable-row" tabIndex={0} onClick={() => openErrorLog(entry.id)} onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                openErrorLog(entry.id);
+              }
+            }}>
               <td>{formatDateTime(entry.timestamp)}</td>
               <td>{entry.errorCode}</td>
               <td>{entry.message}</td>
               <td>{entry.requestMethod || "-"} {entry.requestPath || "-"}</td>
               <td>{entry.userName || "-"}</td>
               <td>
-                <button type="button" className="secondary-button" onClick={() => setSelectedErrorLogId(entry.id)}>Details</button>
+                <button type="button" className="secondary-button" onClick={(event) => { event.stopPropagation(); openErrorLog(entry.id); }}>Details</button>
               </td>
             </tr>
           )) : (
@@ -1216,29 +1295,7 @@ export function AdminErrorLogSection({
         </tbody>
       </DataTable>
 
-      {selectedErrorLog ? (
-        <div className="audit-detail-panel">
-          <div className="section-header">
-            <div>
-              <h3>Fehlerdetails</h3>
-            </div>
-          </div>
-          <dl className="detail-grid">
-            <div><dt>Benutzer</dt><dd>{selectedErrorLog.userName || "-"}</dd></div>
-            <div><dt>IP</dt><dd>{selectedErrorLog.ipAddress || "-"}</dd></div>
-            <div><dt>Pfad</dt><dd>{selectedErrorLog.requestPath || "-"}</dd></div>
-            <div><dt>Methode</dt><dd>{selectedErrorLog.requestMethod || "-"}</dd></div>
-            <div className="detail-span-2"><dt>User-Agent</dt><dd>{selectedErrorLog.userAgent || "-"}</dd></div>
-            <div className="detail-span-2"><dt>Meldung</dt><dd>{selectedErrorLog.message}</dd></div>
-          </dl>
-          <FormField label="stack_trace">
-            <textarea readOnly rows={12} value={selectedErrorLog.stackTrace || "-"} />
-          </FormField>
-          <FormField label="metadata_json">
-            <textarea readOnly rows={8} value={selectedErrorLog.metadataJson || "{}"} />
-          </FormField>
-        </div>
-      ) : null}
+      <LogDetailDialog selectedId={selectedErrorLogId} detail={selectedErrorLog} loading={detailLoading} error={detailError} onClose={closeErrorLog} />
     </Card>
   );
 }

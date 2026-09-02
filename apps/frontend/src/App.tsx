@@ -1,5 +1,5 @@
-import { type ChangeEvent, type DragEvent, type FormEvent, type PropsWithChildren } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { type ChangeEvent, type DragEvent, type FormEvent, type PropsWithChildren, useEffect, useState } from "react";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { AdminPage } from "./pages/AdminPage";
 import { GuardDashboardPage } from "./pages/GuardDashboardPage";
 import { ImportPage } from "./pages/ImportPage";
@@ -7,6 +7,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { PrintViewPage } from "./pages/PrintViewPage";
 import { PublicPreRegistrationPage } from "./pages/PublicPreRegistrationPage";
 import { CommanderDashboardPage } from "./pages/CommanderDashboardPage";
+import { CommanderSimplifiedVisitsPage } from "./pages/CommanderSimplifiedVisitsPage";
 import { SibeDashboardPage } from "./pages/SibeDashboardPage";
 import { SibeNationalityNotificationsPage } from "./pages/SibeNationalityNotificationsPage";
 import { SibeRejectionsPage } from "./pages/SibeRejectionsPage";
@@ -17,6 +18,11 @@ import { SibeVisitorsPage } from "./pages/SibeVisitorsPage";
 import { TextManagementPage } from "./pages/TextManagementPage";
 import { VisitDetailPage } from "./pages/VisitDetailPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { PublicPreRegistrationConfirmationPage } from "./pages/PublicPreRegistrationConfirmationPage";
+import { PublicSimplifiedApplicationPage } from "./pages/PublicSimplifiedApplicationPage";
+import { PublicSimplifiedVerificationPage } from "./pages/PublicSimplifiedVerificationPage";
+import { KaskdtApplicationsPage } from "./pages/KaskdtApplicationsPage";
+import { KaskdtApplicationDetailPage } from "./pages/KaskdtApplicationDetailPage";
 import {
   AuthProvider,
   buildCheckoutStateFromVisit,
@@ -30,15 +36,34 @@ import {
   type GuardVisitEditState,
   ThemeProvider,
   useAuth,
+  hasRole,
+  RoleAwareRootRoute,
   type VisitRow,
   RequireRoles
 } from "./app/core";
 
+function MaintenanceBoundary({ children }: PropsWithChildren) {
+  const { user } = useAuth();
+  const location = useLocation();
+  const [maintenance, setMaintenance] = useState(false);
+  useEffect(() => {
+    void fetchJson<{ maintenanceMode: boolean }>("/api/maintenance/status").then((payload) => setMaintenance(payload.maintenanceMode)).catch(() => undefined);
+  }, [user]);
+  if (maintenance && !hasRole(user, "admin") && location.pathname !== "/login") {
+    return <main className="public-page"><section className="public-card"><h1>Wartungsarbeiten</h1><p>Das Besuchermanagement ist derzeit wegen Wartungsarbeiten vorübergehend nicht verfügbar. Bitte versuchen Sie es später erneut.</p><a href="/login">Admin-Anmeldung</a></section></main>;
+  }
+  return <>{children}</>;
+}
+
 function AppRoutes() {
   return (
     <Routes>
-      <Route path="/" element={<PublicPreRegistrationPage />} />
+      <Route path="/" element={<RoleAwareRootRoute><PublicPreRegistrationPage /></RoleAwareRootRoute>} />
+      <Route path="/voranmeldung" element={<PublicPreRegistrationPage />} />
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/visit/confirmation" element={<PublicPreRegistrationConfirmationPage />} />
+      <Route path="/visit/simplified/application" element={<PublicSimplifiedApplicationPage />} />
+      <Route path="/visit/simplified/verify" element={<PublicSimplifiedVerificationPage />} />
       <Route
         path="/einstellungen"
         element={
@@ -103,6 +128,8 @@ function AppRoutes() {
           </RequireRoles>
         }
       />
+      <Route path="/kaskdt/antraege" element={<RequireRoles allowedRoles={["admin", "kaskdt"]} requiredMenuKey="kaskdt" redirectTo="/"><KaskdtApplicationsPage /></RequireRoles>} />
+      <Route path="/kaskdt/antraege/:id" element={<RequireRoles allowedRoles={["admin", "kaskdt"]} requiredMenuKey="kaskdt" redirectTo="/"><KaskdtApplicationDetailPage /></RequireRoles>} />
       <Route
         path="/kasernenkommandant"
         element={
@@ -122,7 +149,16 @@ function AppRoutes() {
       <Route path="/kaskdt/texte" element={<Navigate to="/texte" replace />} />
       <Route
         path="/import"
-        element={<ImportPage />}
+        element={
+          <RequireRoles
+            allowedRoles={["admin", "guard", "sibe", "kaskdt", "custom"]}
+            requiredMenuKey="import"
+            requiredPermissions={["imports.execute"]}
+            redirectTo="/"
+          >
+            <ImportPage />
+          </RequireRoles>
+        }
       />
       <Route
         path="/sibe/besucher"
@@ -152,7 +188,7 @@ function AppRoutes() {
         path="/kaskdt/besucher"
         element={
           <RequireRoles allowedRoles={["admin", "kaskdt"]} requiredMenuKey="kaskdt" requiredPermissions={["visits.read"]} redirectTo="/" >
-            <SibeVisitorsPage />
+            <CommanderSimplifiedVisitsPage />
           </RequireRoles>
         }
       />
@@ -160,7 +196,7 @@ function AppRoutes() {
         path="/kasernenkommandant/besucher"
         element={
           <RequireRoles allowedRoles={["admin", "kaskdt"]} requiredMenuKey="kaskdt" requiredPermissions={["visits.read"]} redirectTo="/" >
-            <SibeVisitorsPage />
+            <CommanderSimplifiedVisitsPage />
           </RequireRoles>
         }
       />
@@ -205,7 +241,7 @@ function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <AppRoutes />
+        <MaintenanceBoundary><AppRoutes /></MaintenanceBoundary>
       </AuthProvider>
     </ThemeProvider>
   );
