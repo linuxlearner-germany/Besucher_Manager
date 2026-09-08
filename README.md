@@ -7,7 +7,7 @@ Die Anwendung bildet den vollständigen Ablauf vom Erfassen eines Besuchs über 
 > [!IMPORTANT]
 > Vor dem ersten produktiven Start dieser Version muss ein geprüftes SQL-Backup vorhanden sein. Die Migration `023_remove_approvals_add_nationality.sql` entfernt die frühere Genehmigungslogik und zugehörige Datenbankspalten dauerhaft.
 
-**Benutzerdokumentation:** [Benutzeranleitung für die Wache](docs/benutzeranleitung-wache.md) · [PDF herunterladen](docs/benutzeranleitung-wache.pdf)
+**Benutzerdokumentation:** [Wachen-Anleitung](docs/benutzeranleitung-wache.md) · [PDF](docs/benutzeranleitung-wache.pdf) · [Kurzanleitung](docs/kurzanleitung-wache.md) · [Kurzanleitung als PDF](docs/kurzanleitung-wache.pdf)
 
 ## Inhaltsverzeichnis
 
