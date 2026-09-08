@@ -1,8 +1,8 @@
 # Kurzanleitung Wache
 
-**Besucher Manager 0.2.2 · Version 1.0 · Stand 08.09.2026**
+**Besucher Manager 0.2.2 · Version 1.1 · Stand 08.09.2026**
 
-**Interne Adresse:** `https://besucher.dicker.wiweb.svc`<br>
+**Interne Adresse:** `https://besucher-docker.wiweb.svc`<br>
 **Benutzername:** `wache` · **Passwort:** Betreiberangabe
 
 ## Normaler Ablauf
@@ -47,10 +47,10 @@
 | Falsche Wache | Abmelden und mit richtiger Wache neu anmelden |
 | Systemausfall | IT/Wachleitung melden; nur freigegebenen Notbetrieb nutzen |
 
-## Kontakte – vor Freigabe ausfüllen
+## Kontakte
 
-**Wachleitung/fachlich:** ____________________<br>
-**IT-Störung:** ______________________________<br>
+**Dokumentverantwortlicher:** Paul Rothenburger<br>
+**IT-Störung:** Telefon 3121<br>
 **Datenschutz:** _____________________________<br>
 **Sicherheitsstelle:** ________________________
 

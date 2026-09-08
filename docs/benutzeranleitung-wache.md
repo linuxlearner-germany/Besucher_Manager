@@ -6,7 +6,7 @@
 | **Stand** | 08.09.2026 |
 | **Gültig für** | Besucher Manager 0.2.2 |
 | **Geltungsbereich** | Benutzerrolle Wache |
-| **Verantwortlicher Fachbereich** | **Vor Freigabe durch den Betreiber eintragen** |
+| **Dokumentverantwortlicher** | Paul Rothenburger |
 
 Diese Anleitung beschreibt den täglichen Ablauf an der Wache: anmelden, Besuche finden, Personen einchecken, Besucherscheine drucken, Spontanbesuche erfassen und Besuche auschecken.
 
@@ -33,7 +33,7 @@ Für den Arbeitsplatz gibt es zusätzlich die [einseitige Kurzanleitung](kurzanl
 
 | Zugang | Angabe |
 |---|---|
-| **Interne Adresse** | `https://besucher.dicker.wiweb.svc` |
+| **Interne Adresse** | `https://besucher-docker.wiweb.svc` |
 | **Benutzername** | `wache` |
 | **Passwort** | Das durch den Betreiber bereitgestellte Passwort; nicht in diesem Dokument enthalten |
 
@@ -187,12 +187,12 @@ Mit einem Sternchen gekennzeichnete Angaben sind Pflichtfelder. Zusätzlich kön
 
 ## 8. Eskalations- und Meldewege
 
-Die folgenden Angaben müssen durch den Betreiber vor der fachlichen Freigabe ergänzt und an der Wache aktuell gehalten werden.
+Die Kontakte sind an der Wache aktuell zu halten. Die noch offenen Angaben für Datenschutz- und Sicherheitsfälle müssen durch den Betreiber vor der fachlichen Freigabe ergänzt werden.
 
 | Anlass | Zuständige Stelle | Kontakt |
 |---|---|---|
-| **Fachliche Frage oder Fehlbuchung** | Wachleitung / fachlich verantwortliche Stelle | **[Name und Durchwahl eintragen]** |
-| **Technische Störung oder Systemausfall** | IT-Service / Administration | **[Servicenummer und Meldeweg eintragen]** |
+| **Fachliche Frage oder Fehlbuchung** | Wachleitung / fachlich verantwortliche Stelle | Paul Rothenburger |
+| **Technische Störung oder Systemausfall** | IT-Support | Telefon **3121** |
 | **Datenschutzvorfall** | Datenschutzbeauftragte Stelle | **[Kontakt eintragen]** |
 | **Sicherheitsrelevanter Sonderfall** | Zuständige Sicherheitsstelle | **[Kontakt und Alarmweg eintragen]** |
 
