@@ -6,7 +6,6 @@
 | **Stand** | 08.09.2026 |
 | **Gültig für** | Besucher Manager 0.2.2 |
 | **Geltungsbereich** | Benutzerrolle Wache |
-| **Dokumentverantwortlicher** | Paul Rothenburger |
 
 Diese Anleitung beschreibt den täglichen Ablauf an der Wache: anmelden, Besuche finden, Personen einchecken, Besucherscheine drucken, Spontanbesuche erfassen und Besuche auschecken.
 
@@ -191,8 +190,8 @@ Die Kontakte sind an der Wache aktuell zu halten. Die noch offenen Angaben für 
 
 | Anlass | Zuständige Stelle | Kontakt |
 |---|---|---|
-| **Fachliche Frage oder Fehlbuchung** | Wachleitung / fachlich verantwortliche Stelle | Paul Rothenburger |
-| **Technische Störung oder Systemausfall** | IT-Support | Telefon **3121** |
+| **Fachliche Frage oder Fehlbuchung** | Wachleitung / fachlich verantwortliche Stelle | **[Name und Durchwahl eintragen]** |
+| **Technische Störung oder Systemausfall** | IT-Support: Paul Rothenburger | Telefon **3121** |
 | **Datenschutzvorfall** | Datenschutzbeauftragte Stelle | **[Kontakt eintragen]** |
 | **Sicherheitsrelevanter Sonderfall** | Zuständige Sicherheitsstelle | **[Kontakt und Alarmweg eintragen]** |
 

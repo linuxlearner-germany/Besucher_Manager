@@ -49,8 +49,7 @@
 
 ## Kontakte
 
-**Dokumentverantwortlicher:** Paul Rothenburger<br>
-**IT-Störung:** Telefon 3121<br>
+**IT-Support:** Paul Rothenburger · Telefon 3121<br>
 **Datenschutz:** _____________________________<br>
 **Sicherheitsstelle:** ________________________
 
