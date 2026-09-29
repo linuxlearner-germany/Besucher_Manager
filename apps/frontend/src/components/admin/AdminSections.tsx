@@ -24,7 +24,7 @@ import {
 } from "../../app/core";
 import { LogDetailDialog } from "./LogDetailDialog";
 
-export type AdminSectionKey = "dashboard" | "wachen" | "benutzer" | "texte" | "karte" | "hintergrund" | "felder" | "audit" | "fehler" | "system" | "datenloeschung";
+export type AdminSectionKey = "dashboard" | "uhrzeit" | "wachen" | "benutzer" | "texte" | "karte" | "hintergrund" | "felder" | "audit" | "fehler" | "system" | "datenloeschung";
 
 export type AdminRetentionSettings = { enabled: boolean; years: number; lastRun: string | null; oldVisits: number };
 
@@ -81,6 +81,7 @@ export function AdminDashboardSection({
   const loadingText = "Wird geladen …";
   return (
     <div className="card-grid stat-grid admin-dashboard-grid">
+      <article className="panel mini-card"><h3>Uhrzeit</h3><p>Live-Uhr und Zeitzonen</p><button type="button" className="secondary-button" onClick={() => onOpenSection("uhrzeit")}>Öffnen</button></article>
       <article className="panel mini-card"><h3>Wachen</h3><p>{loading ? loadingText : `${gates.filter((gate) => gate.isActive).length} aktive Wachen`}</p><button type="button" className="secondary-button" onClick={() => onOpenSection("wachen")}>Öffnen</button></article>
       <article className="panel mini-card"><h3>Benutzer</h3><p>{loading ? loadingText : `${users.filter((entry) => entry.isActive).length} aktive Benutzer`}</p><button type="button" className="secondary-button" onClick={() => onOpenSection("benutzer")}>Öffnen</button></article>
       <article className="panel mini-card"><h3>Hinweistexte</h3><p>{loading ? loadingText : `${texts.filter((text) => text.isActive).length} aktive Texte`}</p><button type="button" className="secondary-button" onClick={() => onOpenSection("texte")}>Öffnen</button></article>

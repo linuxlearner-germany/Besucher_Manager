@@ -3031,6 +3031,24 @@ input[type="checkbox"] {
   width: fit-content;
 }
 
+.admin-clock-section {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+  padding: 24px;
+}
+
+.admin-clock-section select {
+  max-width: 100%;
+}
+
+.admin-clock-time {
+  font-size: clamp(2.5rem, 8vw, 5rem);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  line-height: 1;
+}
+
 .table-section {
   display: grid;
   gap: 12px;

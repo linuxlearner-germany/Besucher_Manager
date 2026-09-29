@@ -318,6 +318,14 @@ function sendUserImportTemplate(response: Response) {
 export const adminRouter = Router();
 adminRouter.use(adminFieldDefinitionsRouter);
 
+adminRouter.get("/api/admin/time", async (request, response) => {
+  const user = await requireRole(request, response, ["admin"]);
+  if (!user) return;
+
+  response.setHeader("Cache-Control", "no-store, max-age=0");
+  return response.json({ serverTime: new Date().toISOString() });
+});
+
 adminRouter.get("/api/texts", async (request, response) => {
   const user = await requirePermission(request, response, "texts.manage");
 

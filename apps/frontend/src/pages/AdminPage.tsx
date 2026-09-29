@@ -20,6 +20,7 @@ import {
   type AdminRetentionSettings
 } from "../components/admin/AdminSections";
 import { AdminFieldDefinitionsSection } from "../components/admin/AdminFieldDefinitionsSection";
+import { AdminClockSection } from "../components/admin/AdminClockSection";
 import { Alert } from "../components/ui";
 import { BadgeTextManager } from "../components/BadgeTextManager";
 import {
@@ -1119,6 +1120,7 @@ export function AdminPage() {
 
   const sectionTabs = [
     { key: "dashboard" as const, label: "Dashboard", visible: hasRole(currentUser, "admin") },
+    { key: "uhrzeit" as const, label: "Uhrzeit", visible: hasRole(currentUser, "admin") },
     { key: "wachen" as const, label: "Wachen", visible: Boolean(currentUser && hasPermission(currentUser, "admin.guards")) },
     { key: "benutzer" as const, label: "Benutzer", visible: Boolean(currentUser && hasPermission(currentUser, "admin.users")) },
     { key: "texte" as const, label: "Texte", visible: Boolean(currentUser && hasPermission(currentUser, "texts.manage")) },
@@ -1168,6 +1170,8 @@ export function AdminPage() {
             onOpenSection={selectAdminSection}
           />
         ) : null}
+
+        {resolvedActiveSection === "uhrzeit" ? <AdminClockSection /> : null}
 
         {resolvedActiveSection === "wachen" ? (
           <AdminGatesSection
