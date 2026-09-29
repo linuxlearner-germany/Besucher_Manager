@@ -512,6 +512,15 @@ Kernobjekte werden im normalen UI-Ablauf deaktiviert, archiviert oder storniert,
 
 Ein Tag `vX.Y.Z` auf `master` startet den [Release-Workflow](.github/workflows/release.yml). Die Nummer muss mit den Versionen im Root-, Backend- und Frontend-`package.json` übereinstimmen. Der Workflow prüft Typen und Tests, baut die Anwendung und veröffentlicht ein Archiv mit den kompilierten Dateien sowie einer SHA-256-Prüfsumme. `node_modules`, lokale Konfiguration und Uploads sind nicht enthalten.
 
+Der Workflow veröffentlicht außerdem das Docker-Image `ghcr.io/linuxlearner-germany/besucher-manager:vX.Y.Z`. Für einen Docker-Start aus dem Image kann die [GHCR-Compose-Ergänzung](docker-compose.ghcr.yml) genutzt werden. Die bestehende `.env` und die Upload- und Konfigurationsverzeichnisse bleiben dabei am Host:
+
+```bash
+APP_IMAGE_TAG=v0.2.2 docker compose -f docker-compose.yml -f docker-compose.ghcr.yml pull app
+APP_IMAGE_TAG=v0.2.2 docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d --no-build app
+```
+
+Vor dem Update ein SQL-Backup erstellen. Für ein privates GHCR-Paket ist vor dem Pull eine Docker-Anmeldung an `ghcr.io` erforderlich. Bei einem öffentlichen Paket funktioniert der Pull ohne Anmeldung. Für wiederholbare Deployments kann statt des Tags auch der Digest des geprüften Images festgelegt werden.
+
 Für einen neuen Release zuerst die Paketversionen samt `package-lock.json` aktualisieren und den Commit nach `master` pushen. Nach erfolgreicher CI den Tag auf diesem Commit erstellen und pushen:
 
 ```bash

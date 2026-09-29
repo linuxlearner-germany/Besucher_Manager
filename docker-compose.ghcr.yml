@@ -1,0 +1,4 @@
+services:
+  app:
+    image: ghcr.io/linuxlearner-germany/besucher-manager:${APP_IMAGE_TAG:?Set APP_IMAGE_TAG to a release tag, for example v0.2.2}
+    build: !reset null

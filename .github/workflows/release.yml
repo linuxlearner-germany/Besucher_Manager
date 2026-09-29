@@ -4,23 +4,33 @@ on:
   push:
     tags:
       - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to publish as a container image"
+        required: true
+        type: string
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
     steps:
       - name: Checkout release commit
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Validate tag and versions
         run: |
           node - <<'NODE'
-          const tag = process.env.GITHUB_REF_NAME;
+          const tag = process.env.RELEASE_TAG;
           const version = tag?.match(/^v(\d+\.\d+\.\d+)$/)?.[1];
           if (!version) throw new Error(`Invalid release tag: ${tag}`);
           for (const file of ["package.json", "apps/backend/package.json", "apps/frontend/package.json"]) {
@@ -31,7 +41,14 @@ jobs:
             if (lock.packages[entry]?.version !== version) throw new Error(`package-lock.json ${entry || "root"} does not match ${tag}`);
           }
           NODE
+          test "$(git rev-parse HEAD)" = "$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")"
           git merge-base --is-ancestor HEAD origin/master
+
+      - name: Verify existing release for manual image publish
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release view "$RELEASE_TAG" --json tagName --jq '.tagName'
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -55,16 +72,30 @@ jobs:
         run: npm run build
 
       - name: Package release
-        run: bash scripts/ops/package_release.sh "$GITHUB_REF_NAME" "$RUNNER_TEMP/release"
+        if: github.event_name == 'push'
+        run: bash scripts/ops/package_release.sh "$RELEASE_TAG" "$RUNNER_TEMP/release"
 
-      - name: Publish GitHub Release
+      - name: Publish versioned container image
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            "$RUNNER_TEMP/release/besucher-manager-$GITHUB_REF_NAME.tar.gz" \
-            "$RUNNER_TEMP/release/besucher-manager-$GITHUB_REF_NAME.tar.gz.sha256" \
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/besucher-manager:${RELEASE_TAG}"
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker build \
+            --build-arg "APP_COMMIT=$(git rev-parse HEAD)" \
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            -t "$image" .
+          docker push "$image"
+
+      - name: Publish GitHub Release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$RELEASE_TAG" \
+            "$RUNNER_TEMP/release/besucher-manager-$RELEASE_TAG.tar.gz" \
+            "$RUNNER_TEMP/release/besucher-manager-$RELEASE_TAG.tar.gz.sha256" \
             --verify-tag \
             --generate-notes \
-            --title "Besucher Manager $GITHUB_REF_NAME" \
+            --title "Besucher Manager $RELEASE_TAG" \
             --notes "Vor einem Produktiv-Update ein geprüftes SQL-Backup erstellen; siehe DEPLOYMENT.md."
