@@ -508,6 +508,19 @@ Kernobjekte werden im normalen UI-Ablauf deaktiviert, archiviert oder storniert,
 
 ## Deployment
 
+### GitHub Releases
+
+Ein Tag `vX.Y.Z` auf `master` startet den [Release-Workflow](.github/workflows/release.yml). Die Nummer muss mit den Versionen im Root-, Backend- und Frontend-`package.json` übereinstimmen. Der Workflow prüft Typen und Tests, baut die Anwendung und veröffentlicht ein Archiv mit den kompilierten Dateien sowie einer SHA-256-Prüfsumme. `node_modules`, lokale Konfiguration und Uploads sind nicht enthalten.
+
+Für einen neuen Release zuerst die Paketversionen samt `package-lock.json` aktualisieren und den Commit nach `master` pushen. Nach erfolgreicher CI den Tag auf diesem Commit erstellen und pushen:
+
+```bash
+git tag -a vX.Y.Z -m "Besucher Manager vX.Y.Z"
+git push origin vX.Y.Z
+```
+
+Vor dem Einsatz eines Releases gelten die Backup- und Migrationshinweise in [DEPLOYMENT.md](DEPLOYMENT.md).
+
 Die vollständige Installations-, Update-, Backup- und Rollback-Anleitung steht in [DEPLOYMENT.md](DEPLOYMENT.md).
 
 Kurzfassung für eine bereits eingerichtete Docker-Installation:
